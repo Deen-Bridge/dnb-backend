@@ -3,6 +3,7 @@ import cors from "cors";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import connectDB from "./config/db.js";
+import authRoutes from "./routes/authRoutes.js";
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
@@ -26,7 +27,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // TODO: Mount your routes here, e.g.:
-// app.use('/api/auth', authRoutes);
+app.use("/api/auth", authRoutes);
 // app.use('/api/messages', messageRoutes);
 
 // Socket.io for real-time messaging
@@ -46,6 +47,8 @@ io.on("connection", (socket) => {
     console.log("🛑 WebSocket disconnected:", socket.id);
   });
 });
-
+app.get("/", (req, res) => {
+  res.send("🌍 Welcome to DeenBridge API");
+});
 export { server }; // so we can start it with HTTP + Socket.io
 export default app;
