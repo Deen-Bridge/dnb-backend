@@ -13,7 +13,7 @@ export const registerUser = async (req, res) => {
     const existing = await User.findOne({ email });
     if (existing) {
       console.log("❌ Email already exists:", email);
-      return res.status(400).json({ message: "❌ Email already exists" });
+      return res.status(400).json({ message: "Email already exists" });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -37,11 +37,11 @@ export const loginUser = async (req, res) => {
     console.log("🔐 Attempting login for:", email);
     const user = await User.findOne({ email });
     if (!user)
-      return res.status(400).json({ message: "❌ Invalid credentials" });
+      return res.status(400).json({ message: "Invalid credentials" });
 
     const match = await bcrypt.compare(password, user.password);
     if (!match)
-      return res.status(400).json({ message: "❌ Invalid credentials" });
+      return res.status(400).json({ message: "Invalid credentials" });
 
     const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, {
       expiresIn: "3d",
@@ -58,7 +58,7 @@ export const loginUser = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("❌ Registration error:", error.message);
+    console.error("❌ Registration error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };
