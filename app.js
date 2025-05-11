@@ -24,7 +24,12 @@ const io = new SocketIOServer(server, {
 });
 
 // Middlewares
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:3000" || "https://dnd-fronten.vercel.app", // Frontend URL
+    credentials: true, // Allow cookies
+  })
+);
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(cookieParser());
