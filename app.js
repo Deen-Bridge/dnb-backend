@@ -26,7 +26,7 @@ const io = new SocketIOServer(server, {
 // Middlewares
 app.use(
   cors({
-    origin: "http://localhost:3000" || "https://dnb-frontend.vercel.app", // Frontend URL
+    origin: "https://dnb-frontend.vercel.app", // Frontend URL
     credentials: true, // Allow cookies
   })
 );
