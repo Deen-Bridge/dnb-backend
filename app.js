@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import courseRoutes from "./routes/courseRoutes.js";
+import reelsRoute from "./routes/reelsRoutes.js";
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
@@ -37,7 +38,7 @@ app.use(cookieParser());
 // TODO: Mount your routes here, e.g.:
 app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);
-// app.use('/api/messages', messageRoutes);
+app.use("/api/reels", reelsRoute)
 
 // Socket.io for real-time messaging
 io.on("connection", (socket) => {
