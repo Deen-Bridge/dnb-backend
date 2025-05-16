@@ -1,26 +1,67 @@
 import Course from "../models/Course.js";
+import cloudinary from "../utils/cloudinary.js";
 
-// 🎓 Create a course
+// Helper function to upload buffer
+const uploadToCloudinary = (fileBuffer, folder, resourceType = "image") => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder, resource_type: resourceType },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(fileBuffer);
+  });
+};
+
 export const createCourse = async (req, res) => {
   try {
-    const { title, description, category, image, video, price } = req.body;
+    const { title, description, category, price, createdBy } = req.body;
 
-    const course = new Course({
+    let imageUrl = null;
+    let videoUrl = null;
+
+    if (req.files?.image?.[0]) {
+      const imageBuffer = req.files.image[0].buffer;
+      const imageResult = await uploadToCloudinary(
+        imageBuffer,
+        "courses",
+        "image"
+      );
+      imageUrl = imageResult.secure_url;
+    }
+
+    if (req.files?.video?.[0]) {
+      const videoBuffer = req.files.video[0].buffer;
+      const videoResult = await uploadToCloudinary(
+        videoBuffer,
+        "courses",
+        "video"
+      );
+      videoUrl = videoResult.secure_url;
+    }
+
+    const course = await Course.create({
       title,
       description,
       category,
-      image,
-      video,
       price,
-      createdBy: req.user._id, // Must be set via middleware
+      createdBy :req.user._id,
+      image: imageUrl,
+      video: videoUrl,
     });
 
-    const saved = await course.save();
-    res.status(201).json({ message: "✅ Course created", course: saved });
+    res.status(201).json({ success: true, course });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
+
+
+
+
 // 📚 Get all courses
 export const getCourses = async (_req, res) => {
   try {
