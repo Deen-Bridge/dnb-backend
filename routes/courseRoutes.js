@@ -3,18 +3,17 @@ import {
   createCourse,
   getCourses,
   getCourseById,
-  enrollInCourse, // ✅ no need for a separate import
+  enrollInCourse,
+  updateCourse,
 } from "../controllers/courseController.js";
-import upload from "../middlewares/upload.js"; // ✅ import the upload middleware
+import upload from "../middlewares/upload.js";
 import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-// Public routes
 router.get("/", getCourses);
 router.get("/:id", getCourseById);
 
-// Protected routes
 router.post(
   "/",
   protect,
@@ -24,6 +23,18 @@ router.post(
   ]),
   createCourse
 );
+
 router.post("/:id/enroll", protect, enrollInCourse);
+
+// 🔄 Edit/Update course
+router.put(
+  "/:id",
+  protect,
+  upload.fields([
+    { name: "image", maxCount: 1 },
+    { name: "video", maxCount: 1 },
+  ]),
+  updateCourse
+);
 
 export default router;
