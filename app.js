@@ -6,6 +6,7 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import courseRoutes from "./routes/courseRoutes.js";
 import reelsRoute from "./routes/reelsRoutes.js";
+import bookRoutes from "./routes/bookRoutes.js";
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
@@ -38,7 +39,8 @@ app.use(cookieParser());
 // TODO: Mount your routes here, e.g.:
 app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);
-app.use("/api/reels", reelsRoute)
+app.use("/api/reels", reelsRoute);
+app.use("/api/books", bookRoutes);
 
 // Socket.io for real-time messaging
 io.on("connection", (socket) => {

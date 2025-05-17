@@ -1,4 +1,7 @@
 import Reel from "../models/Reel.js";
+import cloudinary from "../utils/cloudinary.js";
+
+
 //get all reels
 export const getReels = async (_req, res) => {
   try {
@@ -8,20 +11,39 @@ export const getReels = async (_req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-//create a reel
+
+
+
+
+
+// 🎬 Create a Reel
 export const createReel = async (req, res) => {
   try {
-      const { description, category, video } = req.body();
-      
-    const reel = new Reel({
+    const { description, category } = req.body;
+    const userId = req.user?._id; // from protect middleware
+
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Video file is required" });
+    }
+
+    // Upload video to Cloudinary
+    const uploadedVideo = await cloudinary.uploader.upload(req.file.path, {
+      resource_type: "video",
+      folder: "dnb/reels",
+    });
+
+    // Create reel in DB
+    const reel = await Reel.create({
       description,
       category,
-      video,
-      createdBy: req.user._id,
+      video: uploadedVideo.secure_url,
+      createdBy: userId,
     });
-      const saved = await reel.save();
-    res.status(201).json({ message: "✅ Reel created", reel: saved });
+
+    res.status(201).json({ success: true, reel });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
