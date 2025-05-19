@@ -9,7 +9,14 @@ import {
 
 const router = express.Router();
 
-router.post("/", upload.single("image"), createBook);
+router.post(
+  "/",
+  upload.fields([
+    { name: "thumbnail", maxCount: 1 },
+    { name: "file", maxCount: 1 },
+  ]),
+  createBook
+);
 router.get("/", getBooks);
 router.get("/:id", getBook);
 router.delete("/:id", deleteBook);
