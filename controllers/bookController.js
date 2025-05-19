@@ -3,31 +3,49 @@ import cloudinary from "../utils/cloudinary.js";
 
 export const createBook = async (req, res) => {
   try {
-    const { title, author, category, price, readCount, rating } = req.body;
+    const { title, category, price, readCount, rating } = req.body;
 
-    if (!req.file)
-      return res.status(400).json({ error: "Image file is required" });
+    if (!req.files || !req.files.thumbnail || !req.files.file)
+      return res
+        .status(400)
+        .json({ error: "Thumbnail image and book file are required" });
 
-    const result = await cloudinary.uploader.upload_stream(
-      { folder: "library-books" },
-      async (error, result) => {
-        if (error) return res.status(500).json({ error: error.message });
+    // Upload thumbnail to Cloudinary
+    const thumbnailUpload = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: "library-books/thumbnails" },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      req.files.thumbnail[0].stream.pipe(stream);
+    });
 
-        const book = await Book.create({
-          title,
-          author,
-          category,
-          price,
-          readCount,
-          rating,
-          image: result.secure_url,
-        });
+    // Upload book file to Cloudinary (as raw file)
+    const fileUpload = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: "library-books/files", resource_type: "raw" },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      req.files.file[0].stream.pipe(stream);
+    });
 
-        res.status(201).json(book);
-      }
-    );
+    const book = await Book.create({
+      title,
+      author: req.user.name,
+      category,
+      price,
+      readCount,
+      rating,
+      image: thumbnailUpload.secure_url,
+      fileUrl: fileUpload.secure_url,
+    });
 
-    req.file.stream.pipe(result);
+    res.status(201).json(book);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
