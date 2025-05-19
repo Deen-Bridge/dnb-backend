@@ -17,7 +17,7 @@ const uploadToCloudinary = (fileBuffer, folder, resourceType = "image") => {
 
 export const createCourse = async (req, res) => {
   try {
-    const { title, description, category, price, createdBy } = req.body;
+    const { title, description, category, price } = req.body;
 
     let imageUrl = null;
     let videoUrl = null;
