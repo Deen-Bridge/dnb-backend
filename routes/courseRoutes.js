@@ -4,6 +4,7 @@ import {
   getCourses,
   getCourseById,
   enrollInCourse,
+  getCoursesByUser,
   updateCourse,
 } from "../controllers/courseController.js";
 import upload from "../middlewares/upload.js";
@@ -23,7 +24,8 @@ router.post(
   ]),
   createCourse
 );
-
+router.get("/user", protect, getCoursesByUser);
+// New route for getting courses by user
 router.post("/:id/enroll", protect, enrollInCourse);
 
 // 🔄 Edit/Update course
