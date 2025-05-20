@@ -86,6 +86,20 @@ export const getCourseById = async (req, res) => {
   }
 };
 
+// 📘 Get all courses created by a specific user
+export const getCoursesByUser = async (req, res) => {
+  try {
+    const { createdBy } = req.query; // expects ?createdBy=userId in the query string
+    if (!createdBy) {
+      return res.status(400).json({ success: false, message: "Missing user id" });
+    }
+    const courses = await Course.find({ createdBy });
+    res.status(200).json({ success: true, courses });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // 📥 Enroll a user in a course
 export const enrollInCourse = async (req, res) => {
   try {
