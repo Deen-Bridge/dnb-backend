@@ -3,12 +3,21 @@ import cloudinary from "../utils/cloudinary.js";
 
 export const createBook = async (req, res) => {
   try {
-    const { title, category, price, readCount, rating } = req.body;
+    const { title, category, price, readCount, rating, description } = req.body;
 
     if (!req.files || !req.files.thumbnail || !req.files.file)
       return res
         .status(400)
         .json({ error: "Thumbnail image and book file are required" });
+
+    if (!req.user || !req.user.name) {
+      return res
+        .status(401)
+        .json({
+          success: false,
+          message: "Not authorized, user not found or missing name",
+        });
+    }
 
     // Upload thumbnail to Cloudinary
     const thumbnailUpload = await new Promise((resolve, reject) => {
@@ -19,7 +28,7 @@ export const createBook = async (req, res) => {
           else resolve(result);
         }
       );
-      req.files.thumbnail[0].stream.pipe(stream);
+      stream.end(req.files.thumbnail[0].buffer); // Use buffer, not .stream.pipe
     });
 
     // Upload book file to Cloudinary (as raw file)
@@ -31,33 +40,40 @@ export const createBook = async (req, res) => {
           else resolve(result);
         }
       );
-      req.files.file[0].stream.pipe(stream);
+      stream.end(req.files.file[0].buffer); // Use buffer, not .stream.pipe
     });
+
+    // Debug: log Cloudinary upload results
+    console.log('thumbnailUpload:', thumbnailUpload);
+    console.log('fileUpload:', fileUpload);
 
     const book = await Book.create({
       title,
-      author: req.user.name,
+      author: req.user._id,
+      thumbnail: thumbnailUpload.secure_url,
       category,
       price,
+      description,
       readCount,
       rating,
       image: thumbnailUpload.secure_url,
       fileUrl: fileUpload.secure_url,
     });
 
-    res.status(201).json(book);
+    res.status(201).json({ success: true, book });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Book creation error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
 export const getBooks = async (req, res) => {
-  const books = await Book.find();
+  const books = await Book.find().populate('author'); // populate all author fields
   res.json(books);
 };
 
 export const getBook = async (req, res) => {
-  const book = await Book.findById(req.params.id);
+  const book = await Book.findById(req.params.id).populate('author'); // populate all author fields
   if (!book) return res.status(404).json({ error: "Book not found" });
   res.json(book);
 };

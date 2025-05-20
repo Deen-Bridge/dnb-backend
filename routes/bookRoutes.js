@@ -6,11 +6,11 @@ import {
   getBook,
   deleteBook,
 } from "../controllers/bookController.js";
-
+import {protect} from "../middlewares/authMiddleware.js";
 const router = express.Router();
 
 router.post(
-  "/",
+  "/", protect,
   upload.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "file", maxCount: 1 },
