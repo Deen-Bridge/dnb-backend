@@ -11,12 +11,10 @@ export const createBook = async (req, res) => {
         .json({ error: "Thumbnail image and book file are required" });
 
     if (!req.user || !req.user.name) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: "Not authorized, user not found or missing name",
-        });
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized, user not found or missing name",
+      });
     }
 
     // Upload thumbnail to Cloudinary
@@ -44,8 +42,8 @@ export const createBook = async (req, res) => {
     });
 
     // Debug: log Cloudinary upload results
-    console.log('thumbnailUpload:', thumbnailUpload);
-    console.log('fileUpload:', fileUpload);
+    console.log("thumbnailUpload:", thumbnailUpload);
+    console.log("fileUpload:", fileUpload);
 
     const book = await Book.create({
       title,
@@ -68,14 +66,30 @@ export const createBook = async (req, res) => {
 };
 
 export const getBooks = async (req, res) => {
-  const books = await Book.find().populate('author'); // populate all author fields
+  const books = await Book.find().populate("author"); // populate all author fields
   res.json(books);
 };
 
 export const getBook = async (req, res) => {
-  const book = await Book.findById(req.params.id).populate('author'); // populate all author fields
+  const book = await Book.findById(req.params.id).populate("author"); // populate all author fields
   if (!book) return res.status(404).json({ error: "Book not found" });
   res.json(book);
+};
+
+// 📘 Get all books created by a specific user
+export const getBooksByUser = async (req, res) => {
+  try {
+    const { author } = req.query; // expects ?author=userId in the query string
+    if (!author) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing user id" });
+    }
+    const books = await Book.find({ author });
+    res.status(200).json({ success: true, books });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 export const deleteBook = async (req, res) => {
