@@ -3,7 +3,7 @@ import upload from "../middlewares/upload.js";
 import {
   createBook,
   getBooks,
-  getBooksByUser,
+  getBooksByAuthor,
   deleteBook,
 } from "../controllers/bookController.js";
 import {protect} from "../middlewares/authMiddleware.js";
@@ -18,7 +18,7 @@ router.post(
   createBook
 );
 router.get("/", getBooks);
-router.get("/:id", getBooksByUser);
+router.get("/by-author/:authorId", getBooksByAuthor); 
 router.delete("/:id", deleteBook);
 
 export default router;
