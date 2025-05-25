@@ -64,7 +64,7 @@ export const createCourse = async (req, res) => {
 // 📚 Get all courses
 export const getCourses = async (_req, res) => {
   try {
-    const courses = await Course.find().populate("createdBy", "name email");
+    const courses = await Course.find().populate("createdBy", "name email avatar");
     res.status(200).json({ success: true, courses });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
