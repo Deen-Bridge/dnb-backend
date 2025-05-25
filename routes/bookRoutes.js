@@ -18,6 +18,7 @@ router.post(
   createBook
 );
 router.get("/", getBooks);
+router.get("/:id", getBook);
 router.get("/by-author/:authorId", getBooksByAuthor); 
 router.delete("/:id", deleteBook);
 
