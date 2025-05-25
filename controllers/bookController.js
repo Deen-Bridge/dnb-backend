@@ -71,7 +71,7 @@ export const getBooks = async (req, res) => {
 };
 
 export const getBook = async (req, res) => {
-  const book = await Book.findById(req.params.id).populate("author","name email avatar"); // populate all author fields
+  const book = await Book.findById(req.params.id).populate("author","name email avatar bio"); // populate all author fields
   if (!book) return res.status(404).json({ error: "Book not found" });
   res.json(book);
 };
