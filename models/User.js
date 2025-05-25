@@ -17,12 +17,39 @@ const userSchema = new mongoose.Schema(
       required: [true, "Password is required"],
     },
     avatar: {
+      type: String, // Cloudinary URL for profile picture
+    },
+    gender: {
       type: String,
+      enum: ["male", "female"],
+    },
+    age: {
+      type: Number,
+      min: 2,
+      max: 120,
+    },
+    country: {
+      type: String,
+    },
+    language: {
+      type: String,
+    },
+    interests: [{ type: String }],
+    bio: {
+      type: String,
+      maxlength: 500,
     },
     role: {
       type: String,
       enum: ["student", "tutor"],
       default: "student",
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    lastLogin: {
+      type: Date,
     },
   },
   { timestamps: true }
