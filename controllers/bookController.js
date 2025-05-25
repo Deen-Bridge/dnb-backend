@@ -76,22 +76,22 @@ export const getBook = async (req, res) => {
   res.json(book);
 };
 
-// 📘 Get all books created by a specific user
-export const getBooksByUser = async (req, res) => {
+// ...existing code...
+export const getBooksByAuthor = async (req, res) => {
   try {
-    const { author } = req.query; // expects ?author=userId in the query string
-    if (!author) {
+    const { authorId } = req.params; // Get authorId from route params
+    if (!authorId) {
       return res
         .status(400)
-        .json({ success: false, message: "Missing user id" });
+        .json({ success: false, message: "Missing author id" });
     }
-    const books = await Book.find({ author });
+    const books = await Book.find({ author: authorId });
     res.status(200).json({ success: true, books });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
-
+// ...existing code...
 export const deleteBook = async (req, res) => {
   await Book.findByIdAndDelete(req.params.id);
   res.json({ message: "Book deleted" });

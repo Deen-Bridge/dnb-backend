@@ -24,8 +24,10 @@ router.post(
   ]),
   createCourse
 );
-router.get("/user", protect, getCoursesByUser);
+
 // New route for getting courses by user
+router.get("/user", protect, getCoursesByUser);
+
 router.post("/:id/enroll", protect, enrollInCourse);
 
 // 🔄 Edit/Update course
