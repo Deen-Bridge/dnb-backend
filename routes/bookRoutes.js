@@ -5,6 +5,7 @@ import {
   getBooks,
   getBooksByAuthor,
   deleteBook,
+  getBook
 } from "../controllers/bookController.js";
 import {protect} from "../middlewares/authMiddleware.js";
 const router = express.Router();
