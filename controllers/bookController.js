@@ -102,3 +102,43 @@ export const deleteBook = async (req, res) => {
   await Book.findByIdAndDelete(req.params.id);
   res.json({ message: "Book deleted" });
 };
+
+
+
+
+
+
+
+// ...existing code...
+export const addBookReview = async (req, res) => {
+  const { rating, comment } = req.body;
+  const book = await Book.findById(req.params.id);
+
+  if (!book) {
+    return res.status(404).json({ success: false, message: "Book not found" });
+  }
+
+  // Optional: Prevent duplicate reviews by the same user
+  const alreadyReviewed = book.reviews.find(
+    (r) => r.user.toString() === req.user._id.toString()
+  );
+  if (alreadyReviewed) {
+    return res.status(400).json({ success: false, message: "Book already reviewed by this user" });
+  }
+
+  const review = {
+    user: req.user._id,
+    comment,
+    rating: Number(rating),
+  };
+
+  book.reviews.push(review);
+
+  // Optionally update average rating and review count
+  book.rating =
+    book.reviews.reduce((acc, item) => item.rating + acc, 0) / book.reviews.length;
+
+  await book.save();
+  res.status(201).json({ success: true, message: "Review added", reviews: book.reviews });
+};
+// ...existing code...
