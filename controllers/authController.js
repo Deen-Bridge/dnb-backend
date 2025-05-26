@@ -96,6 +96,13 @@ export const loginUser = async (req, res) => {
         name: user.name,
         role: user.role,
         email: user.email,
+        avatar: user.avatar,
+        gender: user.gender,
+        age: user.age,
+        country: user.country,
+        language: user.language,
+        interests: user.interests,
+        bio: user.bio,
       },
     });
   } catch (err) {
