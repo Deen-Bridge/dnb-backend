@@ -6,7 +6,7 @@ import { updateUser, getUser, deleteUser } from "../controllers/userController.j
 const router = express.Router();
 
 // Update user profile (with avatar upload)
-router.put("/:id", protect, upload.single("avatar"), updateUser);
+router.put("/update/:id", protect, upload.single("avatar"), updateUser);
 // Get user by ID
 router.get("/:id", protect, getUser);
 // Delete user

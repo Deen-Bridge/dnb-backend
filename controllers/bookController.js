@@ -71,7 +71,7 @@ export const getBooks = async (req, res) => {
 };
 
 export const getBook = async (req, res) => {
-  const book = await Book.findById(req.params.id).populate("author","name email avatar bio"); // populate all author fields
+  const book = await Book.findById(req.params.id).populate("author"); // populate all author fields
   if (!book) return res.status(404).json({ error: "Book not found" });
   res.json(book);
 };
@@ -85,13 +85,19 @@ export const getBooksByAuthor = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing author id" });
     }
-    const books = await Book.find({ author: authorId });
+    const books = await Book.find({ author: authorId }).populate("author");   
+    if (!books || books.length === 0) {
+      return res.status(404).json({ success: false, message: "No books found" });
+    }
     res.status(200).json({ success: true, books });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
-// ...existing code...
+
+
+
+// delete book by id
 export const deleteBook = async (req, res) => {
   await Book.findByIdAndDelete(req.params.id);
   res.json({ message: "Book deleted" });
