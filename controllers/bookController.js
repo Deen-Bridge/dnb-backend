@@ -2,6 +2,8 @@ import Book from "../models/Book.js";
 import cloudinary from "../utils/cloudinary.js";
 
 export const createBook = async (req, res) => {
+  console.log("Creating book with data:", req.body);
+  console.log("Files received:", req.files);
   try {
     const { title, category, price, readCount, rating, description } = req.body;
 
