@@ -49,12 +49,7 @@ export const createSpace = async (req, res) => {
       thumbnailUrl = thumbnailUpload.secure_url;
     }
 
-    const host = {
-      userId: user._id,
-      name: user.name,
-      image: user.avatar,
-      bio: user.bio || "",
-    };
+
 
     const space = await Space.create({
       title,
@@ -65,7 +60,7 @@ export const createSpace = async (req, res) => {
       status: status || "upcoming",
       eventDate,
       duration,
-      host,
+      host: user._id,
       speakers: speakers || [],
     });
     res.status(201).json({ success: true, space });
