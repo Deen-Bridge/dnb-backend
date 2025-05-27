@@ -13,9 +13,9 @@ import {
 const router = express.Router();
 
 // Get all spaces
-router.get("/", protect, getSpaces);
+router.get("/", getSpaces);
 // Get a single space by ID
-router.get("/:id", protect, getSpaceById);
+router.get("/:id", getSpaceById);
 // Create a new space
 router.post("/", protect, upload.fields([{ name: "thumbnail", maxCount: 1 }]), createSpace);
 // Update a space
