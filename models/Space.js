@@ -28,7 +28,7 @@ const spaceSchema = new mongoose.Schema(
     speakers: [
       {
         name: { type: String, required: true },
-        image: { type: String },
+        avatar: { type: String },
         bio: { type: String },
         userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       },
@@ -42,7 +42,7 @@ const spaceSchema = new mongoose.Schema(
       enum: ["live", "upcoming", "ended"],
       default: "upcoming",
     },
-    startTime: {
+    eventDate: {
       type: Date,
       required: true,
     },
