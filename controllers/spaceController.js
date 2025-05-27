@@ -5,7 +5,7 @@ import cloudinary from "../utils/cloudinary.js";
 export const getSpaces = async (_req, res) => {
   try {
     const spaces = await Space.find()
-      .populate("host.userId", "name email avatar")
+      .populate("host", "name email avatar") // host is an ObjectId, not an object with userId
       .populate("speakers.userId", "name email avatar");
     res.status(200).json({ success: true, spaces });
   } catch (error) {
@@ -13,12 +13,13 @@ export const getSpaces = async (_req, res) => {
   }
 };
 
-// 📖 Get a single space by ID
 export const getSpaceById = async (req, res) => {
   try {
+
     const space = await Space.findById(req.params.id)
-      .populate("host.userId", "name email avatar")
+      .populate("host", "name email avatar")
       .populate("speakers.userId", "name email avatar");
+
     if (!space) return res.status(404).json({ success: false, message: "Space not found" });
     res.status(200).json({ success: true, space });
   } catch (error) {
