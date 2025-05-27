@@ -1,5 +1,7 @@
 import express from "express";
 import { protect } from "../middlewares/authMiddleware.js";
+import upload from "../middlewares/upload.js";
+
 import {
   getSpaces,
   getSpaceById,
@@ -15,7 +17,7 @@ router.get("/", protect, getSpaces);
 // Get a single space by ID
 router.get("/:id", protect, getSpaceById);
 // Create a new space
-router.post("/", protect, createSpace);
+router.post("/", protect, upload.fields([{ name: "thumbnail", maxCount: 1 }]), createSpace);
 // Update a space
 router.put("/:id", protect, updateSpace);
 // Delete a space

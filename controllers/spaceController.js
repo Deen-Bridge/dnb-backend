@@ -1,4 +1,5 @@
 import Space from "../models/Space.js";
+import cloudinary from "../utils/cloudinary.js";
 
 // 📚 Get all spaces
 export const getSpaces = async (_req, res) => {
@@ -26,25 +27,43 @@ export const getSpaceById = async (req, res) => {
 };
 
 // ➕ Create a new space
+
 export const createSpace = async (req, res) => {
   try {
-    const { title, description, category, thumbnail, price, status, startTime, duration, speakers } = req.body;
-    // Host is the logged-in user
+    const { title, description, category, price, status, eventDate, duration, speakers } = req.body;
     const user = req.user; // from auth middleware
+
+    // Handle thumbnail upload
+    let thumbnailUrl = "";
+    if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
+      const thumbnailUpload = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: "spaces/thumbnails" },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+        stream.end(req.files.thumbnail[0].buffer);
+      });
+      thumbnailUrl = thumbnailUpload.secure_url;
+    }
+
     const host = {
       userId: user._id,
       name: user.name,
       image: user.avatar,
       bio: user.bio || "",
     };
+
     const space = await Space.create({
       title,
       description,
       category,
-      thumbnail,
+      thumbnail: thumbnailUrl,
       price: price || 0,
       status: status || "upcoming",
-      startTime,
+      eventDate,
       duration,
       host,
       speakers: speakers || [],
