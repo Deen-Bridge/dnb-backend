@@ -9,6 +9,7 @@ import reelsRoute from "./routes/reelsRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import bookRoutes from "./routes/bookRoutes.js";
 import spacesRoutes from "./routes/spaceRoutes.js";
+import emailRoutes from "./routes/emailRoutes.js";
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 
@@ -45,6 +46,7 @@ app.use("/api/reels", reelsRoute);
 app.use("/api/books", bookRoutes);
 app.use("/api/spaces", spacesRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/email", emailRoutes);
 // Socket.io for real-time messaging
 io.on("connection", (socket) => {
   console.log("⚡ New WebSocket connection:", socket.id);
