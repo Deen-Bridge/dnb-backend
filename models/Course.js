@@ -15,7 +15,7 @@ const courseSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    image: {
+    thumbnail: {
       type: String, // image URL
     },
     video: {
