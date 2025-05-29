@@ -24,15 +24,6 @@ const spaceSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    // Guest speakers (array of user references or objects)
-    speakers: [
-      {
-        name: { type: String, required: true },
-        avatar: { type: String },
-        bio: { type: String },
-        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-      },
-    ],
     price: {
       type: Number,
       default: 0, // 0 means free, any other value means paid

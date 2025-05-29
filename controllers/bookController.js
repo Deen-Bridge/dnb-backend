@@ -68,12 +68,12 @@ export const createBook = async (req, res) => {
 };
 
 export const getBooks = async (req, res) => {
-  const books = await Book.find().populate("author"); // populate all author fields
+  const books = await Book.find().populate("author").populate("reviews.user");; // populate all author fields
   res.json(books);
 };
 
 export const getBook = async (req, res) => {
-  const book = await Book.findById(req.params.id).populate("author"); // populate all author fields
+  const book = await Book.findById(req.params.id).populate("author").populate("reviews.user");; // populate all author fields
   if (!book) return res.status(404).json({ error: "Book not found" });
   res.json(book);
 };
