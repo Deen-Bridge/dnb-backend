@@ -22,8 +22,8 @@ export const createCourse = async (req, res) => {
     let imageUrl = null;
     let videoUrl = null;
 
-    if (req.files?.image?.[0]) {
-      const imageBuffer = req.files.image[0].buffer;
+    if (req.files?.thumbnail?.[0]) {
+      const imageBuffer = req.files.thumbnail[0].buffer;
       const imageResult = await uploadToCloudinary(
         imageBuffer,
         "courses",
@@ -47,8 +47,8 @@ export const createCourse = async (req, res) => {
       description,
       category,
       price,
-      createdBy :req.user._id,
-      image: imageUrl,
+      createdBy: req.user._id,
+      thumbnail: imageUrl,
       video: videoUrl,
     });
 
@@ -74,7 +74,7 @@ export const getCourses = async (_req, res) => {
 // 📘 Get a single course
 export const getCourseById = async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id);
+    const course = await Course.findById(req.params.id).populate("createdBy");
     if (!course)
       return res
         .status(404)
