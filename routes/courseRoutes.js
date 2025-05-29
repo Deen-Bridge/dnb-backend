@@ -19,7 +19,7 @@ router.post(
   "/",
   protect,
   upload.fields([
-    { name: "image", maxCount: 1 },
+    { name: "thumbnail", maxCount: 1 },
     { name: "video", maxCount: 1 },
   ]),
   createCourse
@@ -35,7 +35,7 @@ router.put(
   "/:id",
   protect,
   upload.fields([
-    { name: "image", maxCount: 1 },
+    { name: "thumbnail", maxCount: 1 },
     { name: "video", maxCount: 1 },
   ]),
   updateCourse
