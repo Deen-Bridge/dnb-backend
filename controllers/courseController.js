@@ -1,5 +1,6 @@
 import Course from "../models/Course.js";
 import cloudinary from "../utils/cloudinary.js";
+import mongoose from "mongoose"; // ensure this is imported if you added validation
 
 // Helper function to upload buffer
 const uploadToCloudinary = (fileBuffer, folder, resourceType = "image") => {
@@ -87,18 +88,37 @@ export const getCourseById = async (req, res) => {
 };
 
 // 📘 Get all courses created by a specific user
+
 export const getCoursesByUser = async (req, res) => {
+  console.log("⚡ Reached getCoursesByUser handler");
+
   try {
-    const { createdBy } = req.query; // expects ?createdBy=userId in the query string
+    const { createdBy } = req.query;
+    console.log("🧪 Query param received:", createdBy);
+
     if (!createdBy) {
+      console.log("❌ Missing user ID");
       return res.status(400).json({ success: false, message: "Missing user id" });
     }
+
+    // Extra safety to avoid invalid ObjectId crashes
+    if (!mongoose.Types.ObjectId.isValid(createdBy)) {
+      console.log("❌ Invalid ObjectId format");
+      return res.status(400).json({ success: false, message: "Invalid user ID format" });
+    }
+
+    console.log("✅ Finding courses...");
     const courses = await Course.find({ createdBy });
+    console.log("✅ Found courses:", courses);
+
     res.status(200).json({ success: true, courses });
+
   } catch (error) {
+    console.error("❌ Unexpected Error in getCoursesByUser:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 // 📥 Enroll a user in a course
 export const enrollInCourse = async (req, res) => {

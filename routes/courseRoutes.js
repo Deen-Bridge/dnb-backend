@@ -26,7 +26,7 @@ router.post(
 );
 
 // New route for getting courses by user
-router.get("/user", protect, getCoursesByUser);
+router.get("/user", getCoursesByUser);
 
 router.post("/:id/enroll", protect, enrollInCourse);
 
