@@ -12,8 +12,9 @@ import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", getCourses);
-router.get("/:id", getCourseById);
+router.get("/", getCourses); // GET /api/courses
+router.get("/user", getCoursesByUser); // ✅ GET /api/courses/user
+router.get("/:id", getCourseById); // GET /api/courses/123
 
 router.post(
   "/",
@@ -25,12 +26,8 @@ router.post(
   createCourse
 );
 
-// New route for getting courses by user
-router.get("/user", getCoursesByUser);
-
 router.post("/:id/enroll", protect, enrollInCourse);
 
-// 🔄 Edit/Update course
 router.put(
   "/:id",
   protect,
@@ -40,5 +37,4 @@ router.put(
   ]),
   updateCourse
 );
-
 export default router;
