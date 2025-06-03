@@ -89,7 +89,7 @@ export const getBooksByAuthor = async (req, res) => {
     }
     const books = await Book.find({ author: authorId }).populate("author");   
     if (!books || books.length === 0) {
-      return res.status(404).json({ success: false, message: "No books found" });
+      return res.status(200).json({ success: false, message: "No books found" });
     }
     res.status(200).json({ success: true, books });
   } catch (error) {
