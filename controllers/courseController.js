@@ -108,9 +108,11 @@ export const getCoursesByUser = async (req, res) => {
     }
 
     console.log("✅ Finding courses...");
-    const courses = await Course.find({ createdBy });
+    const courses = await Course.find({ createdBy }).populate("createdBy");
     console.log("✅ Found courses:", courses);
-
+   if (!courses || courses.length === 0) {
+      return res.status(200).json({ success: false, message: "No courses found" });
+    }
     res.status(200).json({ success: true, courses });
 
   } catch (error) {
