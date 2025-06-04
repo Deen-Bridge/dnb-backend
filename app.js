@@ -28,7 +28,47 @@ const io = new SocketIOServer(server, {
   cors: {
     origin: ["https://dnb-frontend.vercel.app", "http://localhost:3000"],
     credentials: true,
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   },
+  transports: ["websocket", "polling"],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 45000,
+  allowEIO3: true,
+  path: "/socket.io",
+  serveClient: false,
+  cookie: false,
+});
+
+// Debug Socket.IO initialization
+console.log("🔧 Socket.IO server configuration:", {
+  cors: io._opts.cors,
+  transports: io._opts.transports,
+  path: io._opts.path,
+});
+
+// Socket.IO middleware for authentication
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  console.log(
+    "🔑 Socket connection attempt with token:",
+    token ? "Present" : "Missing"
+  );
+
+  // For development, allow connections without token
+  if (process.env.NODE_ENV === "development") {
+    console.log("🔓 Development mode: Allowing connection without token");
+    return next();
+  }
+
+  if (!token) {
+    console.log("❌ No token provided");
+    return next(new Error("Authentication error"));
+  }
+
+  // Verify token here if needed
+  next();
 });
 
 // Middlewares
@@ -55,53 +95,86 @@ app.use("/api/messages", messageRoutes);
 // Socket.io for real-time messaging
 io.on("connection", (socket) => {
   console.log("⚡ New WebSocket connection:", socket.id);
+  console.log("📡 Socket transport:", socket.conn.transport.name);
+  console.log(
+    "🔑 Auth token:",
+    socket.handshake.auth.token ? "Present" : "Missing"
+  );
 
-  socket.on("joinRoom", ({ conversationId }) => {
+  // Handle transport upgrade
+  socket.conn.on("upgrade", (transport) => {
+    console.log("🔄 Socket transport upgraded to:", transport.name);
+  });
+
+  socket.on("joinRoom", ({ conversationId }, callback) => {
     if (!conversationId) {
       console.error("No conversationId provided for joinRoom");
+      if (callback) callback({ error: "No conversationId provided" });
       return;
     }
     console.log(`Socket ${socket.id} joined room: ${conversationId}`);
     socket.join(conversationId);
 
     // Acknowledge room join
+    if (callback) callback({ success: true, conversationId });
     socket.emit("roomJoined", { conversationId });
   });
 
-  socket.on("sendMessage", async (data) => {
+  socket.on("sendMessage", async (data, callback) => {
+    console.log("📨 Received message data:", data);
     const { conversationId, sender, text } = data;
 
     if (!conversationId || !sender || !text) {
-      console.error("Missing required fields in message data:", data);
+      console.error("❌ Missing required fields in message data:", data);
+      if (callback) callback({ error: "Missing required fields" });
       return;
     }
 
     try {
+      console.log("💾 Saving message to database...");
       const newMessage = await new Message({
         conversationId,
         sender,
         text,
       }).save();
 
+      console.log("✅ Message saved:", newMessage);
+
       const populated = await newMessage.populate("sender", "name avatar");
+      console.log("✅ Message populated with sender:", populated);
 
       // Broadcast to all clients in the room including sender
       io.in(conversationId).emit("receiveMessage", populated);
+      console.log(`📢 Message broadcast to room ${conversationId}`);
+
+      // Just acknowledge success without sending the message again
+      if (callback) {
+        callback({ success: true });
+      }
 
       // Log for debugging
-      console.log(`Message sent to room ${conversationId}:`, {
+      console.log(`📝 Message details:`, {
+        id: populated._id,
         sender: populated.sender._id,
         text: populated.text,
         timestamp: populated.createdAt,
+        room: conversationId,
       });
     } catch (err) {
-      console.error("Error saving message:", err.message);
+      console.error("❌ Error saving message:", err.message);
+      if (callback) {
+        callback({ error: "Failed to save message" });
+      }
       socket.emit("error", { message: "Failed to save message" });
     }
   });
 
-  socket.on("disconnect", () => {
-    console.log("🛑 WebSocket disconnected:", socket.id);
+  socket.on("disconnect", (reason) => {
+    console.log("🛑 WebSocket disconnected:", socket.id, "Reason:", reason);
+  });
+
+  socket.on("error", (error) => {
+    console.error("Socket error:", error);
   });
 });
 
