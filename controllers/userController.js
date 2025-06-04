@@ -7,27 +7,78 @@ export const updateUser = async (req, res) => {
     const updates = req.body;
     let avatarUrl = updates.avatar;
 
-    // If avatar file is uploaded, upload to Cloudinary
+    // If avatar file is uploaded, upload to Cloudinary with timeout
     if (req.file) {
-      const result = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          { folder: "user-avatars" },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
-        );
-        stream.end(req.file.buffer);
-      });
-      avatarUrl = result.secure_url;
+      try {
+        const result = await Promise.race([
+          new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+              { folder: "user-avatars" },
+              (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+              }
+            );
+            stream.end(req.file.buffer);
+          }),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Cloudinary upload timeout")),
+              10000
+            )
+          ),
+        ]);
+        avatarUrl = result.secure_url;
+      } catch (uploadError) {
+        console.error("Avatar upload error:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload avatar. Please try again.",
+        });
+      }
     }
-    if (avatarUrl) updates.avatar = avatarUrl;
 
-    const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true });
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    res.status(200).json({ success: true, user });
+    // Validate updates
+    const allowedUpdates = [
+      "name",
+      "email",
+      "bio",
+      "avatar",
+      "location",
+      "interests",
+    ];
+    const filteredUpdates = Object.keys(updates)
+      .filter((key) => allowedUpdates.includes(key))
+      .reduce((obj, key) => {
+        obj[key] = updates[key];
+        return obj;
+      }, {});
+
+    if (avatarUrl) filteredUpdates.avatar = avatarUrl;
+
+    const user = await User.findByIdAndUpdate(req.params.id, filteredUpdates, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Profile update error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update profile. Please try again.",
+      error: error.message,
+    });
   }
 };
 
@@ -35,10 +86,23 @@ export const updateUser = async (req, res) => {
 export const getUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    res.status(200).json({ success: true, user });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+    res.status(200).json({
+      success: true,
+      user,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Get user error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user. Please try again.",
+      error: error.message,
+    });
   }
 };
 
@@ -46,9 +110,22 @@ export const getUser = async (req, res) => {
 export const deleteUser = async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    res.status(200).json({ success: true, message: "User deleted" });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+    res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Delete user error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete user. Please try again.",
+      error: error.message,
+    });
   }
 };
