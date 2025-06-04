@@ -3,7 +3,7 @@ import axios from "axios";
 const EMAILJS_SERVICE_ID = "service_5cyu19r";
 const EMAILJS_TEMPLATE_ID = "template_ph4f0rl";
 const EMAILJS_PRIVATE_KEY = "xsR_t0uapauk8d_6Tk0Y9";
-const EMAILJS_PUBLIC_KEY = "p_hFoYPb6o0w7206";
+const EMAILJS_PUBLIC_KEY = "p_hFoYPb6o0w7206-";
 const EMAILJS_API_URL = "https://api.emailjs.com/api/v1.0/email/send";
 
 const sendMail = async (otp, email) => {
