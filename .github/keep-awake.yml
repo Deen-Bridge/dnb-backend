@@ -1,0 +1,14 @@
+name: Keep Render Awake
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes UTC
+  workflow_dispatch:        # Allows manual trigger
+
+jobs:
+  ping-render:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Curl your Render backend
+        run: curl https://dnb-backend-api.onrender.com/ping
