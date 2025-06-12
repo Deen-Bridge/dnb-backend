@@ -181,6 +181,9 @@ io.on("connection", (socket) => {
 app.get("/", (req, res) => {
   res.send("🌍 Welcome to DeenBridge API");
 });
+app.get("/ping", (req, res) => {
+  res.status(200).send("ping pong ping pong ping pong");
+});
 
 export { server }; // so we can start it with HTTP + Socket.io
 export default app;
