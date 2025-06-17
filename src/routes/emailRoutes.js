@@ -1,6 +1,5 @@
 import express from "express";
-import sendMail from "../services/emails/sendMail.js";
-
+import sendMail from "../../services/emails/sendMail.js"
 const router = express.Router();
 
 router.post("/", async (req, res) => {

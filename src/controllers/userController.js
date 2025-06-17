@@ -1,5 +1,5 @@
 import User from "../models/User.js";
-import cloudinary from "../utils/cloudinary.js";
+import cloudinary from "../../utils/cloudinary.js";
 
 // Update user profile (including avatar upload to Cloudinary)
 export const updateUser = async (req, res) => {

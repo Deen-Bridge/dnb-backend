@@ -1,6 +1,5 @@
 import Reel from "../models/Reel.js";
-import cloudinary from "../utils/cloudinary.js";
-
+import cloudinary from "../../utils/cloudinary.js";
 
 //get all reels
 export const getReels = async (_req, res) => {
@@ -11,10 +10,6 @@ export const getReels = async (_req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-
-
-
 
 // 🎬 Create a Reel
 export const createReel = async (req, res) => {

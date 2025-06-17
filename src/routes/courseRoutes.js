@@ -6,6 +6,7 @@ import {
   enrollInCourse,
   getCoursesByUser,
   updateCourse,
+  fetchRecommendedCourses,
 } from "../controllers/courseController.js";
 import upload from "../middlewares/upload.js";
 import { protect } from "../middlewares/authMiddleware.js";
@@ -14,6 +15,7 @@ const router = express.Router();
 
 router.get("/", getCourses); // GET /api/courses
 router.get("/user", getCoursesByUser); // ✅ GET /api/courses/user
+router.get("/recom", fetchRecommendedCourses);
 router.get("/:id", getCourseById); // GET /api/courses/123
 
 router.post(

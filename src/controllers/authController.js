@@ -2,7 +2,7 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import cloudinary from "../utils/cloudinary.js";
+import cloudinary from "../middlewares/upload.js"
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
