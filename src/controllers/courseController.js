@@ -1,5 +1,5 @@
 import Course from "../models/Course.js";
-import cloudinary from "../utils/cloudinary.js";
+import cloudinary from "../../utils/cloudinary.js";
 import mongoose from "mongoose"; // ensure this is imported if you added validation
 
 // Helper function to upload buffer
@@ -190,4 +190,15 @@ export const updateCourse = async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+};
+
+
+
+// recommended books for user based on their profile interest
+export const fetchRecommendedCourses = async (req, res) => {
+  try {
+    const { interests } = req.body;
+    const recommmended = await Course.find().$where(category === interests);
+    res.status(200).json({ success: true, recommmended });
+  } catch (e) {}
 };

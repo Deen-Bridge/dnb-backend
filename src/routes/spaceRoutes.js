@@ -7,7 +7,7 @@ import {
   getSpaceById,
   createSpace,
   updateSpace,
-  deleteSpace
+  deleteSpace,
 } from "../controllers/spaceController.js";
 
 const router = express.Router();
@@ -17,7 +17,12 @@ router.get("/", getSpaces);
 // Get a single space by ID
 router.get("/:id", getSpaceById);
 // Create a new space
-router.post("/", protect, upload.fields([{ name: "thumbnail", maxCount: 1 }]), createSpace);
+router.post(
+  "/",
+  protect,
+  upload.fields([{ name: "thumbnail", maxCount: 1 }]),
+  createSpace
+);
 // Update a space
 router.put("/:id", protect, updateSpace);
 // Delete a space
