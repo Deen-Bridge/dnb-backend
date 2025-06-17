@@ -1,6 +1,7 @@
 import Book from "../models/Book.js";
-import cloudinary from "../utils/cloudinary.js";
+import cloudinary from "../../utils/cloudinary.js";
 
+//cretae a book
 export const createBook = async (req, res) => {
   console.log("Creating book with data:", req.body);
   console.log("Files received:", req.files);
@@ -67,18 +68,24 @@ export const createBook = async (req, res) => {
   }
 };
 
+
+// get all books in the store
 export const getBooks = async (req, res) => {
-  const books = await Book.find().populate("author").populate("reviews.user");; // populate all author fields
+  const books = await Book.find().populate("author").populate("reviews.user"); // populate all author fields
   res.json(books);
 };
 
+
+// get a particular book
 export const getBook = async (req, res) => {
-  const book = await Book.findById(req.params.id).populate("author").populate("reviews.user");; // populate all author fields
+  const book = await Book.findById(req.params.id)
+    .populate("author")
+    .populate("reviews.user"); // populate all author fields
   if (!book) return res.status(404).json({ error: "Book not found" });
   res.json(book);
 };
 
-// ...existing code...
+// get books created by the author
 export const getBooksByAuthor = async (req, res) => {
   try {
     const { authorId } = req.params; // Get authorId from route params
@@ -87,9 +94,11 @@ export const getBooksByAuthor = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing author id" });
     }
-    const books = await Book.find({ author: authorId }).populate("author");   
+    const books = await Book.find({ author: authorId }).populate("author");
     if (!books || books.length === 0) {
-      return res.status(200).json({ success: false, message: "No books found" });
+      return res
+        .status(200)
+        .json({ success: false, message: "No books found" });
     }
     res.status(200).json({ success: true, books });
   } catch (error) {
@@ -97,21 +106,15 @@ export const getBooksByAuthor = async (req, res) => {
   }
 };
 
-
-
 // delete book by id
+
 export const deleteBook = async (req, res) => {
   await Book.findByIdAndDelete(req.params.id);
   res.json({ message: "Book deleted" });
 };
 
-
-
-
-
-
-
 // review books
+
 export const addBookReview = async (req, res) => {
   const { rating, comment } = req.body;
   const book = await Book.findById(req.params.id);
@@ -125,7 +128,9 @@ export const addBookReview = async (req, res) => {
     (r) => r.user.toString() === req.user._id.toString()
   );
   if (alreadyReviewed) {
-    return res.status(400).json({ success: false, message: "Book already reviewed by this user" });
+    return res
+      .status(400)
+      .json({ success: false, message: "Book already reviewed by this user" });
   }
 
   const review = {
@@ -138,8 +143,21 @@ export const addBookReview = async (req, res) => {
 
   // Optionally update average rating and review count
   book.rating =
-    book.reviews.reduce((acc, item) => item.rating + acc, 0) / book.reviews.length;
+    book.reviews.reduce((acc, item) => item.rating + acc, 0) /
+    book.reviews.length;
 
   await book.save();
-  res.status(201).json({ success: true, message: "Review added", reviews: book.reviews });
+  res
+    .status(201)
+    .json({ success: true, message: "Review added", reviews: book.reviews });
+};
+
+
+// recommended books for user based on their profile interest
+export const fetchRecommendedBooks = async (req, res) => {
+  try {
+    const { interests } = req.body;
+    const recommmended = await Book.find().$where(category === interests);
+    res.status(200).json({ success: true, recommmended });
+  } catch (e) {}
 };
