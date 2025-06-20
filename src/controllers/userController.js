@@ -43,8 +43,11 @@ export const updateUser = async (req, res) => {
       "name",
       "email",
       "bio",
+      "age",
       "avatar",
-      "location",
+      "language",
+      "gender",
+      "country",
       "interests",
     ];
     const filteredUpdates = Object.keys(updates)
