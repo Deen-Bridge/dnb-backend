@@ -51,6 +51,35 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+
+    purchasedBooks: {
+      type: [
+        {
+          bookId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Book",
+          },
+          purchaseDate: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+      ],
+    },
+    purchasedCourses: {
+      type: [
+        {
+          courseId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Course",
+          },
+          purchaseDate: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+      ],
+    },
   },
   { timestamps: true }
 );

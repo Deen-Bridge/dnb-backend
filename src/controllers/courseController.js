@@ -94,7 +94,7 @@ export const getCoursesByUser = async (req, res) => {
 
   try {
     const { createdBy } = req.query;
-    console.log("🧪 Query param received:", createdBy);
+ 
 
     if (!createdBy) {
       console.log("❌ Missing user ID");
@@ -109,7 +109,7 @@ export const getCoursesByUser = async (req, res) => {
 
     console.log("✅ Finding courses...");
     const courses = await Course.find({ createdBy }).populate("createdBy");
-    console.log("✅ Found courses:", courses);
+
    if (!courses || courses.length === 0) {
       return res.status(200).json({ success: false, message: "No courses found" });
     }
