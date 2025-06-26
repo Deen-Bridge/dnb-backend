@@ -37,6 +37,16 @@ const spaceSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    eventTime: {
+      type: String, // e.g., "14:00" or "18:30"
+      required: true,
+    },
+    waitList: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     duration: {
       type: Number, // in minutes
       required: true,

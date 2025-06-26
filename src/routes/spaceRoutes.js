@@ -7,6 +7,7 @@ import {
   getSpaceById,
   createSpace,
   updateSpace,
+  joinWaitList,
   deleteSpace,
 } from "../controllers/spaceController.js";
 
@@ -23,8 +24,9 @@ router.post(
   upload.fields([{ name: "thumbnail", maxCount: 1 }]),
   createSpace
 );
+router.post("/:id/waitlist", protect, joinWaitList);
 // Update a space
-router.put("/:id", protect, updateSpace);
+router.put("/update/:id", protect, updateSpace);
 // Delete a space
 router.delete("/:id", protect, deleteSpace);
 
