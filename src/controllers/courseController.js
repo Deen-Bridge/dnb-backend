@@ -192,9 +192,44 @@ export const updateCourse = async (req, res) => {
   }
 };
 
+export const addCourseReview = async (req, res) => {
+  const { rating, comment } = req.body;
+  const course = await Course.findById(req.params.id);
 
+  if (!course) {
+    return res.status(404).json({ success: false, message: "course not found" });
+  }
 
-// recommended books for user based on their profile interest
+  // Optional: Prevent duplicate reviews by the same user
+  const alreadyReviewed = course.reviews.find(
+    (r) => r.user.toString() === req.user._id.toString()
+  );
+  if (alreadyReviewed) {
+    return res
+      .status(400)
+      .json({ success: false, message: "course already reviewed by this user" });
+  }
+
+  const review = {
+    user: req.user._id,
+    comment,
+    rating: Number(rating),
+  };
+
+  course.reviews.push(review);
+
+  // Optionally update average rating and review count
+  course.rating =
+    course.reviews.reduce((acc, item) => item.rating + acc, 0) /
+    course.reviews.length;
+
+  await course.save();
+  res
+    .status(201)
+    .json({ success: true, message: "Review added", reviews: course.reviews });
+};
+
+// recommended courses for user based on their profile interest
 export const fetchRecommendedCourses = async (req, res) => {
   try {
     const { interests } = req.body;

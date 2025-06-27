@@ -6,6 +6,7 @@ import {
   enrollInCourse,
   getCoursesByUser,
   updateCourse,
+  addCourseReview,
   fetchRecommendedCourses,
 } from "../controllers/courseController.js";
 import upload from "../middlewares/upload.js";
@@ -29,6 +30,7 @@ router.post(
 );
 
 router.post("/:id/enroll", protect, enrollInCourse);
+router.post("/:id/reviews", protect, addCourseReview);
 
 router.put(
   "/:id",

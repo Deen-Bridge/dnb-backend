@@ -56,7 +56,7 @@ export const createSpace = async (req, res) => {
       category,
       thumbnail: thumbnailUrl,
       price: price || 0,
-      status: status || "upcoming",
+      status:  "upcoming",
       eventDate,
       duration,
       host: user._id,
