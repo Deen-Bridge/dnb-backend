@@ -107,7 +107,6 @@ export const getBooksByAuthor = async (req, res) => {
 };
 
 // delete book by id
-
 export const deleteBook = async (req, res) => {
   await Book.findByIdAndDelete(req.params.id);
   res.json({ message: "Book deleted" });

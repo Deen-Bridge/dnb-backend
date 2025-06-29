@@ -10,7 +10,7 @@ import userRoutes from "./src/routes/userRoutes.js";
 import bookRoutes from "./src/routes/bookRoutes.js";
 import spacesRoutes from "./src/routes/spaceRoutes.js";
 import emailRoutes from "./src/routes/emailRoutes.js";
-
+import purchaseRoutes from "./src/routes/purchaseBookRoutes.js";
 
 // Load env
 import dotenv from "dotenv";
@@ -39,6 +39,7 @@ app.use("/api/books", bookRoutes);
 app.use("/api/spaces", spacesRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/email", emailRoutes);
+app.use("/api/purchase", purchaseRoutes)
 
 
 
