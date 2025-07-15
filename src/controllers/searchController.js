@@ -26,13 +26,11 @@ export const searchAll = async (req, res) => {
       .select("_id title")
       .lean();
     console.log("Books found:", books);
-    console.log("Search query:", q);
-    const users = await User.find({}).lean();
-    console.log("All users:", users);
-    const usersByName = await User.find({
-      name: { $regex: q, $options: "i" },
-    }).lean();
-    console.log("Users by regex:", usersByName);
+    // Search Users
+    const users = await User.find({ name: queryRegex })
+      .select("_id name")
+      .lean();
+    console.log("Users found:", users);
     // Search Spaces
     const spaces = await Space.find({ title: queryRegex })
       .select("_id title")
