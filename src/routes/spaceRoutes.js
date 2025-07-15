@@ -9,12 +9,15 @@ import {
   updateSpace,
   joinWaitList,
   deleteSpace,
+  getSpacesByHost
 } from "../controllers/spaceController.js";
 
 const router = express.Router();
 
 // Get all spaces
 router.get("/", getSpaces);
+// Get all spaces by host (user)
+router.get("/by-host/:hostId", getSpacesByHost);
 // Get a single space by ID
 router.get("/:id", getSpaceById);
 // Create a new space

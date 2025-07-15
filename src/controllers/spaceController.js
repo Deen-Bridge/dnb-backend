@@ -56,7 +56,7 @@ export const createSpace = async (req, res) => {
       category,
       thumbnail: thumbnailUrl,
       price: price || 0,
-      status:  "upcoming",
+      status: "upcoming",
       eventDate,
       duration,
       host: user._id,
@@ -104,8 +104,6 @@ export const updateSpace = async (req, res) => {
   }
 };
 
-
-
 export const joinWaitList = async (req, res) => {
   try {
     const { id } = req.params; // space ID
@@ -129,6 +127,20 @@ export const joinWaitList = async (req, res) => {
     await space.save();
 
     res.status(200).json({ success: true, message: "Joined waitlist" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 📚 Get all spaces by a specific user (host)
+export const getSpacesByHost = async (req, res) => {
+  try {
+    const { hostId } = req.params;
+    const spaces = await Space.find({ host: hostId }).populate(
+      "host",
+      "name email avatar"
+    );
+    res.status(200).json({ success: true, spaces });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
