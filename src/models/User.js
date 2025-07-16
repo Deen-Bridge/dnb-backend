@@ -51,6 +51,19 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    // Follow system
+    following: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    followers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
 
     purchasedBooks: {
       type: [
