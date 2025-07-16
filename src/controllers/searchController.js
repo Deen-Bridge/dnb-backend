@@ -13,40 +13,73 @@ export const searchAll = async (req, res) => {
     }
     const queryRegex = new RegExp(q.trim(), "i");
     console.log("Search query:", q);
-    console.log("Regex used:", queryRegex);
-    console.log("Connected DB name:", mongoose.connection.name);
+
 
     // Search Courses
     const courses = await Course.find({ title: queryRegex })
-      .select("_id title")
+      .select("_id title description  price thumbnail")
       .lean();
     console.log("Courses found:", courses);
     // Search Books
     const books = await Book.find({ title: queryRegex })
-      .select("_id title")
+      .select("_id title description  price image author")
       .lean();
     console.log("Books found:", books);
     // Search Users
     const users = await User.find({ name: queryRegex })
-      .select("_id name")
+      .select("_id name email avatar role ")
       .lean();
     console.log("Users found:", users);
     // Search Spaces
     const spaces = await Space.find({ title: queryRegex })
-      .select("_id title")
+      .select(
+        "_id title description  price status eventDate duration host"
+      )
       .lean();
     console.log("Spaces found:", spaces);
     // Search Reels (by description)
     const reels = await Reel.find({ description: queryRegex })
-      .select("_id description")
+      .select("_id description createdBy")
       .lean();
     console.log("Reels found:", reels);
 
     const results = [
-      ...courses.map((c) => ({ type: "course", id: c._id, title: c.title })),
-      ...books.map((b) => ({ type: "book", id: b._id, title: b.title })),
-      ...users.map((u) => ({ type: "user", id: u._id, name: u.name })),
-      ...spaces.map((s) => ({ type: "space", id: s._id, title: s.title })),
+      ...courses.map((c) => ({
+        type: "course",
+        id: c._id,
+        title: c.title,
+        description: c.description,
+        price: c.price,
+        thumbnail: c.thumbnail,
+      })),
+      ...books.map((b) => ({
+        type: "book",
+        id: b._id,
+        title: b.title,
+        description: b.description,
+        category: b.category,
+        price: b.price,
+        image: b.image,
+        author: b.author,
+      })),
+      ...users.map((u) => ({
+        type: "user",
+        id: u._id,
+        name: u.name,
+        avatar: u.avatar,
+        role: u.role,
+      })),
+      ...spaces.map((s) => ({
+        type: "space",
+        id: s._id,
+        title: s.title,
+        description: s.description,
+        price: s.price,
+        status: s.status,
+        eventDate: s.eventDate,
+        duration: s.duration,
+        host: s.host,
+      })),
       ...reels.map((r) => ({
         type: "reel",
         id: r._id,
