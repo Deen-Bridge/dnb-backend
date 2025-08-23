@@ -1,4 +1,6 @@
-import User from "../models/User.js";
+import User from "../../models/User.js";
+
+
 
 export const purchaseBook = async (req, res) => {
   try {
@@ -23,6 +25,10 @@ export const purchaseBook = async (req, res) => {
     }
 
     user.purchasedBooks.push({ bookId });
+    // Increment booksRead stat
+    if (!user.stat) user.stat = {};
+    user.stat.booksRead = (user.stat.booksRead || 0) + 1;
+    
     await user.save();
 
     res.status(200).json({ success: true, message: "Book purchased" });

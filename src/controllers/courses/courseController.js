@@ -1,5 +1,5 @@
-import Course from "../models/Course.js";
-import cloudinary from "../../utils/cloudinary.js";
+import Course from "../../models/Course.js";
+import cloudinary from "../../../utils/cloudinary.js";
 import mongoose from "mongoose"; // ensure this is imported if you added validation
 
 // Helper function to upload buffer

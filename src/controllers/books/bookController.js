@@ -1,5 +1,5 @@
-import Book from "../models/Book.js";
-import cloudinary from "../../utils/cloudinary.js";
+import Book from "../../models/Book.js";
+import cloudinary from "../../../utils/cloudinary.js";
 
 //cretae a book
 export const createBook = async (req, res) => {

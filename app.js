@@ -4,13 +4,13 @@ import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import connectDB from "./src/config/db.js";
 import authRoutes from "./src/routes/authRoutes.js";
-import courseRoutes from "./src/routes/courseRoutes.js";
+import courseRoutes from "./src/routes/courses/courseRoutes.js";
 import reelsRoute from "./src/routes/reelsRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
-import bookRoutes from "./src/routes/bookRoutes.js";
+import bookRoutes from "./src/routes/books/bookRoutes.js"
 import spacesRoutes from "./src/routes/spaceRoutes.js";
 import emailRoutes from "./src/routes/emailRoutes.js";
-import purchaseRoutes from "./src/routes/purchaseBookRoutes.js";
+import purchaseRoutes from "./src/routes/books/purchaseBookRoutes.js";
 import searchRoutes from "./src/routes/searchRoutes.js";
 
 // Load env
@@ -43,13 +43,11 @@ app.use("/api/email", emailRoutes);
 app.use("/api/purchase", purchaseRoutes);
 app.use("/api/search", searchRoutes);
 
-
 app.get("/", (req, res) => {
   res.send("🌍 Welcome to DeenBridge API");
 });
 app.get("/ping", (req, res) => {
   res.status(200).send("ping pong ping pong ping pong");
 });
-
 
 export default app;

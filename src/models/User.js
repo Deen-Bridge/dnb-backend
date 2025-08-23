@@ -93,6 +93,11 @@ const userSchema = new mongoose.Schema(
         },
       ],
     },
+    stat: {
+      coursesEnrolled: { type: Number, default: 0 },
+      booksRead: { type: Number, default: 0 },
+      totalUptime: { type: Number, default: 0 }, // in seconds or minutes as you prefer
+    },
   },
   { timestamps: true }
 );
