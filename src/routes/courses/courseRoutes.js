@@ -8,9 +8,9 @@ import {
   updateCourse,
   addCourseReview,
   fetchRecommendedCourses,
-} from "../controllers/courseController.js";
-import upload from "../middlewares/upload.js";
-import { protect } from "../middlewares/authMiddleware.js";
+} from "../../controllers/courses/courseController.js";
+import upload from "../../middlewares/upload.js";
+import { protect } from "../../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
