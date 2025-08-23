@@ -1,24 +1,23 @@
 import express from "express";
-import upload from "../middlewares/upload.js";
+import upload from "../../middlewares/upload.js";
 import {
   createBook,
   getBooks,
   getBooksByAuthor,
   deleteBook,
   getBook,
-  fetchRecommendedBooks
-} from "../controllers/bookController.js";
-import { addBookReview } from "../controllers/bookController.js";
-import { protect } from "../middlewares/authMiddleware.js";
-
+  fetchRecommendedBooks,
+} from "../../controllers/books/bookController.js";
+import { addBookReview } from "../../controllers/books/bookController.js";
+import { protect } from "../../middlewares/authMiddleware.js";
 
 const router = express.Router();
-
 
 // creating book
 
 router.post(
-  "/", protect,
+  "/",
+  protect,
   upload.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "file", maxCount: 1 },
@@ -29,13 +28,13 @@ router.post(
 router.get("/", getBooks);
 
 // get recommended books for user
-router.get("/recom", fetchRecommendedBooks)
+router.get("/recom", fetchRecommendedBooks);
 
 //get a spefic book
 router.get("/:id", getBook);
 
 //get books  created by the author
-router.get("/by-author/:authorId", getBooksByAuthor); 
+router.get("/by-author/:authorId", getBooksByAuthor);
 
 // delete a book
 router.delete("/:id", deleteBook);
@@ -43,7 +42,4 @@ router.delete("/:id", deleteBook);
 //review a book
 router.post("/:id/reviews", protect, addBookReview);
 
-
 export default router;
-
-
