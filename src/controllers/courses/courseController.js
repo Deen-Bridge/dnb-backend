@@ -248,7 +248,9 @@ export const addCourseReview = async (req, res) => {
 export const fetchRecommendedCourses = async (req, res) => {
   try {
     const { interests } = req.body;
-    const recommmended = await Course.find().$where(category === interests);
-    res.status(200).json({ success: true, recommmended });
-  } catch (e) {}
+    const recommended = await Course.find({ category: { $in: interests } });
+    res.status(200).json({ success: true, recommended });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 };
