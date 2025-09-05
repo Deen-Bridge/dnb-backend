@@ -18,12 +18,14 @@ const uploadToCloudinary = (fileBuffer, folder, resourceType = "image") => {
 
 export const createCourse = async (req, res) => {
   try {
+    console.log("Received createCourse request");
     const { title, description, category, price } = req.body;
 
     let imageUrl = null;
     let videoUrl = null;
 
     if (req.files?.thumbnail?.[0]) {
+      console.log("Uploading thumbnail...");
       const imageBuffer = req.files.thumbnail[0].buffer;
       const imageResult = await uploadToCloudinary(
         imageBuffer,
@@ -31,9 +33,11 @@ export const createCourse = async (req, res) => {
         "image"
       );
       imageUrl = imageResult.secure_url;
+      console.log("Thumbnail uploaded:", imageUrl);
     }
 
     if (req.files?.video?.[0]) {
+      console.log("Uploading video...");
       const videoBuffer = req.files.video[0].buffer;
       const videoResult = await uploadToCloudinary(
         videoBuffer,
@@ -41,6 +45,7 @@ export const createCourse = async (req, res) => {
         "video"
       );
       videoUrl = videoResult.secure_url;
+      console.log("Video uploaded:", videoUrl);
     }
 
     const course = await Course.create({
@@ -53,19 +58,21 @@ export const createCourse = async (req, res) => {
       video: videoUrl,
     });
 
+    console.log("Course created:", course._id);
     res.status(201).json({ success: true, course });
   } catch (error) {
-    console.error(error);
+    console.error("Error in createCourse:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-
-
 // 📚 Get all courses
 export const getCourses = async (_req, res) => {
   try {
-    const courses = await Course.find().populate("createdBy", "name email avatar");
+    const courses = await Course.find().populate(
+      "createdBy",
+      "name email avatar"
+    );
     res.status(200).json({ success: true, courses });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -94,33 +101,36 @@ export const getCoursesByUser = async (req, res) => {
 
   try {
     const { createdBy } = req.query;
- 
 
     if (!createdBy) {
       console.log("❌ Missing user ID");
-      return res.status(400).json({ success: false, message: "Missing user id" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing user id" });
     }
 
     // Extra safety to avoid invalid ObjectId crashes
     if (!mongoose.Types.ObjectId.isValid(createdBy)) {
       console.log("❌ Invalid ObjectId format");
-      return res.status(400).json({ success: false, message: "Invalid user ID format" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid user ID format" });
     }
 
     console.log("✅ Finding courses...");
     const courses = await Course.find({ createdBy }).populate("createdBy");
 
-   if (!courses || courses.length === 0) {
-      return res.status(200).json({ success: false, message: "No courses found" });
+    if (!courses || courses.length === 0) {
+      return res
+        .status(200)
+        .json({ success: false, message: "No courses found" });
     }
     res.status(200).json({ success: true, courses });
-
   } catch (error) {
     console.error("❌ Unexpected Error in getCoursesByUser:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
-
 
 // 📥 Enroll a user in a course
 export const enrollInCourse = async (req, res) => {
@@ -197,7 +207,9 @@ export const addCourseReview = async (req, res) => {
   const course = await Course.findById(req.params.id);
 
   if (!course) {
-    return res.status(404).json({ success: false, message: "course not found" });
+    return res
+      .status(404)
+      .json({ success: false, message: "course not found" });
   }
 
   // Optional: Prevent duplicate reviews by the same user
@@ -207,7 +219,10 @@ export const addCourseReview = async (req, res) => {
   if (alreadyReviewed) {
     return res
       .status(400)
-      .json({ success: false, message: "course already reviewed by this user" });
+      .json({
+        success: false,
+        message: "course already reviewed by this user",
+      });
   }
 
   const review = {
