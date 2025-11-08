@@ -1,6 +1,7 @@
-// middlewares/authMiddleware.js
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+
+const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
 
 export const protect = async (req, res, next) => {
   let token;
@@ -14,7 +15,7 @@ export const protect = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
 
       // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, JWT_SECRET);
 
       // Attach user to request
       req.user = await User.findById(decoded.userId).select("-password");

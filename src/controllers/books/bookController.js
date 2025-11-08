@@ -1,4 +1,6 @@
+import axios from "axios";
 import Book from "../../models/Book.js";
+import User from "../../models/User.js";
 import cloudinary from "../../../utils/cloudinary.js";
 
 //cretae a book
@@ -29,7 +31,7 @@ export const createBook = async (req, res) => {
           else resolve(result);
         }
       );
-      stream.end(req.files.thumbnail[0].buffer); // Use buffer, not .stream.pipe
+      stream.end(req.files.thumbnail[0].buffer);
     });
 
     // Upload book file to Cloudinary (as raw file)
@@ -41,7 +43,7 @@ export const createBook = async (req, res) => {
           else resolve(result);
         }
       );
-      stream.end(req.files.file[0].buffer); // Use buffer, not .stream.pipe
+      stream.end(req.files.file[0].buffer);
     });
 
     // Debug: log Cloudinary upload results
@@ -68,13 +70,11 @@ export const createBook = async (req, res) => {
   }
 };
 
-
 // get all books in the store
 export const getBooks = async (req, res) => {
   const books = await Book.find().populate("author").populate("reviews.user"); // populate all author fields
   res.json(books);
 };
-
 
 // get a particular book
 export const getBook = async (req, res) => {
@@ -151,7 +151,6 @@ export const addBookReview = async (req, res) => {
     .json({ success: true, message: "Review added", reviews: book.reviews });
 };
 
-
 // recommended books for user based on their profile interest
 export const fetchRecommendedBooks = async (req, res) => {
   try {
@@ -159,4 +158,64 @@ export const fetchRecommendedBooks = async (req, res) => {
     const recommmended = await Book.find().$where(category === interests);
     res.status(200).json({ success: true, recommmended });
   } catch (e) {}
+};
+
+export const streamBookPreview = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?._id;
+
+    if (!id) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing book id" });
+    }
+
+    const book = await Book.findById(id).populate("author", "_id");
+    if (!book || !book.fileUrl) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Book file not found" });
+    }
+
+    let hasAccess = book.price === 0;
+
+    if (userId) {
+      if (book.author?._id?.toString() === userId.toString()) {
+        hasAccess = true;
+      } else {
+        const user = await User.findById(userId).select("purchasedBooks");
+        if (user?.purchasedBooks?.some((entry) => entry.bookId.toString() === id)) {
+          hasAccess = true;
+        }
+      }
+    }
+
+    if (!hasAccess) {
+      return res
+        .status(403)
+        .json({ success: false, message: "You do not have access to this book." });
+    }
+
+    const fileResponse = await axios.get(book.fileUrl, {
+      responseType: "stream",
+    });
+
+    res.setHeader(
+      "Content-Type",
+      fileResponse.headers["content-type"] || "application/pdf"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(`${book.title}.pdf`)}"`
+    );
+    res.setHeader("Cache-Control", "private, max-age=0, no-cache");
+
+    fileResponse.data.pipe(res);
+  } catch (error) {
+    console.error("Error streaming book preview:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Unable to stream book preview" });
+  }
 };

@@ -497,3 +497,52 @@ export const getRecommendations = async (req, res) => {
     });
   }
 };
+
+// Get user statistics
+export const getUserStats = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Get user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Get courses enrolled
+    const coursesEnrolled = await Course.countDocuments({
+      enrolledUsers: userId,
+    });
+
+    // Get books purchased/read (assuming books have a similar enrolledUsers or purchasedBy field)
+    const booksRead = await Book.countDocuments({
+      purchasedBy: userId,
+    });
+
+    // Calculate total uptime (days since user joined)
+    const accountCreatedDate = user.createdAt || new Date();
+    const now = new Date();
+    const diffTime = Math.abs(now - accountCreatedDate);
+    const totalUptime = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Convert to days
+
+    // Return stats
+    res.status(200).json({
+      success: true,
+      coursesEnrolled,
+      booksRead,
+      upcomingSessions: 0, // Placeholder - implement when sessions are available
+      messagesUnread: 0, // Placeholder - implement when messages are available
+      totalUptime,
+    });
+  } catch (error) {
+    console.error("Get user stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user statistics.",
+      error: error.message,
+    });
+  }
+};

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { buildMeetingUrl } from "../utils/jitsi.js";
 
 const spaceSchema = new mongoose.Schema(
   {
@@ -52,8 +53,34 @@ const spaceSchema = new mongoose.Schema(
       required: true,
     },
     enrolledUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    meetingRoom: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    meetingUrl: {
+      type: String,
+      required: true,
+    },
   },
   { timestamps: true }
 );
+
+spaceSchema.pre("validate", function (next) {
+  const domain = process.env.JITSI_MEET_DOMAIN || "meet.jit.si";
+
+  if (!this.meetingRoom) {
+    const suffix = Math.random().toString(36).slice(2, 8);
+    this.meetingRoom = `deenbridge-space-${this._id
+      .toString()
+      .slice(-6)}-${suffix}`;
+  }
+
+  if (!this.meetingUrl) {
+    this.meetingUrl = buildMeetingUrl(domain, this.meetingRoom);
+  }
+
+  next();
+});
 
 export default mongoose.model("Space", spaceSchema);

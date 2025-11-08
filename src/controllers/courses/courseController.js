@@ -1,70 +1,44 @@
 import Course from "../../models/Course.js";
-import cloudinary from "../../../utils/cloudinary.js";
-import mongoose from "mongoose"; // ensure this is imported if you added validation
+import mongoose from "mongoose";
+import logger from "../../config/logger.js";
+import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
 
-// Helper function to upload buffer
-const uploadToCloudinary = (fileBuffer, folder, resourceType = "image") => {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder, resource_type: resourceType },
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }
+/**
+ * Create a new course
+ * Note: Files are uploaded from frontend directly to Cloudinary
+ * Backend receives URLs instead of file buffers
+ */
+export const createCourse = catchAsync(async (req, res, next) => {
+  const { title, description, category, price, thumbnail, video } = req.body;
+
+  logger.info(`Creating course: ${title} by user: ${req.user._id}`);
+
+  // Validate required fields
+  if (!title || !description || !category) {
+    return next(
+      new APIError("Title, description, and category are required", 400)
     );
-    stream.end(fileBuffer);
-  });
-};
-
-export const createCourse = async (req, res) => {
-  try {
-    console.log("Received createCourse request");
-    const { title, description, category, price } = req.body;
-
-    let imageUrl = null;
-    let videoUrl = null;
-
-    if (req.files?.thumbnail?.[0]) {
-      console.log("Uploading thumbnail...");
-      const imageBuffer = req.files.thumbnail[0].buffer;
-      const imageResult = await uploadToCloudinary(
-        imageBuffer,
-        "courses",
-        "image"
-      );
-      imageUrl = imageResult.secure_url;
-      console.log("Thumbnail uploaded:", imageUrl);
-    }
-
-    if (req.files?.video?.[0]) {
-      console.log("Uploading video...");
-      const videoBuffer = req.files.video[0].buffer;
-      const videoResult = await uploadToCloudinary(
-        videoBuffer,
-        "courses",
-        "video"
-      );
-      videoUrl = videoResult.secure_url;
-      console.log("Video uploaded:", videoUrl);
-    }
-
-    const course = await Course.create({
-      title,
-      description,
-      category,
-      price,
-      createdBy: req.user._id,
-      thumbnail: imageUrl,
-      video: videoUrl,
-    });
-
-    console.log("Course created:", course._id);
-    res.status(201).json({ success: true, course });
-  } catch (error) {
-    console.error("Error in createCourse:", error);
-    res.status(500).json({ success: false, message: error.message });
   }
-};
+
+  // Create course with URLs from frontend
+  const course = await Course.create({
+    title,
+    description,
+    category,
+    price: price || 0,
+    createdBy: req.user._id,
+    thumbnail: thumbnail || null, // URL from frontend
+    video: video || null, // URL from frontend
+  });
+
+  logger.info(`✅ Course created successfully: ${course._id} - ${title}`);
+
+  res.status(201).json({
+    success: true,
+    message: "Course created successfully",
+    course,
+  });
+});
 
 // 📚 Get all courses
 export const getCourses = async (_req, res) => {
@@ -132,7 +106,7 @@ export const getCoursesByUser = async (req, res) => {
   }
 };
 
-// 📥 Enroll a user in a course
+// 📥 Enroll a user in a course (Purchase/Enroll)
 export const enrollInCourse = async (req, res) => {
   try {
     const course = await Course.findById(req.params.id);
@@ -148,59 +122,79 @@ export const enrollInCourse = async (req, res) => {
         .json({ success: false, message: "Already enrolled" });
     }
 
+    // Add user to course's enrolledUsers
     course.enrolledUsers.push(req.user._id);
     await course.save();
 
+    // Also add to user's purchasedCourses
+    const User = (await import("../../models/User.js")).default;
+    const user = await User.findById(req.user._id);
+    if (user) {
+      const alreadyPurchased = user.purchasedCourses.some(
+        (p) => p.courseId.toString() === course._id.toString()
+      );
+      if (!alreadyPurchased) {
+        user.purchasedCourses.push({
+          courseId: course._id,
+          purchaseDate: new Date(),
+        });
+        await user.save();
+      }
+    }
+
     res
       .status(200)
-      .json({ success: true, message: "Enrolled successfully", course });
+      .json({
+        success: true,
+        message:
+          "Course purchased successfully! You can now access the full content.",
+        course,
+      });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // 📝 Edit/Update a course
-export const updateCourse = async (req, res) => {
-  try {
-    const { title, description, category, price } = req.body;
-    const courseId = req.params.id;
+export const updateCourse = catchAsync(async (req, res, next) => {
+  const { title, description, category, price, thumbnail, video } = req.body;
+  const courseId = req.params.id;
 
-    const course = await Course.findById(courseId);
-    if (!course)
-      return res
-        .status(404)
-        .json({ success: false, message: "Course not found" });
+  logger.info(`Updating course: ${courseId}`);
 
-    // Optional file updates
-    if (req.files?.image?.[0]) {
-      const uploadedImage = await cloudinary.uploader.upload(
-        req.files.image[0].path,
-        { folder: "dnb/courses/images" }
-      );
-      course.image = uploadedImage.secure_url;
-    }
-
-    if (req.files?.video?.[0]) {
-      const uploadedVideo = await cloudinary.uploader.upload(
-        req.files.video[0].path,
-        { resource_type: "video", folder: "dnb/courses/videos" }
-      );
-      course.video = uploadedVideo.secure_url;
-    }
-
-    // Update fields
-    course.title = title || course.title;
-    course.description = description || course.description;
-    course.category = category || course.category;
-    course.price = price || course.price;
-
-    await course.save();
-
-    res.status(200).json({ success: true, message: "Course updated", course });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  const course = await Course.findById(courseId);
+  if (!course) {
+    return next(new APIError("Course not found", 404));
   }
-};
+
+  // Check if user is the creator (authorization)
+  if (course.createdBy.toString() !== req.user._id.toString()) {
+    logger.warn(`Unauthorized course update attempt by user: ${req.user._id}`);
+    return next(
+      new APIError("You are not authorized to update this course", 403)
+    );
+  }
+
+  // Update fields (URLs from frontend)
+  course.title = title || course.title;
+  course.description = description || course.description;
+  course.category = category || course.category;
+  course.price = price !== undefined ? price : course.price;
+
+  // Update media URLs if provided
+  if (thumbnail) course.thumbnail = thumbnail;
+  if (video) course.video = video;
+
+  await course.save();
+
+  logger.info(`✅ Course updated successfully: ${courseId}`);
+
+  res.status(200).json({
+    success: true,
+    message: "Course updated successfully",
+    course,
+  });
+});
 
 export const addCourseReview = async (req, res) => {
   const { rating, comment } = req.body;
@@ -217,12 +211,10 @@ export const addCourseReview = async (req, res) => {
     (r) => r.user.toString() === req.user._id.toString()
   );
   if (alreadyReviewed) {
-    return res
-      .status(400)
-      .json({
-        success: false,
-        message: "course already reviewed by this user",
-      });
+    return res.status(400).json({
+      success: false,
+      message: "course already reviewed by this user",
+    });
   }
 
   const review = {
