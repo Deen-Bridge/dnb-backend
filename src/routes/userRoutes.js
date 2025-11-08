@@ -13,6 +13,7 @@ import {
   getFollowingCount,
   checkIfFollowing,
   getRecommendations,
+  getUserStats,
 } from "../controllers/userController.js";
 import { searchAll } from "../controllers/searchController.js";
 
@@ -36,6 +37,9 @@ router.get("/:userId/check-following", protect, checkIfFollowing);
 
 // Get personalized recommendations
 router.get("/recommendations", protect, getRecommendations);
+
+// Get user statistics
+router.get("/:id/stats", protect, getUserStats);
 
 // Remove search endpoint
 

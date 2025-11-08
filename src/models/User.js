@@ -93,6 +93,18 @@ const userSchema = new mongoose.Schema(
         },
       ],
     },
+    bookmarkedBooks: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Book",
+      },
+    ],
+    bookmarkedCourses: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Course",
+      },
+    ],
     stat: {
       coursesEnrolled: { type: Number, default: 0 },
       booksRead: { type: Number, default: 0 },
