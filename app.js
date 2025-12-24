@@ -73,7 +73,9 @@ const corsOptions = {
     const allowedOrigins = [
       "https://dnb-frontend.vercel.app",
       "http://localhost:3000",
+      "http://localhost:3001",
       "https://deenbridge.vercel.app",
+      "http://deenbridge.vercel.app",
     ];
 
     // Allow requests with no origin (mobile apps, Postman, etc.)
@@ -94,43 +96,29 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Body parser (limit payload size to prevent DOS attacks)
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Cookie parser
 app.use(cookieParser());
-
-// Compress responses
 app.use(compression());
-
-// Data sanitization against NoSQL query injection
 app.use(mongoSanitizeMiddleware);
-
-// Prevent parameter pollution
 app.use(hppMiddleware);
-
-// Sanitize user input
 app.use(sanitizeInput);
-
-// Request logging
 app.use(requestLogger);
 
 // ======================
 // ROUTES
 // ======================
 
-// Health check (no rate limiting)
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "🌍 Welcome to DeenBridge API",
+    message: "Welcome to DeenBridge API",
     version: "1.0.0",
     environment: process.env.NODE_ENV,
   });
 });
 
-app.get("/ping", (req, res) => {
+app.get("/health", (req, res) => {
   res.json({
     success: true,
     message: "pong",
