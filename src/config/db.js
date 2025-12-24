@@ -5,7 +5,7 @@ const connectDB = async () => {
   const maxRetries = 5;
   let retryCount = 0;
 
-  // MongoDB connection options for production
+ 
   const options = {
     maxPoolSize: 10, // Maintain up to 10 socket connections
     minPoolSize: 5, // Maintain minimum 5 connections
@@ -19,7 +19,7 @@ const connectDB = async () => {
   const connectWithRetry = async () => {
     try {
       await mongoose.connect(process.env.MONGO_URI, options);
-      logger.info("✅🌿 MongoDB connected successfully");
+      logger.info("MongoDB connected successfully");
       logger.info(`Database: ${mongoose.connection.name}`);
       logger.info(`Host: ${mongoose.connection.host}`);
 
@@ -57,7 +57,7 @@ const connectDB = async () => {
     } catch (err) {
       retryCount++;
       logger.error(
-        `❌💥 MongoDB connection error (Attempt ${retryCount}/${maxRetries}):`,
+        `MongoDB connection error (Attempt ${retryCount}/${maxRetries}):`,
         err.message
       );
 
