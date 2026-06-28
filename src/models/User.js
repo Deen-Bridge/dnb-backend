@@ -105,6 +105,27 @@ const userSchema = new mongoose.Schema(
         ref: "Course",
       },
     ],
+    // Stellar wallet for blockchain payments
+    stellarWallet: {
+      publicKey: {
+        type: String,
+        validate: {
+          validator: function (v) {
+            // Stellar public keys start with 'G' and are 56 characters
+            return !v || /^G[A-Z0-9]{55}$/.test(v);
+          },
+          message: "Invalid Stellar public key format",
+        },
+      },
+      connectedAt: {
+        type: Date,
+      },
+      network: {
+        type: String,
+        enum: ["testnet", "mainnet"],
+        default: "testnet",
+      },
+    },
     stat: {
       coursesEnrolled: { type: Number, default: 0 },
       booksRead: { type: Number, default: 0 },
