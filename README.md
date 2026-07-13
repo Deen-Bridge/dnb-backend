@@ -1,189 +1,121 @@
-# Deen Bridge Backend API
+<div align="center">
 
-The backend API powering **Deen Bridge** - a modern platform empowering Muslims with authentic Islamic education through courses, books, spaces, and mentorship.
+# 🕌 Deen Bridge — Backend API
 
-## Features
+**The REST API powering Deen Bridge: authentication, courses, library, community, and USDC payments on Stellar.**
 
-- **User Authentication**: Secure JWT-based authentication with refresh tokens
-- **Course Management**: Create, manage, and enroll in Islamic courses
-- **Digital Library**: Upload, purchase, and read Islamic books
-- **Stellar Blockchain Integration**: USDC payments on Stellar network for courses and books
-- **Wallet Management**: Connect Stellar wallets (Freighter, xBull, Albedo) for creator payments
-- **Review System**: Rate and review courses and books
-- **User Profiles**: Customizable profiles with avatar uploads
-- **Role-based Access**: Student, mentor, and admin roles
+[![CI](https://github.com/Deen-Bridge/dnb-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/Deen-Bridge/dnb-backend/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-blue.svg)](CONTRIBUTING.md)
+[![Stellar](https://img.shields.io/badge/Payments-Stellar%20USDC-0e75dd.svg)](https://stellar.org)
 
-## Tech Stack
+[Live API](https://dnb-backend-api.onrender.com) · [Web App](https://dnb-frontend.vercel.app) · [Report a Bug](https://github.com/Deen-Bridge/dnb-backend/issues) · [Contribute](CONTRIBUTING.md)
 
-| Technology | Description |
-|------------|-------------|
-| Node.js | JavaScript runtime |
-| Express.js | Web framework |
-| MongoDB | Database |
-| Mongoose | ODM for MongoDB |
-| JWT | Authentication tokens |
-| Stellar SDK | Blockchain integration |
-| Multer | File uploads |
-| Winston | Logging |
+</div>
 
-## Quick Start
+---
+
+## About
+
+This is the API service for **Deen Bridge**, a platform for authentic Islamic education. It handles users and roles, courses, the digital book library, community spaces, reels, notifications, and — at its core — **non-custodial USDC payments on the Stellar network**: the API builds an unsigned payment transaction, the buyer signs it in their own wallet, and the API verifies the payment on-chain before granting access. Creators receive USDC directly to their wallets.
+
+The platform is composed of three services:
+
+| Repository | Role | Live |
+|------------|------|------|
+| [dnb-frontend](https://github.com/Deen-Bridge/dnb-frontend) | Next.js web application | [dnb-frontend.vercel.app](https://dnb-frontend.vercel.app) |
+| **dnb-backend** (this repo) | REST API — auth, content, Stellar payments | [dnb-backend-api.onrender.com](https://dnb-backend-api.onrender.com) |
+| [dnb-ai](https://github.com/Deen-Bridge/dnb-ai) | FastAPI service for the AI assistant | [dnb-ai.onrender.com](https://dnb-ai.onrender.com) |
+
+## ✨ Features
+
+- 🔐 **JWT Authentication** — access + refresh tokens, role-based access (student / mentor / admin)
+- 🎓 **Course Management** — create, enroll, review, and track courses
+- 📚 **Digital Library** — upload, purchase, and read Islamic books
+- ⭐ **Stellar Payments** — USDC payment initialize → sign → submit → on-chain verify flow
+- 👛 **Wallet Management** — connect Freighter, xBull, or Albedo; balance and trustline checks
+- 💬 **Real-time** — Socket.io messaging and notifications
+- ☁️ **Media** — Cloudinary uploads for avatars, covers, books, and reels
+- 🛡️ **Hardened** — helmet, rate limiting, sanitization (mongo-sanitize, hpp, xss), CORS
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Runtime | Node.js 20 · [Express 5](https://expressjs.com/) (ESM) |
+| Database | [MongoDB](https://www.mongodb.com/) · [Mongoose 8](https://mongoosejs.com/) · [Redis](https://redis.io/) (caching) |
+| Blockchain | [@stellar/stellar-sdk](https://github.com/stellar/js-stellar-sdk) v16 · Horizon |
+| Auth | JWT (access + refresh) |
+| Media & Realtime | [Cloudinary](https://cloudinary.com/) · Multer · Socket.io |
+| Observability | Winston logging |
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - MongoDB (local or Atlas)
-- npm or yarn
+- Redis (optional, for caching)
 
-### Installation
+### Setup
 
 ```bash
-# Clone the repository
-git clone git@github.com:Deen-Bridge/dnb-backend.git
+git clone https://github.com/Deen-Bridge/dnb-backend.git
 cd dnb-backend
-
-# Install dependencies
 npm install
-```
-
-### Environment Setup
-
-Create a `.env` file with the following variables:
-
-```env
-# Server
-PORT=5000
-NODE_ENV=development
-
-# Database
-MONGO_URI=mongodb://localhost:27017/deenbridge
-
-# Authentication
-JWT_SECRET=your-super-secret-key-minimum-32-characters
-JWT_EXPIRES_IN=7d
-REFRESH_TOKEN_SECRET=your-refresh-token-secret
-
-# Stellar (for payments)
-STELLAR_NETWORK=testnet
-```
-
-### Running the Server
-
-```bash
-# Development mode
+cp .env.example .env   # then fill in your values
 npm run dev
-
-# Production mode
-npm start
 ```
 
-You should see:
-```
-Environment variables validated successfully
-MongoDB connected successfully
-DeenBridge API running on port 5000
-```
+The API runs at `http://localhost:5000`.
 
-## API Endpoints
+### Key Environment Variables
 
-### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
-- `POST /api/auth/refresh` - Refresh access token
-- `POST /api/auth/logout` - Logout user
+| Variable | Description |
+|----------|-------------|
+| `PORT` | Server port (default `5000`) |
+| `MONGO_URI` | MongoDB connection string |
+| `JWT_SECRET` | Secret for signing tokens (32+ chars) |
+| `STELLAR_NETWORK` | `testnet` or `mainnet` |
+| `CLOUDINARY_*` | Cloudinary credentials for media uploads |
 
-### Courses
-- `GET /api/courses` - List all courses
-- `GET /api/courses/:id` - Get course details
-- `POST /api/courses` - Create course (mentor/admin)
-- `PUT /api/courses/:id` - Update course
-- `DELETE /api/courses/:id` - Delete course
+See `.env.example` for the full list.
 
-### Library (Books)
-- `GET /api/library` - List all books
-- `GET /api/library/:id` - Get book details
-- `POST /api/library` - Upload book (mentor/admin)
-- `PUT /api/library/:id` - Update book
-- `DELETE /api/library/:id` - Delete book
+### Scripts
 
-### Stellar Wallet
-- `POST /api/stellar/wallet/connect` - Connect Stellar wallet
-- `DELETE /api/stellar/wallet/disconnect` - Disconnect wallet
-- `GET /api/stellar/wallet/me` - Get connected wallet info
-- `GET /api/stellar/wallet/balance/:publicKey` - Check wallet balance
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Start with hot reload |
+| `npm start` | Start in production mode |
+| `npm test` | Run the Jest + Supertest suite |
+| `npm run seed` | Seed sample data |
 
-### Stellar Payments
-- `POST /api/stellar/payment/initialize` - Initialize payment transaction
-- `POST /api/stellar/payment/submit` - Submit signed transaction
-- `GET /api/stellar/payment/transactions` - Get transaction history
+## 🔗 API Overview
 
-### Users
-- `GET /api/users/me` - Get current user
-- `PUT /api/users/me` - Update profile
-- `GET /api/users/:id` - Get user profile
+| Area | Base Route |
+|------|-----------|
+| Auth & Users | `/api/auth`, `/api/users` |
+| Courses & Books | `/api/courses`, `/api/books` |
+| Spaces & Reels | `/api/spaces`, `/api/reels` |
+| Stellar Wallet | `/api/stellar/wallet/*` |
+| Stellar Payments | `/api/stellar/payment/*` |
 
-## Stellar Integration
+## 🌊 Contributing & Drips Wave
 
-Deen Bridge uses the Stellar blockchain for creator payments:
+This repository participates in the **[Stellar Drips Wave](https://www.drips.network/wave/stellar)** bounty program — contributors earn real rewards for completing issues labeled `wave:1` through `wave:4`.
 
-- **Currency**: USDC on Stellar
-- **Networks**: Testnet (development), Mainnet (production)
-- **Wallets Supported**: Freighter, xBull, Albedo
-- **Flow**: Buyer signs transaction in wallet -> Backend verifies on-chain -> Access granted
+- All pull requests target the **`dev`** branch (`main` is releases only)
+- CI (tests) must pass before review
+- One contributor per issue — comment to claim it first
 
-### For Creators
-1. Connect your Stellar wallet in account settings
-2. Receive USDC directly when users purchase your content
-3. View transaction history in your dashboard
+Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow, coding standards, and Wave rules.
 
-### For Buyers
-1. Connect your Stellar wallet
-2. Ensure you have USDC and a USDC trustline
-3. Purchase courses/books with one-click payments
+## 📜 License
 
-## Testing
+[MIT](LICENSE) © Deen Bridge
 
-```bash
-# Run tests
-npm test
+## 🔗 Links
 
-# Health check
-curl http://localhost:5000/ping
-```
-
-## Project Structure
-
-```
-dnb-backend/
-├── src/
-│   ├── controllers/     # Route handlers
-│   ├── middleware/      # Auth, validation, etc.
-│   ├── models/          # Mongoose schemas
-│   ├── routes/          # API routes
-│   └── services/        # Business logic
-├── services/            # External services (Stellar)
-├── logs/                # Application logs
-├── app.js               # Express app setup
-└── server.js            # Server entry point
-```
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### For Drips Wave Contributors
-
-This repository participates in the **Stellar Drips Wave** bounty program. Look for issues labeled with point values:
-- `wave:1` - Small tasks (1 point)
-- `wave:2` - Medium tasks (2 points)
-- `wave:3` - Large tasks (3 points)
-- `wave:4` - Complex tasks (4 points)
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Links
-
-- [Frontend Repository](https://github.com/Deen-Bridge/dnb-frontend)
-- [Website](https://deenbridge.com)
-- [Stellar Developer Docs](https://developers.stellar.org)
+- 🌐 Website: [dnb-frontend.vercel.app](https://dnb-frontend.vercel.app)
+- 🐦 X/Twitter: [@deen_bridge](https://x.com/deen_bridge)
+- 🏢 Organization: [github.com/Deen-Bridge](https://github.com/Deen-Bridge)
