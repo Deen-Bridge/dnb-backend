@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import Reel from "../models/Reel.js";
-import cloudinary from "../../utils/cloudinary.js";
+import cloudinary from "../utils/cloudinary.js";
 
 const uploadBufferToCloudinary = (buffer, options) =>
   new Promise((resolve, reject) => {
