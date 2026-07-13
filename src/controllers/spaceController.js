@@ -1,5 +1,5 @@
 import Space from "../models/Space.js";
-import cloudinary from "../../utils/cloudinary.js";
+import cloudinary from "../utils/cloudinary.js";
 
 // 📚 Get all spaces
 export const getSpaces = async (_req, res) => {

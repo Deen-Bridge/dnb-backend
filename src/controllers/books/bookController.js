@@ -1,7 +1,7 @@
 import axios from "axios";
 import Book from "../../models/Book.js";
 import User from "../../models/User.js";
-import cloudinary from "../../../utils/cloudinary.js";
+import cloudinary from "../../utils/cloudinary.js";
 
 //cretae a book
 export const createBook = async (req, res) => {

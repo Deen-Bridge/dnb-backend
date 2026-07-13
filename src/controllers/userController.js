@@ -1,5 +1,5 @@
 import User from "../models/User.js";
-import cloudinary from "../../utils/cloudinary.js";
+import cloudinary from "../utils/cloudinary.js";
 import Course from "../models/Course.js";
 import Book from "../models/Book.js";
 
