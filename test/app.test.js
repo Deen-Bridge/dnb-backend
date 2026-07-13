@@ -8,10 +8,10 @@ describe("DeenBridge API", () => {
     expect(res.text).toContain("Welcome to DeenBridge API");
   });
 
-  it("should respond to GET /ping", async () => {
-    const res = await request(app).get("/ping");
+  it("should respond to GET /health", async () => {
+    const res = await request(app).get("/health");
     expect(res.statusCode).toBe(200);
-    expect(res.text).toContain("ping pong");
+    expect(res.body).toHaveProperty("success", true);
   });
 
   // Add more endpoint tests below as needed
