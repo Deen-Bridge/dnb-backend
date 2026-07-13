@@ -34,6 +34,7 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
+          PORT: 5000
           MONGO_URI: mongodb://localhost:27017/deenbridge_test
           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars
           STELLAR_NETWORK: testnet
