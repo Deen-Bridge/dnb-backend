@@ -38,3 +38,53 @@ jobs:
           MONGO_URI: mongodb://localhost:27017/deenbridge_test
           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars
           STELLAR_NETWORK: testnet
+
+  build:
+    name: Syntax and Boot Check
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check syntax of all source files
+        run: |
+          find . -name "*.js" -not -path "./node_modules/*" -print0 \
+            | xargs -0 -n1 node --check
+
+      - name: Boot server and hit /health
+        run: |
+          node server.js &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5000/health > /dev/null; then
+              echo "Server is up and healthy"
+              kill $SERVER_PID
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to become healthy in time"
+          kill $SERVER_PID || true
+          exit 1
+        env:
+          NODE_ENV: test
+          PORT: 5000
+          MONGO_URI: mongodb://localhost:27017/deenbridge_boot
+          JWT_SECRET: test-secret-key-for-ci-minimum-32-chars
+          STELLAR_NETWORK: testnet
