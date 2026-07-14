@@ -16,6 +16,10 @@ const optionalEnvVars = [
   "JITSI_PUBLIC_KEY_ID",
   "JITSI_KID",
   "JITSI_TENANT",
+  "STELLAR_NETWORK",
+  "DONATION_WALLET_PUBLIC_KEY",
+  "PLATFORM_FEE_PERCENT",
+  "PLATFORM_WALLET_PUBLIC_KEY",
 ];
 
 export const validateEnv = () => {
