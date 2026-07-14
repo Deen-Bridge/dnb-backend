@@ -6,8 +6,10 @@ import Course from "../../models/Course.js";
 import Transaction from "../../models/Transaction.js";
 import {
   buildPaymentTransaction,
+  buildSep7Uri,
   submitTransaction,
   verifyTransaction,
+  verifyPaymentOperations,
   NETWORK,
   getExplorerUrl,
 } from "../../services/stellar/stellarService.js";
@@ -125,10 +127,18 @@ export const initializePayment = async (req, res) => {
     // Generate unique memo for this transaction
     const memo = `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
 
-    // Build the payment transaction
+    // Build the payment transaction (splits in a platform fee when configured)
     const paymentTx = await buildPaymentTransaction({
       sourcePublicKey: buyer.stellarWallet.publicKey,
       destinationPublicKey: creator.stellarWallet.publicKey,
+      amount: item.price.toString(),
+      memo,
+      applyPlatformFee: true,
+    });
+
+    // SEP-7 URI so wallets can deep-link the payment
+    const sep7Uri = buildSep7Uri({
+      destination: creator.stellarWallet.publicKey,
       amount: item.price.toString(),
       memo,
     });
@@ -147,6 +157,14 @@ export const initializePayment = async (req, res) => {
       network: NETWORK,
       status: "pending",
       stellarTxHash: paymentTx.hash, // Temporary hash, will be replaced with actual
+      ...(paymentTx.feeSplit && {
+        platformFee: {
+          feePercent: paymentTx.feeSplit.feePercent,
+          platformWallet: paymentTx.feeSplit.platformWallet,
+          platformAmount: paymentTx.feeSplit.platformAmount,
+          creatorAmount: paymentTx.feeSplit.creatorAmount,
+        },
+      }),
     });
 
     await transaction.save({ session });
@@ -164,6 +182,7 @@ export const initializePayment = async (req, res) => {
         networkPassphrase: paymentTx.networkPassphrase,
         expectedHash: paymentTx.hash,
       },
+      sep7Uri,
       item: {
         title: item.title,
         price: item.price,
@@ -245,6 +264,49 @@ export const submitPayment = async (req, res) => {
         success: false,
         message: "Transaction failed on Stellar network",
         error: stellarError.message,
+      });
+    }
+
+    // Verify on-chain that the creator (and platform, when a fee was applied)
+    // actually received the expected USDC amounts
+    const expectedPayments = transaction.platformFee?.platformAmount
+      ? [
+          {
+            destination: transaction.creatorWallet,
+            amount: transaction.platformFee.creatorAmount,
+          },
+          {
+            destination: transaction.platformFee.platformWallet,
+            amount: transaction.platformFee.platformAmount,
+          },
+        ]
+      : [
+          {
+            destination: transaction.creatorWallet,
+            amount: transaction.amount,
+          },
+        ];
+
+    const verification = await verifyPaymentOperations(
+      result.hash,
+      expectedPayments
+    );
+
+    if (!verification.verified) {
+      transaction.status = "failed";
+      transaction.failureReason = `On-chain verification failed: ${verification.reason}`;
+      transaction.stellarTxHash = result.hash;
+      await transaction.save({ session });
+      await session.commitTransaction();
+
+      logger.error(
+        `Transaction ${transactionId} verification failed: ${verification.reason}`
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: "Payment could not be verified on the Stellar network",
+        error: verification.reason,
       });
     }
 
