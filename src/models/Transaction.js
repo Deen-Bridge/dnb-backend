@@ -14,6 +14,14 @@ const transactionSchema = new mongoose.Schema(
       type: Number,
     },
 
+    // Transaction kind: item purchase or sadaqah donation
+    type: {
+      type: String,
+      enum: ["purchase", "donation"],
+      default: "purchase",
+      index: true,
+    },
+
     // Parties involved
     buyer: {
       type: mongoose.Schema.Types.ObjectId,
@@ -28,7 +36,9 @@ const transactionSchema = new mongoose.Schema(
     creator: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
       index: true,
     },
     creatorWallet: {
@@ -36,25 +46,33 @@ const transactionSchema = new mongoose.Schema(
       required: true,
     },
 
-    // Item being purchased
+    // Item being purchased (not applicable to donations)
     itemType: {
       type: String,
       enum: ["book", "course"],
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
     },
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
       refPath: "itemTypeModel",
     },
     itemTypeModel: {
       type: String,
       enum: ["Book", "Course"],
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
     },
     itemTitle: {
       type: String,
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
     },
 
     // Payment details
@@ -71,6 +89,14 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       enum: ["testnet", "mainnet"],
       required: true,
+    },
+
+    // Platform fee split (only set when a fee was applied at build time)
+    platformFee: {
+      feePercent: Number,
+      platformWallet: String,
+      platformAmount: String, // Stored as string to preserve precision
+      creatorAmount: String,
     },
 
     // Status tracking
@@ -105,6 +131,7 @@ const transactionSchema = new mongoose.Schema(
 transactionSchema.index({ buyer: 1, status: 1 });
 transactionSchema.index({ creator: 1, status: 1 });
 transactionSchema.index({ itemType: 1, itemId: 1 });
+transactionSchema.index({ type: 1, status: 1, createdAt: -1 }); // Donation stats
 transactionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL for expired pending
 
 export default mongoose.model("Transaction", transactionSchema);
