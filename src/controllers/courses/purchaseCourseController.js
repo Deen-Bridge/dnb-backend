@@ -1,3 +1,4 @@
+import logger from "../../config/logger.js";
 import User from "../models/User.js";
 
 export const purchaseCourse = async (req, res) => {
@@ -32,6 +33,6 @@ export const purchaseCourse = async (req, res) => {
     res.status(200).json({ success: true, message: "Course purchased" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
-    console.error("Purchase Course Error:", error);
+    logger.error("Purchase Course Error:", error);
   }
 };

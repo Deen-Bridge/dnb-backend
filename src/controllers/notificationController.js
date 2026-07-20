@@ -1,4 +1,5 @@
 import Notification from "../models/Notification.js";
+import logger from "../config/logger.js";
 import User from "../models/User.js";
 
 // Store active SSE connections
@@ -25,7 +26,7 @@ export const sseNotifications = async (req, res) => {
   // Handle client disconnect
   req.on('close', () => {
     sseConnections.delete(userId);
-    console.log(`SSE connection closed for user: ${userId}`);
+    logger.info(`SSE connection closed for user: ${userId}`);
   });
 
   // Keep connection alive
@@ -60,7 +61,7 @@ export const sendNotificationToUser = async (userId, notificationData) => {
 
     return notification;
   } catch (error) {
-    console.error('Error sending notification:', error);
+    logger.error('Error sending notification:', error);
     throw error;
   }
 };
@@ -170,7 +171,7 @@ export const getUserNotifications = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get notifications error:', error);
+    logger.error('Get notifications error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch notifications',
@@ -204,7 +205,7 @@ export const markNotificationAsRead = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Mark notification read error:', error);
+    logger.error('Mark notification read error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to mark notification as read',
@@ -229,7 +230,7 @@ export const markAllNotificationsAsRead = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Mark all notifications read error:', error);
+    logger.error('Mark all notifications read error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to mark notifications as read',
@@ -263,7 +264,7 @@ export const deleteNotification = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Delete notification error:', error);
+    logger.error('Delete notification error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to delete notification',
@@ -290,7 +291,7 @@ export const getNotificationSettings = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get notification settings error:', error);
+    logger.error('Get notification settings error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch notification settings',
