@@ -5,6 +5,7 @@ import User from "../models/User.js";
 import sendMail from "../../services/emails/sendMail.js";
 import { generatedOtp } from "../routes/emailRoutes.js";
 import logger from "../config/logger.js";
+
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
@@ -131,7 +132,7 @@ export const requestPasswordReset = async (req, res) => {
   const { email } = req.body;
 
   try {
-    console.log("🔑 Password reset requested for:", email);
+    logger.info("🔑 Password reset requested for:", email);
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -163,7 +164,7 @@ export const requestPasswordReset = async (req, res) => {
       otp: otp, // Remove this in production! Only for development
     });
   } catch (err) {
-    console.error("❌ Password reset request error:", err.message);
+    logger.error("❌ Password reset request error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -173,7 +174,7 @@ export const resetPassword = async (req, res) => {
   const { email, otp, newPassword } = req.body;
 
   try {
-    console.log("🔐 Password reset attempt for:", email);
+    logger.info("🔐 Password reset attempt for:", email);
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -195,13 +196,13 @@ export const resetPassword = async (req, res) => {
     // user.resetTokenExpiry = undefined;
     await user.save();
 
-    console.log("✅ Password reset successful for:", email);
+    logger.info("✅ Password reset successful for:", email);
     res.status(200).json({
       message:
         "Password reset successful. You can now login with your new password.",
     });
   } catch (err) {
-    console.error("❌ Password reset error:", err.message);
+    logger.error("❌ Password reset error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };

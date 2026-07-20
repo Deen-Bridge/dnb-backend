@@ -71,13 +71,13 @@ export const getCourseById = async (req, res) => {
 // 📘 Get all courses created by a specific user
 
 export const getCoursesByUser = async (req, res) => {
-  console.log("⚡ Reached getCoursesByUser handler");
+  logger.info("⚡ Reached getCoursesByUser handler");
 
   try {
     const { createdBy } = req.query;
 
     if (!createdBy) {
-      console.log("❌ Missing user ID");
+      logger.info("❌ Missing user ID");
       return res
         .status(400)
         .json({ success: false, message: "Missing user id" });
@@ -85,13 +85,13 @@ export const getCoursesByUser = async (req, res) => {
 
     // Extra safety to avoid invalid ObjectId crashes
     if (!mongoose.Types.ObjectId.isValid(createdBy)) {
-      console.log("❌ Invalid ObjectId format");
+      logger.info("❌ Invalid ObjectId format");
       return res
         .status(400)
         .json({ success: false, message: "Invalid user ID format" });
     }
 
-    console.log("✅ Finding courses...");
+    logger.info("✅ Finding courses...");
     const courses = await Course.find({ createdBy }).populate("createdBy");
 
     if (!courses || courses.length === 0) {
@@ -101,7 +101,7 @@ export const getCoursesByUser = async (req, res) => {
     }
     res.status(200).json({ success: true, courses });
   } catch (error) {
-    console.error("❌ Unexpected Error in getCoursesByUser:", error);
+    logger.error("❌ Unexpected Error in getCoursesByUser:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

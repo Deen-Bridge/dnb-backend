@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import Space from "../models/Space.js";
 import Reel from "../models/Reel.js";
 import mongoose from "mongoose";
+import logger from "../config/logger.js";
 
 export const searchAll = async (req, res) => {
   try {
@@ -12,36 +13,36 @@ export const searchAll = async (req, res) => {
       return res.status(400).json({ error: "Query string is required." });
     }
     const queryRegex = new RegExp(q.trim(), "i");
-    console.log("Search query:", q);
+    logger.info("Search query:", q);
 
 
     // Search Courses
     const courses = await Course.find({ title: queryRegex })
       .select("_id title description  price thumbnail")
       .lean();
-    console.log("Courses found:", courses);
+    logger.info("Courses found:", courses);
     // Search Books
     const books = await Book.find({ title: queryRegex })
       .select("_id title description  price image author")
       .lean();
-    console.log("Books found:", books);
+    logger.info("Books found:", books);
     // Search Users
     const users = await User.find({ name: queryRegex })
       .select("_id name email avatar role ")
       .lean();
-    console.log("Users found:", users);
+    logger.info("Users found:", users);
     // Search Spaces
     const spaces = await Space.find({ title: queryRegex })
       .select(
         "_id title description  price status eventDate duration host"
       )
       .lean();
-    console.log("Spaces found:", spaces);
+    logger.info("Spaces found:", spaces);
     // Search Reels (by description)
     const reels = await Reel.find({ description: queryRegex })
       .select("_id description createdBy")
       .lean();
-    console.log("Reels found:", reels);
+    logger.info("Reels found:", reels);
 
     const results = [
       ...courses.map((c) => ({
@@ -89,7 +90,7 @@ export const searchAll = async (req, res) => {
 
     res.json(results);
   } catch (err) {
-    console.error("Search error:", err);
+    logger.error("Search error:", err);
     res.status(500).json({ error: "Server error", details: err.message });
   }
 };

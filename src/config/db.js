@@ -1,17 +1,56 @@
 import mongoose from "mongoose";
 import logger from "./logger.js";
 
+const SLOW_QUERY_MS = parseInt(process.env.SLOW_QUERY_MS || "200", 10);
+
+mongoose.plugin(function slowQueryPlugin(schema) {
+  function logIfSlow(op) {
+    return function (result) {
+      const elapsed = Date.now() - (this._startTime || Date.now());
+      if (elapsed > SLOW_QUERY_MS) {
+        const filter = this.getQuery ? sanitizeFilter(this.getQuery()) : undefined;
+        logger.warn(
+          { collection: schema.name, op, durationMs: elapsed, filter },
+          `Slow query: ${op} on ${schema.name} took ${elapsed}ms`
+        );
+      }
+    };
+  }
+
+  schema.pre("find", function () { this._startTime = Date.now(); });
+  schema.pre("findOne", function () { this._startTime = Date.now(); });
+  schema.pre("countDocuments", function () { this._startTime = Date.now(); });
+  schema.pre("updateOne", function () { this._startTime = Date.now(); });
+  schema.pre("deleteOne", function () { this._startTime = Date.now(); });
+
+  schema.post("find", logIfSlow("find"));
+  schema.post("findOne", logIfSlow("findOne"));
+  schema.post("countDocuments", logIfSlow("countDocuments"));
+  schema.post("updateOne", logIfSlow("updateOne"));
+  schema.post("deleteOne", logIfSlow("deleteOne"));
+});
+
+function sanitizeFilter(filter) {
+  if (!filter) return undefined;
+  const sanitized = { ...filter };
+  Object.keys(sanitized).forEach((key) => {
+    if (typeof sanitized[key] === "object" && sanitized[key] !== null) {
+      sanitized[key] = sanitizeFilter(sanitized[key]);
+    }
+  });
+  return sanitized;
+}
+
 const connectDB = async () => {
   const maxRetries = 5;
   let retryCount = 0;
 
- 
   const options = {
-    maxPoolSize: 10, // Maintain up to 10 socket connections
-    minPoolSize: 5, // Maintain minimum 5 connections
-    serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
-    socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
-    family: 4, // Use IPv4, skip trying IPv6
+    maxPoolSize: 10,
+    minPoolSize: 5,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    family: 4,
     retryWrites: true,
     w: "majority",
   };
@@ -23,9 +62,8 @@ const connectDB = async () => {
       logger.info(`Database: ${mongoose.connection.name}`);
       logger.info(`Host: ${mongoose.connection.host}`);
 
-      // Handle connection events
       mongoose.connection.on("error", (err) => {
-        logger.error("MongoDB connection error:", err);
+        logger.error(err, "MongoDB connection error");
       });
 
       mongoose.connection.on("disconnected", () => {
@@ -43,26 +81,24 @@ const connectDB = async () => {
         logger.info("MongoDB connection established");
       });
 
-      // Graceful shutdown
       process.on("SIGINT", async () => {
         try {
           await mongoose.connection.close();
           logger.info("MongoDB connection closed through app termination");
           process.exit(0);
         } catch (err) {
-          logger.error("Error during MongoDB disconnection:", err);
+          logger.error(err, "Error during MongoDB disconnection");
           process.exit(1);
         }
       });
     } catch (err) {
       retryCount++;
       logger.error(
-        `MongoDB connection error (Attempt ${retryCount}/${maxRetries}):`,
-        err.message
+        `MongoDB connection error (Attempt ${retryCount}/${maxRetries}): ${err.message}`
       );
 
       if (retryCount < maxRetries) {
-        logger.info(`Retrying connection in 5 seconds...`);
+        logger.info("Retrying connection in 5 seconds...");
         setTimeout(connectWithRetry, 5000);
       } else {
         logger.error("Max retries reached. Could not connect to MongoDB.");
@@ -73,15 +109,5 @@ const connectDB = async () => {
 
   await connectWithRetry();
 };
-
-// Monitor MongoDB performance
-mongoose.set("debug", (collectionName, method, query, doc) => {
-  if (process.env.NODE_ENV === "development") {
-    logger.debug(`MongoDB: ${collectionName}.${method}`, {
-      query,
-      doc,
-    });
-  }
-});
 
 export default connectDB;

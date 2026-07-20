@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import cloudinary from "../utils/cloudinary.js";
 import Course from "../models/Course.js";
 import Book from "../models/Book.js";
+import logger from "../config/logger.js";
 
 // Update user profile (including avatar upload to Cloudinary)
 export const updateUser = async (req, res) => {
@@ -32,7 +33,7 @@ export const updateUser = async (req, res) => {
         ]);
         avatarUrl = result.secure_url;
       } catch (uploadError) {
-        console.error("Avatar upload error:", uploadError);
+        logger.error("Avatar upload error:", uploadError);
         return res.status(500).json({
           success: false,
           message: "Failed to upload avatar. Please try again.",
@@ -78,7 +79,7 @@ export const updateUser = async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error("Profile update error:", error);
+    logger.error("Profile update error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to update profile. Please try again.",
@@ -102,7 +103,7 @@ export const getUser = async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error("Get user error:", error);
+    logger.error("Get user error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch user. Please try again.",
@@ -126,7 +127,7 @@ export const deleteUser = async (req, res) => {
       message: "User deleted successfully",
     });
   } catch (error) {
-    console.error("Delete user error:", error);
+    logger.error("Delete user error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to delete user. Please try again.",
@@ -181,7 +182,7 @@ export const followUser = async (req, res) => {
       message: "Successfully followed user",
     });
   } catch (error) {
-    console.error("Follow user error:", error);
+    logger.error("Follow user error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to follow user. Please try again.",
@@ -236,7 +237,7 @@ export const unfollowUser = async (req, res) => {
       message: "Successfully unfollowed user",
     });
   } catch (error) {
-    console.error("Unfollow user error:", error);
+    logger.error("Unfollow user error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to unfollow user. Please try again.",
@@ -267,7 +268,7 @@ export const getFollowers = async (req, res) => {
       count: user.followers.length,
     });
   } catch (error) {
-    console.error("Get followers error:", error);
+    logger.error("Get followers error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch followers. Please try again.",
@@ -298,7 +299,7 @@ export const getFollowing = async (req, res) => {
       count: user.following.length,
     });
   } catch (error) {
-    console.error("Get following error:", error);
+    logger.error("Get following error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch following. Please try again.",
@@ -326,7 +327,7 @@ export const getFollowersCount = async (req, res) => {
       followersCount: user.followers.length,
     });
   } catch (error) {
-    console.error("Get followers count error:", error);
+    logger.error("Get followers count error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch followers count. Please try again.",
@@ -354,7 +355,7 @@ export const getFollowingCount = async (req, res) => {
       followingCount: user.following.length,
     });
   } catch (error) {
-    console.error("Get following count error:", error);
+    logger.error("Get following count error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch following count. Please try again.",
@@ -385,7 +386,7 @@ export const checkIfFollowing = async (req, res) => {
       isFollowing,
     });
   } catch (error) {
-    console.error("Check following status error:", error);
+    logger.error("Check following status error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to check following status. Please try again.",
@@ -489,7 +490,7 @@ export const getRecommendations = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get recommendations error:", error);
+    logger.error("Get recommendations error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch recommendations. Please try again.",
@@ -538,7 +539,7 @@ export const getUserStats = async (req, res) => {
       totalUptime,
     });
   } catch (error) {
-    console.error("Get user stats error:", error);
+    logger.error("Get user stats error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch user statistics.",

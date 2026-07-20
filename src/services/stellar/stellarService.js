@@ -1,6 +1,7 @@
 // services/stellar/stellarService.js
 import * as StellarSdk from "@stellar/stellar-sdk";
 import logger from "../../config/logger.js";
+import { observeHorizonDuration } from "../../config/metrics.js";
 
 const NETWORK = process.env.STELLAR_NETWORK || "testnet";
 const HORIZON_URL =
@@ -14,20 +15,15 @@ const networkPassphrase =
     ? StellarSdk.Networks.PUBLIC
     : StellarSdk.Networks.TESTNET;
 
-// USDC Asset Identifiers
-// Testnet: Use a test USDC issuer
-// Mainnet: Circle's official USDC issuer
 const USDC_ISSUER =
   NETWORK === "mainnet"
-    ? "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" // Circle USDC on mainnet
-    : "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"; // Testnet USDC issuer
+    ? "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
+    : "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
 
 const USDC = new StellarSdk.Asset("USDC", USDC_ISSUER);
 
-// Sadaqah donation fund wallet (public key only, never a secret key)
 const DONATION_WALLET_PUBLIC_KEY = process.env.DONATION_WALLET_PUBLIC_KEY || "";
 
-// Platform fee configuration (0-20 percent, default 0 = disabled)
 const PLATFORM_WALLET_PUBLIC_KEY = process.env.PLATFORM_WALLET_PUBLIC_KEY || "";
 const PLATFORM_FEE_PERCENT = (() => {
   const percent = Number(process.env.PLATFORM_FEE_PERCENT || 0);
@@ -43,14 +39,20 @@ const PLATFORM_FEE_PERCENT = (() => {
   return percent;
 })();
 
-// Stellar amounts have exactly 7 decimal places (1 unit = 10,000,000 stroops)
 const STROOPS_PER_UNIT = 10000000n;
 
-/**
- * Convert a decimal amount (string or number) to stroops (BigInt, 7 decimals)
- * @param {string|number} amount - The amount to convert
- * @returns {BigInt} - Amount in stroops
- */
+async function timedHorizonCall(operation, fn) {
+  const start = Date.now();
+  try {
+    const result = await fn();
+    observeHorizonDuration(operation, "success", Date.now() - start);
+    return result;
+  } catch (error) {
+    observeHorizonDuration(operation, "error", Date.now() - start);
+    throw error;
+  }
+}
+
 const toStroops = (amount) => {
   const [whole, frac = ""] = amount.toString().split(".");
   return (
@@ -59,11 +61,6 @@ const toStroops = (amount) => {
   );
 };
 
-/**
- * Convert stroops (BigInt) back to a decimal amount string
- * @param {BigInt} stroops - Amount in stroops
- * @returns {string} - Decimal amount string
- */
 const fromStroops = (stroops) => {
   const whole = stroops / STROOPS_PER_UNIT;
   const frac = (stroops % STROOPS_PER_UNIT)
@@ -73,16 +70,6 @@ const fromStroops = (stroops) => {
   return frac ? `${whole}.${frac}` : whole.toString();
 };
 
-/**
- * Calculate the creator/platform split for a payment amount.
- * Uses integer (stroop) math for exact 7-decimal precision: the platform
- * share is floored, so any rounding remainder goes to the creator and the
- * two amounts always sum exactly to the original amount.
- * @param {string|number} amount - The full payment amount
- * @param {number} [feePercent] - Fee percent (defaults to PLATFORM_FEE_PERCENT)
- * @param {string} [platformWallet] - Platform wallet (defaults to PLATFORM_WALLET_PUBLIC_KEY)
- * @returns {Object|null} - { creatorAmount, platformAmount, feePercent, platformWallet } or null when no fee applies
- */
 export const calculateFeeSplit = (
   amount,
   feePercent = PLATFORM_FEE_PERCENT,
@@ -93,12 +80,10 @@ export const calculateFeeSplit = (
   }
 
   const totalStroops = toStroops(amount);
-  // Basis points keep fractional percents (e.g. 2.5) exact in integer math
   const feeBasisPoints = BigInt(Math.round(feePercent * 100));
-  const platformStroops = (totalStroops * feeBasisPoints) / 10000n; // floor
+  const platformStroops = (totalStroops * feeBasisPoints) / 10000n;
   const creatorStroops = totalStroops - platformStroops;
 
-  // A fee that rounds down to zero stroops would be an invalid payment op
   if (platformStroops <= 0n) {
     return null;
   }
@@ -111,14 +96,6 @@ export const calculateFeeSplit = (
   };
 };
 
-/**
- * Build a SEP-7 payment URI (web+stellar:pay) for wallet deep-linking
- * @param {Object} params - URI parameters
- * @param {string} params.destination - Recipient's public key
- * @param {string|number} params.amount - Amount of USDC
- * @param {string} [params.memo] - Optional text memo
- * @returns {string} - SEP-7 payment URI
- */
 export const buildSep7Uri = ({ destination, amount, memo }) => {
   const params = new URLSearchParams({
     destination,
@@ -135,11 +112,6 @@ export const buildSep7Uri = ({ destination, amount, memo }) => {
   return `web+stellar:pay?${params.toString()}`;
 };
 
-/**
- * Validate a Stellar public key
- * @param {string} publicKey - The public key to validate
- * @returns {boolean} - True if valid
- */
 export const isValidPublicKey = (publicKey) => {
   try {
     StellarSdk.Keypair.fromPublicKey(publicKey);
@@ -149,14 +121,11 @@ export const isValidPublicKey = (publicKey) => {
   }
 };
 
-/**
- * Get account details including USDC balance
- * @param {string} publicKey - The account's public key
- * @returns {Promise<Object>} - Account info with balances
- */
 export const getAccountBalance = async (publicKey) => {
   try {
-    const account = await server.loadAccount(publicKey);
+    const account = await timedHorizonCall("loadAccount", () =>
+      server.loadAccount(publicKey)
+    );
     const usdcBalance = account.balances.find(
       (b) => b.asset_code === "USDC" && b.asset_issuer === USDC_ISSUER
     );
@@ -182,18 +151,6 @@ export const getAccountBalance = async (publicKey) => {
   }
 };
 
-/**
- * Build a payment transaction (unsigned)
- * This returns the XDR for the frontend to sign with the user's wallet
- * @param {Object} params - Transaction parameters
- * @param {string} params.sourcePublicKey - Sender's public key
- * @param {string} params.destinationPublicKey - Recipient's public key
- * @param {string} params.amount - Amount to send
- * @param {string} params.memo - Optional memo
- * @param {boolean} [params.applyPlatformFee] - Split the amount between the
- *   destination and the platform wallet when a platform fee is configured
- * @returns {Promise<Object>} - Transaction XDR, hash and fee split (null when no fee applies)
- */
 export const buildPaymentTransaction = async ({
   sourcePublicKey,
   destinationPublicKey,
@@ -202,7 +159,9 @@ export const buildPaymentTransaction = async ({
   applyPlatformFee = false,
 }) => {
   try {
-    const sourceAccount = await server.loadAccount(sourcePublicKey);
+    const sourceAccount = await timedHorizonCall("loadAccount", () =>
+      server.loadAccount(sourcePublicKey)
+    );
 
     const feeSplit = applyPlatformFee ? calculateFeeSplit(amount) : null;
 
@@ -212,7 +171,6 @@ export const buildPaymentTransaction = async ({
     });
 
     if (feeSplit) {
-      // Atomic split: creator and platform paid in ONE transaction
       builder
         .addOperation(
           StellarSdk.Operation.payment({
@@ -240,7 +198,7 @@ export const buildPaymentTransaction = async ({
 
     const transaction = builder
       .addMemo(StellarSdk.Memo.text(memo || "DeenBridge Purchase"))
-      .setTimeout(300) // 5 minutes
+      .setTimeout(300)
       .build();
 
     return {
@@ -255,11 +213,6 @@ export const buildPaymentTransaction = async ({
   }
 };
 
-/**
- * Submit a signed transaction to the Stellar network
- * @param {string} signedXdr - The signed transaction XDR
- * @returns {Promise<Object>} - Submission result
- */
 export const submitTransaction = async (signedXdr) => {
   try {
     const transaction = StellarSdk.TransactionBuilder.fromXDR(
@@ -267,7 +220,9 @@ export const submitTransaction = async (signedXdr) => {
       networkPassphrase
     );
 
-    const result = await server.submitTransaction(transaction);
+    const result = await timedHorizonCall("submitTransaction", () =>
+      server.submitTransaction(transaction)
+    );
     return {
       hash: result.hash,
       ledger: result.ledger,
@@ -276,7 +231,6 @@ export const submitTransaction = async (signedXdr) => {
   } catch (error) {
     logger.error("Error submitting transaction:", error);
 
-    // Parse Stellar error for better messages
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       if (codes.operations?.includes("op_underfunded")) {
@@ -296,15 +250,14 @@ export const submitTransaction = async (signedXdr) => {
   }
 };
 
-/**
- * Verify a transaction was successful on the Stellar network
- * @param {string} txHash - The transaction hash
- * @returns {Promise<Object>} - Verification result
- */
 export const verifyTransaction = async (txHash) => {
   try {
-    const tx = await server.transactions().transaction(txHash).call();
-    const operations = await server.operations().forTransaction(txHash).call();
+    const tx = await timedHorizonCall("fetchTransaction", () =>
+      server.transactions().transaction(txHash).call()
+    );
+    const operations = await timedHorizonCall("fetchOperations", () =>
+      server.operations().forTransaction(txHash).call()
+    );
 
     return {
       exists: true,
@@ -322,14 +275,6 @@ export const verifyTransaction = async (txHash) => {
   }
 };
 
-/**
- * Verify that a confirmed transaction contains the expected USDC payment
- * operations (amount + destination + asset). Used after submission to make
- * sure the signed transaction actually paid who it was supposed to pay.
- * @param {string} txHash - The transaction hash
- * @param {Array<{destination: string, amount: string|number}>} expectedPayments - Payments that must exist
- * @returns {Promise<Object>} - { verified, reason }
- */
 export const verifyPaymentOperations = async (txHash, expectedPayments) => {
   try {
     const verification = await verifyTransaction(txHash);
@@ -369,11 +314,6 @@ export const verifyPaymentOperations = async (txHash, expectedPayments) => {
   }
 };
 
-/**
- * Check if an account has a USDC trustline
- * @param {string} publicKey - The account's public key
- * @returns {Promise<boolean>} - True if trustline exists
- */
 export const hasUsdcTrustline = async (publicKey) => {
   try {
     const balance = await getAccountBalance(publicKey);
@@ -383,11 +323,6 @@ export const hasUsdcTrustline = async (publicKey) => {
   }
 };
 
-/**
- * Get the explorer URL for a transaction
- * @param {string} txHash - The transaction hash
- * @returns {string} - Explorer URL
- */
 export const getExplorerUrl = (txHash) => {
   const baseUrl =
     NETWORK === "mainnet"
@@ -396,11 +331,6 @@ export const getExplorerUrl = (txHash) => {
   return baseUrl + txHash;
 };
 
-/**
- * Get the explorer URL for an account
- * @param {string} publicKey - The account's public key
- * @returns {string} - Explorer URL
- */
 export const getAccountExplorerUrl = (publicKey) => {
   const baseUrl =
     NETWORK === "mainnet"

@@ -3,16 +3,15 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import compression from "compression";
 import dotenv from "dotenv";
+import crypto from "crypto";
 
-// Load environment variables first
 dotenv.config();
 
-// Import configuration
 import connectDB from "./src/config/db.js";
 import validateEnv from "./src/config/validateEnv.js";
 import logger from "./src/config/logger.js";
+import { registry, metricsMiddleware, observeHttpDuration } from "./src/config/metrics.js";
 
-// Import middleware
 import {
   helmetMiddleware,
   apiLimiter,
@@ -20,7 +19,6 @@ import {
   mongoSanitizeMiddleware,
   hppMiddleware,
   customSecurityHeaders,
-  requestLogger,
 } from "./src/middlewares/security.js";
 import { sanitizeInput } from "./src/middlewares/validate.js";
 import {
@@ -30,7 +28,6 @@ import {
   handleUncaughtException,
 } from "./src/middlewares/errorHandler.js";
 
-// Import routes
 import authRoutes from "./src/routes/authRoutes.js";
 import courseRoutes from "./src/routes/courses/courseRoutes.js";
 import reelsRoute from "./src/routes/reelsRoutes.js";
@@ -46,31 +43,61 @@ import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 
-// Handle uncaught exceptions
 handleUncaughtException();
-
-// Validate environment variables
 validateEnv();
-
-// Connect to MongoDB
 connectDB();
 
 const app = express();
 
-// Trust proxy (for Heroku, Render, etc.)
 app.set("trust proxy", 1);
+
+// ======================
+// REQUEST ID / LOGGING
+// ======================
+
+app.use((req, res, next) => {
+  req.id = req.headers["x-request-id"] || crypto.randomUUID();
+  req.log = logger.child({ reqId: req.id });
+  res.setHeader("X-Request-Id", req.id);
+  next();
+});
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const level = res.statusCode >= 400 ? "warn" : "info";
+    req.log[level](
+      { method: req.method, url: req.originalUrl, status: res.statusCode, durationMs: duration },
+      `${req.method} ${req.originalUrl} ${res.statusCode}`
+    );
+  });
+  next();
+});
+
+// HTTP duration observation for Prometheus
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const route = req.route?.path || req.baseUrl || req.path;
+    observeHttpDuration(req.method, route, res.statusCode, Date.now() - start);
+  });
+  next();
+});
+
+// ======================
+// METRICS (before rate limiter)
+// ======================
+
+app.get("/metrics", metricsMiddleware);
 
 // ======================
 // SECURITY MIDDLEWARE
 // ======================
 
-// Helmet - Set security headers
 app.use(helmetMiddleware);
-
-// Custom security headers
 app.use(customSecurityHeaders);
 
-// CORS configuration with strict options
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
@@ -81,7 +108,6 @@ const corsOptions = {
       "http://deenbridge.vercel.app",
     ];
 
-    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -106,7 +132,6 @@ app.use(compression());
 app.use(mongoSanitizeMiddleware);
 app.use(hppMiddleware);
 app.use(sanitizeInput);
-app.use(requestLogger);
 
 // ======================
 // ROUTES
@@ -129,13 +154,9 @@ app.get("/health", (req, res) => {
   });
 });
 
-// API routes with rate limiting
-app.use("/api", apiLimiter); // Apply rate limiting to all API routes
+app.use("/api", apiLimiter);
 
-// Auth routes with stricter rate limiting
 app.use("/api/auth", authLimiter, authRoutes);
-
-// Other API routes
 app.use("/api/courses", courseRoutes);
 app.use("/api/reels", reelsRoute);
 app.use("/api/books", bookRoutes);
@@ -154,17 +175,11 @@ app.use("/api/stellar/donation", stellarDonationRoutes);
 // ERROR HANDLING
 // ======================
 
-// Handle undefined routes (404)
 app.use(notFound);
-
-// Global error handler
 app.use(errorHandler);
-
-// Handle unhandled promise rejections
 handleUnhandledRejection();
 
-// Log server startup
-logger.info("🚀 DeenBridge API initialized");
-logger.info(`📝 Logging enabled - Level: ${logger.level}`);
+logger.info("DeenBridge API initialized");
+logger.info(`Logging enabled - Level: ${logger.level}`);
 
 export default app;
