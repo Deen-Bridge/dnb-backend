@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Reel from "../models/Reel.js";
 import cloudinary from "../utils/cloudinary.js";
+import logger from "../config/logger.js";
 
 const uploadBufferToCloudinary = (buffer, options) =>
   new Promise((resolve, reject) => {
@@ -105,7 +106,7 @@ export const getReels = async (req, res) => {
       reels: formatted,
     });
   } catch (error) {
-    console.error("Error fetching reels:", error);
+    logger.error("Error fetching reels:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -129,7 +130,7 @@ export const getReelById = async (req, res) => {
       .status(200)
       .json({ success: true, reel: formatReelResponse(reel, viewerId) });
   } catch (error) {
-    console.error("Error fetching reel:", error);
+    logger.error("Error fetching reel:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -179,7 +180,7 @@ export const createReel = async (req, res) => {
       reel: formatReelResponse(populatedReel.toObject(), userId),
     });
   } catch (error) {
-    console.error("Error creating reel:", error);
+    logger.error("Error creating reel:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -237,7 +238,7 @@ export const reactToReel = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error reacting to reel:", error);
+    logger.error("Error reacting to reel:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -285,7 +286,7 @@ export const addReelComment = async (req, res) => {
       stats: { comments: reel.comments.length },
     });
   } catch (error) {
-    console.error("Error adding reel comment:", error);
+    logger.error("Error adding reel comment:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -327,7 +328,7 @@ export const getReelComments = async (req, res) => {
       comments: paginated,
     });
   } catch (error) {
-    console.error("Error fetching reel comments:", error);
+    logger.error("Error fetching reel comments:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -370,7 +371,7 @@ export const deleteReelComment = async (req, res) => {
       stats: { comments: reel.comments.length },
     });
   } catch (error) {
-    console.error("Error deleting reel comment:", error);
+    logger.error("Error deleting reel comment:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -395,7 +396,7 @@ export const registerReelShare = async (req, res) => {
       shareCount: reel.shareCount,
     });
   } catch (error) {
-    console.error("Error updating reel share count:", error);
+    logger.error("Error updating reel share count:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -420,7 +421,7 @@ export const registerReelView = async (req, res) => {
       viewCount: reel.viewCount,
     });
   } catch (error) {
-    console.error("Error updating reel view count:", error);
+    logger.error("Error updating reel view count:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

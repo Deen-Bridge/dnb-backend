@@ -1,3 +1,4 @@
+import logger from "../../config/logger.js";
 import Book from "../../models/Book.js";
 
 /**
@@ -36,7 +37,7 @@ export const getRecommendedBooks = async (req, res) => {
       message: "Books recommended based on your interests",
     });
   } catch (error) {
-    console.error("Error fetching recommended books:", error);
+    logger.error("Error fetching recommended books:", error);
     res.status(500).json({
       success: false,
       message: error.message,

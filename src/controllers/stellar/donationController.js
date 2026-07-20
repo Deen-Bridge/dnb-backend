@@ -13,6 +13,12 @@ import {
   DONATION_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
 import logger from "../../config/logger.js";
+import {
+  paymentsInitialized,
+  paymentsSubmitted,
+  paymentsConfirmed,
+  paymentsFailed,
+} from "../../config/metrics.js";
 
 const DONATION_MEMO = "DNB-SADAQAH";
 
@@ -91,6 +97,7 @@ export const initializeDonation = async (req, res) => {
 
     await donation.save({ session });
     await session.commitTransaction();
+    paymentsInitialized.inc({ type: "donation" });
 
     logger.info(`Donation initialized: ${donation._id} for ${amount} USDC`);
 
@@ -155,6 +162,7 @@ export const submitDonation = async (req, res) => {
     donation.status = "submitted";
     donation.submittedAt = new Date();
     await donation.save({ session });
+    paymentsSubmitted.inc({ type: "donation" });
 
     // Submit to Stellar network
     let result;
@@ -165,6 +173,7 @@ export const submitDonation = async (req, res) => {
       donation.failureReason = stellarError.message;
       await donation.save({ session });
       await session.commitTransaction();
+      paymentsFailed.inc({ type: "donation", reason: "stellar_error" });
 
       logger.error(`Donation ${donationId} failed:`, stellarError);
 
@@ -189,6 +198,7 @@ export const submitDonation = async (req, res) => {
       donation.stellarTxHash = result.hash;
       await donation.save({ session });
       await session.commitTransaction();
+      paymentsFailed.inc({ type: "donation", reason: "verification_failed" });
 
       logger.error(
         `Donation ${donationId} verification failed: ${verification.reason}`
@@ -208,6 +218,7 @@ export const submitDonation = async (req, res) => {
     donation.confirmedAt = new Date();
     await donation.save({ session });
     await session.commitTransaction();
+    paymentsConfirmed.inc({ type: "donation" });
 
     logger.info(
       `Donation successful: ${donationId}, Stellar TX: ${result.hash}`

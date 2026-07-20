@@ -2,11 +2,12 @@ import axios from "axios";
 import Book from "../../models/Book.js";
 import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
+import logger from "../../config/logger.js";
 
 //cretae a book
 export const createBook = async (req, res) => {
-  console.log("Creating book with data:", req.body);
-  console.log("Files received:", req.files);
+  logger.info("Creating book with data:", req.body);
+  logger.info("Files received:", req.files);
   try {
     const { title, category, price, readCount, rating, description } = req.body;
 
@@ -47,8 +48,8 @@ export const createBook = async (req, res) => {
     });
 
     // Debug: log Cloudinary upload results
-    console.log("thumbnailUpload:", thumbnailUpload);
-    console.log("fileUpload:", fileUpload);
+    logger.info("thumbnailUpload:", thumbnailUpload);
+    logger.info("fileUpload:", fileUpload);
 
     const book = await Book.create({
       title,
@@ -65,7 +66,7 @@ export const createBook = async (req, res) => {
 
     res.status(201).json({ success: true, book });
   } catch (err) {
-    console.error("Book creation error:", err);
+    logger.error("Book creation error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 };
@@ -213,7 +214,7 @@ export const streamBookPreview = async (req, res) => {
 
     fileResponse.data.pipe(res);
   } catch (error) {
-    console.error("Error streaming book preview:", error);
+    logger.error("Error streaming book preview:", error);
     res
       .status(500)
       .json({ success: false, message: "Unable to stream book preview" });
