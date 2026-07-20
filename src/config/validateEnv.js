@@ -20,9 +20,15 @@ const optionalEnvVars = [
   "DONATION_WALLET_PUBLIC_KEY",
   "PLATFORM_FEE_PERCENT",
   "PLATFORM_WALLET_PUBLIC_KEY",
+  "ACCESS_TOKEN_TTL",
+  "REFRESH_TOKEN_TTL",
 ];
 
 export const validateEnv = () => {
+  // Default values for TTLs if not provided
+  process.env.ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
+  process.env.REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || "30d";
+
   const missing = [];
 
   requiredEnvVars.forEach((envVar) => {
