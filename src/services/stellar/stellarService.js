@@ -51,7 +51,7 @@ const STROOPS_PER_UNIT = 10000000n;
  * @param {string|number} amount - The amount to convert
  * @returns {BigInt} - Amount in stroops
  */
-const toStroops = (amount) => {
+export const toStroops = (amount) => {
   const [whole, frac = ""] = amount.toString().split(".");
   return (
     BigInt(whole || "0") * STROOPS_PER_UNIT +
@@ -64,7 +64,7 @@ const toStroops = (amount) => {
  * @param {BigInt} stroops - Amount in stroops
  * @returns {string} - Decimal amount string
  */
-const fromStroops = (stroops) => {
+export const fromStroops = (stroops) => {
   const whole = stroops / STROOPS_PER_UNIT;
   const frac = (stroops % STROOPS_PER_UNIT)
     .toString()

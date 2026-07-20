@@ -26,6 +26,8 @@ export const protect = async (req, res, next) => {
           .json({ success: false, message: "User not found" });
       }
 
+      req.sessionId = decoded.sessionId;
+
       next();
     } catch (error) {
       return res
