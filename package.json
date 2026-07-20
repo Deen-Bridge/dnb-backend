@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node src/scripts/seedDatabase.js",
-    "test-redis": "node test-redis.js"
+    "test-redis": "node test-redis.js",
+    "payouts:audit": "node src/scripts/auditPayouts.js"
   },
   "keywords": [],
   "author": "zeemscript",
@@ -44,7 +45,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
-    "jest": "^30.0.5",
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^11.2.0",
     "nodemon": "^3.1.10",
     "supertest": "^7.1.4"
   },
