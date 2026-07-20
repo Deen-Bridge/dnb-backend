@@ -14,6 +14,12 @@ import {
   getExplorerUrl,
 } from "../../services/stellar/stellarService.js";
 import logger from "../../config/logger.js";
+import {
+  paymentsInitialized,
+  paymentsSubmitted,
+  paymentsConfirmed,
+  paymentsFailed,
+} from "../../config/metrics.js";
 
 /**
  * Initialize a payment - creates pending transaction and returns XDR to sign
@@ -169,6 +175,7 @@ export const initializePayment = async (req, res) => {
 
     await transaction.save({ session });
     await session.commitTransaction();
+    paymentsInitialized.inc({ type: "purchase" });
 
     logger.info(
       `Payment initialized: ${transaction._id} for ${itemType} ${itemId}`
@@ -246,6 +253,7 @@ export const submitPayment = async (req, res) => {
     transaction.status = "submitted";
     transaction.submittedAt = new Date();
     await transaction.save({ session });
+    paymentsSubmitted.inc({ type: "purchase" });
 
     // Submit to Stellar network
     let result;
@@ -257,6 +265,7 @@ export const submitPayment = async (req, res) => {
       transaction.failureReason = stellarError.message;
       await transaction.save({ session });
       await session.commitTransaction();
+      paymentsFailed.inc({ type: "purchase", reason: "stellar_error" });
 
       logger.error(`Transaction ${transactionId} failed:`, stellarError);
 
@@ -298,6 +307,7 @@ export const submitPayment = async (req, res) => {
       transaction.stellarTxHash = result.hash;
       await transaction.save({ session });
       await session.commitTransaction();
+      paymentsFailed.inc({ type: "purchase", reason: "verification_failed" });
 
       logger.error(
         `Transaction ${transactionId} verification failed: ${verification.reason}`
@@ -316,6 +326,7 @@ export const submitPayment = async (req, res) => {
     transaction.status = "confirmed";
     transaction.confirmedAt = new Date();
     await transaction.save({ session });
+    paymentsConfirmed.inc({ type: "purchase" });
 
     // Grant access to the purchased item
     const buyer = await User.findById(buyerId).session(session);
