@@ -1,0 +1,41 @@
+# CodeRabbit configuration — https://docs.coderabbit.ai/reference/configuration
+language: "en-US"
+tone_instructions: "Be welcoming and constructive with contributors, many of whom are first-time open-source contributors. Be strict about correctness, security, payment integrity, and CI health. Explain the why behind every requested change."
+reviews:
+  profile: "chill"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+      - "dev"
+  path_instructions:
+    - path: "src/**/*.js"
+      instructions: >-
+        This is an Express 5 ESM + Mongoose 8 API. New or changed endpoints need Jest
+        coverage (the runner uses --experimental-vm-modules) and consistent response
+        shapes ({ success, message, data }). Flag missing auth/ownership checks,
+        unvalidated request input, and unhandled promise rejections.
+    - path: "src/services/stellar/**"
+      instructions: >-
+        Stellar payments are strictly non-custodial: the server never holds or receives
+        secret keys; it builds unsigned XDR, the user's wallet signs, and payments are
+        verified against Horizon before granting access. Amount math must use integer
+        stroops/BigInt — flag any floating-point arithmetic on amounts, any secret-key
+        handling, and any trust of client-reported payment results without on-chain
+        verification.
+    - path: "src/models/**"
+      instructions: >-
+        Flag schema changes that break existing documents, missing indexes for new query
+        patterns, and TTL indexes that could delete durable records.
+    - path: "**/*.js"
+      instructions: >-
+        Flag hardcoded secrets, connection strings, JWT secrets, or wallet keys; all
+        configuration belongs in environment variables documented in .env.example.
+chat:
+  auto_reply: true
