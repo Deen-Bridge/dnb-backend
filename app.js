@@ -45,7 +45,6 @@ import callRoutes from "./src/routes/callRoutes.js";
 import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
-import payoutRoutes from "./src/routes/payoutRoutes.js";
 
 // Handle uncaught exceptions
 handleUncaughtException();
@@ -53,10 +52,8 @@ handleUncaughtException();
 // Validate environment variables
 validateEnv();
 
-// Connect to MongoDB (skip during tests as tests handle their own connections)
-if (process.env.NODE_ENV !== "test") {
-  connectDB();
-}
+// Connect to MongoDB
+connectDB();
 
 const app = express();
 
@@ -135,8 +132,8 @@ app.get("/health", (req, res) => {
 // API routes with rate limiting
 app.use("/api", apiLimiter); // Apply rate limiting to all API routes
 
-// Auth routes
-app.use("/api/auth", authRoutes);
+// Auth routes with stricter rate limiting
+app.use("/api/auth", authLimiter, authRoutes);
 
 // Other API routes
 app.use("/api/courses", courseRoutes);
@@ -152,7 +149,6 @@ app.use("/api/calls", callRoutes);
 app.use("/api/stellar/wallet", stellarWalletRoutes);
 app.use("/api/stellar/payment", stellarPaymentRoutes);
 app.use("/api/stellar/donation", stellarDonationRoutes);
-app.use("/api/payouts", payoutRoutes);
 
 // ======================
 // ERROR HANDLING

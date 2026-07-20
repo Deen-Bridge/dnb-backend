@@ -12,9 +12,7 @@ import {
   verifyPaymentOperations,
   NETWORK,
   getExplorerUrl,
-  PLATFORM_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
-import { recordSaleEarnings } from "../../services/payoutService.js";
 import logger from "../../config/logger.js";
 
 /**
@@ -74,35 +72,14 @@ export const initializePayment = async (req, res) => {
     }
 
     const creator = itemType === "book" ? item.author : item.createdBy;
-    const platformCollectEnabled =
-      process.env.PLATFORM_COLLECT_ENABLED === "true";
-    let destinationPublicKey;
-    let settlementMode = "direct";
 
-    // Check creator has wallet or platform-collect mode is enabled
+    // Check creator has wallet
     if (!creator?.stellarWallet?.publicKey) {
-      if (!platformCollectEnabled) {
-        await session.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          message: "Creator has not connected their Stellar wallet yet",
-        });
-      }
-
-      const platformWalletKey =
-        process.env.PLATFORM_WALLET_PUBLIC_KEY || PLATFORM_WALLET_PUBLIC_KEY;
-      if (!platformWalletKey) {
-        await session.abortTransaction();
-        return res.status(500).json({
-          success: false,
-          message: "Platform wallet is not configured for platform-collect mode",
-        });
-      }
-
-      destinationPublicKey = platformWalletKey;
-      settlementMode = "platform_collect";
-    } else {
-      destinationPublicKey = creator.stellarWallet.publicKey;
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "Creator has not connected their Stellar wallet yet",
+      });
     }
 
     // Check if item is free
@@ -150,30 +127,28 @@ export const initializePayment = async (req, res) => {
     // Generate unique memo for this transaction
     const memo = `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
 
-    // Build the payment transaction (single op full amount for platform collect, split for direct if fee configured)
+    // Build the payment transaction (splits in a platform fee when configured)
     const paymentTx = await buildPaymentTransaction({
       sourcePublicKey: buyer.stellarWallet.publicKey,
-      destinationPublicKey,
+      destinationPublicKey: creator.stellarWallet.publicKey,
       amount: item.price.toString(),
       memo,
-      applyPlatformFee: settlementMode === "direct",
+      applyPlatformFee: true,
     });
 
     // SEP-7 URI so wallets can deep-link the payment
     const sep7Uri = buildSep7Uri({
-      destination: destinationPublicKey,
+      destination: creator.stellarWallet.publicKey,
       amount: item.price.toString(),
       memo,
     });
-
-    const feeSplit = paymentTx.feeSplit;
 
     // Create pending transaction record
     const transaction = new Transaction({
       buyer: buyerId,
       buyerWallet: buyer.stellarWallet.publicKey,
       creator: creator._id,
-      creatorWallet: destinationPublicKey,
+      creatorWallet: creator.stellarWallet.publicKey,
       itemType,
       itemId,
       itemTypeModel: itemType === "book" ? "Book" : "Course",
@@ -181,14 +156,13 @@ export const initializePayment = async (req, res) => {
       amount: item.price.toString(),
       network: NETWORK,
       status: "pending",
-      settlement: settlementMode,
       stellarTxHash: paymentTx.hash, // Temporary hash, will be replaced with actual
-      ...(feeSplit && {
+      ...(paymentTx.feeSplit && {
         platformFee: {
-          feePercent: feeSplit.feePercent,
-          platformWallet: feeSplit.platformWallet,
-          platformAmount: feeSplit.platformAmount,
-          creatorAmount: feeSplit.creatorAmount,
+          feePercent: paymentTx.feeSplit.feePercent,
+          platformWallet: paymentTx.feeSplit.platformWallet,
+          platformAmount: paymentTx.feeSplit.platformAmount,
+          creatorAmount: paymentTx.feeSplit.creatorAmount,
         },
       }),
     });
@@ -342,9 +316,6 @@ export const submitPayment = async (req, res) => {
     transaction.status = "confirmed";
     transaction.confirmedAt = new Date();
     await transaction.save({ session });
-
-    // Record earnings for educator balance & ledger (idempotent per stellarTxHash)
-    await recordSaleEarnings(transaction, { session });
 
     // Grant access to the purchased item
     const buyer = await User.findById(buyerId).session(session);

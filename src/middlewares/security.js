@@ -55,24 +55,6 @@ export const authLimiter = rateLimit({
 });
 
 /**
- * Rate limiting specifically for token refresh route
- */
-export const refreshLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // Limit each IP to 50 refresh requests per windowMs
-  message: "Too many refresh attempts, please try again later.",
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => {
-    logger.warn(`Refresh rate limit exceeded for IP: ${req.ip}`);
-    res.status(429).json({
-      success: false,
-      message: "Too many refresh attempts, please try again later.",
-    });
-  },
-});
-
-/**
  * MongoDB Injection Protection
  * Custom implementation for Express 5 compatibility
  * Sanitizes user input to prevent NoSQL injection attacks
@@ -176,7 +158,6 @@ export default {
   helmetMiddleware,
   apiLimiter,
   authLimiter,
-  refreshLimiter,
   mongoSanitizeMiddleware,
   hppMiddleware,
   customSecurityHeaders,

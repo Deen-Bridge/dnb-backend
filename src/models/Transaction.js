@@ -99,14 +99,6 @@ const transactionSchema = new mongoose.Schema(
       creatorAmount: String,
     },
 
-    // Settlement mode: direct payment to creator or platform collect for payouts
-    settlement: {
-      type: String,
-      enum: ["direct", "platform_collect"],
-      default: "direct",
-      index: true,
-    },
-
     // Status tracking
     status: {
       type: String,
