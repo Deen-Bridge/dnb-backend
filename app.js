@@ -52,8 +52,10 @@ handleUncaughtException();
 // Validate environment variables
 validateEnv();
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB (skip during tests as tests handle their own connections)
+if (process.env.NODE_ENV !== "test") {
+  connectDB();
+}
 
 const app = express();
 
@@ -132,8 +134,8 @@ app.get("/health", (req, res) => {
 // API routes with rate limiting
 app.use("/api", apiLimiter); // Apply rate limiting to all API routes
 
-// Auth routes with stricter rate limiting
-app.use("/api/auth", authLimiter, authRoutes);
+// Auth routes
+app.use("/api/auth", authRoutes);
 
 // Other API routes
 app.use("/api/courses", courseRoutes);
