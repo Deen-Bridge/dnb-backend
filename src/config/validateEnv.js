@@ -24,6 +24,12 @@ const optionalEnvVars = [
   "PAYOUT_ADMIN_USER_IDS",
   "ACCESS_TOKEN_TTL",
   "REFRESH_TOKEN_TTL",
+  // Redis configuration (optional - app works without Redis)
+  "REDIS_URL",
+  "REDIS_HOST",
+  "REDIS_PORT",
+  "REDIS_USERNAME",
+  "REDIS_PASSWORD",
 ];
 
 export const validateEnv = () => {
