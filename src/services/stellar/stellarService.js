@@ -39,7 +39,7 @@ const PLATFORM_FEE_PERCENT = (() => {
   return percent;
 })();
 
-const STROOPS_PER_UNIT = 10000000n;
+export const STROOPS_PER_UNIT = 10000000n;
 
 async function timedHorizonCall(operation, fn) {
   const start = Date.now();
@@ -78,6 +78,123 @@ export const fromStroops = (stroops) => {
     .padStart(7, "0")
     .replace(/0+$/, "");
   return frac ? `${whole}.${frac}` : whole.toString();
+};
+
+export const applySlippage = (amount, bps) => {
+  const stroops = toStroops(amount);
+  const extra = (stroops * BigInt(bps)) / 10000n;
+  return fromStroops(stroops + extra);
+};
+
+const applySlippageStroops = (stroops, bps) => {
+  return stroops + (stroops * BigInt(bps)) / 10000n;
+};
+
+export const findPaymentPaths = async (sendAsset, destAmount) => {
+  try {
+    const records = await timedHorizonCall("strictReceivePaths", () =>
+      server.strictReceivePaths([sendAsset], USDC, destAmount.toString()).call()
+    );
+    return records.records;
+  } catch (error) {
+    if (error.response?.status === 400 || error.response?.status === 404) {
+      return [];
+    }
+    logger.error("Error finding payment paths:", error);
+    throw error;
+  }
+};
+
+const assetFromHorizonRecord = (record) => {
+  if (record.asset_type === "native") {
+    return StellarSdk.Asset.native();
+  }
+  return new StellarSdk.Asset(record.asset_code, record.asset_issuer);
+};
+
+export const buildPathPaymentTransaction = async ({
+  sourcePublicKey,
+  destinationPublicKey,
+  destAmount,
+  sendAsset,
+  sendMax,
+  path = [],
+  memo,
+  applyPlatformFee = false,
+}) => {
+  try {
+    const sourceAccount = await timedHorizonCall("loadAccount", () =>
+      server.loadAccount(sourcePublicKey)
+    );
+
+    const feeSplit = applyPlatformFee ? calculateFeeSplit(destAmount) : null;
+    const totalDestStroops = toStroops(destAmount);
+    const sendMaxStroops = toStroops(sendMax);
+
+    const pathAssets = path.map(assetFromHorizonRecord);
+
+    const builder = new StellarSdk.TransactionBuilder(sourceAccount, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase,
+    });
+
+    if (feeSplit) {
+      const creatorDestStroops = toStroops(feeSplit.creatorAmount);
+      const creatorSendMaxStroops =
+        (sendMaxStroops * creatorDestStroops) / totalDestStroops;
+      const platformSendMaxStroops = sendMaxStroops - creatorSendMaxStroops;
+
+      builder.addOperation(
+        StellarSdk.Operation.pathPaymentStrictReceive({
+          sendAsset,
+          sendMax: fromStroops(creatorSendMaxStroops),
+          destination: destinationPublicKey,
+          destAsset: USDC,
+          destAmount: feeSplit.creatorAmount,
+          path: pathAssets,
+        })
+      );
+
+      if (platformSendMaxStroops > 0n) {
+        builder.addOperation(
+          StellarSdk.Operation.pathPaymentStrictReceive({
+            sendAsset,
+            sendMax: fromStroops(platformSendMaxStroops),
+            destination: feeSplit.platformWallet,
+            destAsset: USDC,
+            destAmount: feeSplit.platformAmount,
+            path: pathAssets,
+          })
+        );
+      }
+    } else {
+      builder.addOperation(
+        StellarSdk.Operation.pathPaymentStrictReceive({
+          sendAsset,
+          sendMax: sendMax.toString(),
+          destination: destinationPublicKey,
+          destAsset: USDC,
+          destAmount: destAmount.toString(),
+          path: pathAssets,
+        })
+      );
+    }
+
+    const transaction = builder
+      .addMemo(StellarSdk.Memo.text(memo || "DeenBridge Purchase"))
+      .setTimeout(300)
+      .build();
+
+    return {
+      xdr: transaction.toXDR(),
+      hash: transaction.hash().toString("hex"),
+      networkPassphrase,
+      feeSplit,
+    };
+  } catch (error) {
+    logger.error("Error building path payment transaction:", error);
+    throw error;
+  }
 };
 
 export const calculateFeeSplit = (
@@ -246,6 +363,15 @@ export const submitTransaction = async (signedXdr) => {
       if (codes.operations?.includes("op_underfunded")) {
         throw new Error("Insufficient USDC balance");
       }
+      if (
+        codes.operations?.some(
+          (c) =>
+            typeof c === "string" &&
+            (c.includes("over_sendmax") || c.includes("over_source_max"))
+        )
+      ) {
+        throw new Error("Price moved, request a new quote");
+      }
       if (codes.operations?.includes("op_no_trust")) {
         throw new Error(
           "Recipient does not have a USDC trustline. They need to add USDC to their wallet first."
@@ -296,19 +422,31 @@ export const verifyPaymentOperations = async (txHash, expectedPayments) => {
       return { verified: false, reason: "Transaction was not successful" };
     }
 
-    const paymentOps = verification.operations.filter(
-      (op) =>
-        op.type === "payment" &&
-        op.asset_code === "USDC" &&
-        op.asset_issuer === USDC_ISSUER
-    );
+    const paymentOps = verification.operations.filter((op) => {
+      if (op.type === "payment") {
+        return (
+          op.asset_code === "USDC" && op.asset_issuer === USDC_ISSUER
+        );
+      }
+      if (op.type === "path_payment_strict_receive") {
+        return (
+          op.destination_asset_code === "USDC" &&
+          op.destination_asset_issuer === USDC_ISSUER
+        );
+      }
+      return false;
+    });
 
     for (const expected of expectedPayments) {
-      const match = paymentOps.find(
-        (op) =>
-          op.to === expected.destination &&
-          toStroops(op.amount) === toStroops(expected.amount)
-      );
+      const match = paymentOps.find((op) => {
+        if (op.to !== expected.destination) return false;
+
+        const opAmount =
+          op.type === "path_payment_strict_receive"
+            ? op.destination_amount
+            : op.amount;
+        return toStroops(opAmount) === toStroops(expected.amount);
+      });
       if (!match) {
         return {
           verified: false,
