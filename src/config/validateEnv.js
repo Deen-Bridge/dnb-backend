@@ -24,6 +24,10 @@ const optionalEnvVars = [
   "PAYOUT_ADMIN_USER_IDS",
   "ACCESS_TOKEN_TTL",
   "REFRESH_TOKEN_TTL",
+  "QUEUE_DRIVER",
+  "JOBS_ENABLED",
+  "JOBS_DASHBOARD_TOKEN",
+  "EMAILJS_RECEIPT_TEMPLATE_ID",
 ];
 
 export const validateEnv = () => {

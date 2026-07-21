@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import compression from "compression";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import "./src/jobs/handlers.js";
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
+import jobsRoutes from "./src/routes/jobsRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -179,6 +181,7 @@ app.use("/api/stellar/wallet", stellarWalletRoutes);
 app.use("/api/stellar/payment", stellarPaymentRoutes);
 app.use("/api/stellar/donation", stellarDonationRoutes);
 app.use("/api/payouts", payoutRoutes);
+app.use("/admin/jobs", jobsRoutes);
 
 // ======================
 // ERROR HANDLING
