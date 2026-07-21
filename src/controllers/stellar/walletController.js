@@ -1,4 +1,5 @@
 // controllers/stellar/walletController.js
+import mongoose from "mongoose";
 import User from "../../models/User.js";
 import {
   isValidPublicKey,
@@ -176,8 +177,15 @@ export const checkUserWallet = async (req, res) => {
   try {
     const { userId } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
     const user = await User.findById(userId).select(
-      "stellarWallet.publicKey name"
+      "stellarWallet.publicKey"
     );
 
     if (!user) {
@@ -190,7 +198,6 @@ export const checkUserWallet = async (req, res) => {
     res.status(200).json({
       success: true,
       hasWallet: !!user.stellarWallet?.publicKey,
-      userName: user.name,
     });
   } catch (error) {
     logger.error("Check user wallet error:", error);

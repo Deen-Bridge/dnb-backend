@@ -16,8 +16,8 @@ router.post("/connect", protect, connectWallet);
 router.delete("/disconnect", protect, disconnectWallet);
 router.get("/me", protect, getMyWallet);
 
-// Public routes
-router.get("/balance/:publicKey", getWalletBalance);
-router.get("/check/:userId", checkUserWallet);
+// Lookup routes require authentication to avoid wallet/user enumeration.
+router.get("/balance/:publicKey", protect, getWalletBalance);
+router.get("/check/:userId", protect, checkUserWallet);
 
 export default router;
