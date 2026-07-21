@@ -16,10 +16,9 @@ import {
   NETWORK,
   getExplorerUrl,
   USDC,
-} from "../../services/stellar/stellarService.js";
-import * as StellarSdk from "@stellar/stellar-sdk";
   PLATFORM_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
+import * as StellarSdk from "@stellar/stellar-sdk";
 import { recordSaleEarnings } from "../../services/payoutService.js";
 import logger from "../../config/logger.js";
 import {
@@ -273,7 +272,7 @@ export const initializePayment = async (req, res) => {
     // Generate unique memo for this transaction
     const memo = `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
 
-    // Build the payment transaction (splits in a platform fee when configured)
+    // Build the payment transaction (single op full amount for platform collect, split for direct if fee configured)
     const isPathPayment = sendAssetInput && sendMax;
     let paymentTx;
     let sep7Uri = null;
@@ -293,44 +292,29 @@ export const initializePayment = async (req, res) => {
 
       paymentTx = await buildPathPaymentTransaction({
         sourcePublicKey: buyer.stellarWallet.publicKey,
-        destinationPublicKey: creator.stellarWallet.publicKey,
+        destinationPublicKey,
         destAmount: item.price.toString(),
         sendAsset,
         sendMax,
         path,
         memo,
-        applyPlatformFee: true,
+        applyPlatformFee: settlementMode === "direct",
       });
     } else {
       paymentTx = await buildPaymentTransaction({
         sourcePublicKey: buyer.stellarWallet.publicKey,
-        destinationPublicKey: creator.stellarWallet.publicKey,
+        destinationPublicKey,
         amount: item.price.toString(),
         memo,
-        applyPlatformFee: true,
+        applyPlatformFee: settlementMode === "direct",
       });
 
       sep7Uri = buildSep7Uri({
-        destination: creator.stellarWallet.publicKey,
+        destination: destinationPublicKey,
         amount: item.price.toString(),
         memo,
       });
     }
-    // Build the payment transaction (single op full amount for platform collect, split for direct if fee configured)
-    const paymentTx = await buildPaymentTransaction({
-      sourcePublicKey: buyer.stellarWallet.publicKey,
-      destinationPublicKey,
-      amount: item.price.toString(),
-      memo,
-      applyPlatformFee: settlementMode === "direct",
-    });
-
-    // SEP-7 URI so wallets can deep-link the payment
-    const sep7Uri = buildSep7Uri({
-      destination: destinationPublicKey,
-      amount: item.price.toString(),
-      memo,
-    });
 
     const feeSplit = paymentTx.feeSplit;
 
@@ -348,12 +332,11 @@ export const initializePayment = async (req, res) => {
       network: NETWORK,
       status: "pending",
       settlement: settlementMode,
-      stellarTxHash: paymentTx.hash, // Temporary hash, will be replaced with actual
+      stellarTxHash: paymentTx.hash,
       ...(sendAssetInput && {
         sendAsset: sendAssetInput,
         sendMax,
       }),
-      ...(paymentTx.feeSplit && {
       ...(feeSplit && {
         platformFee: {
           feePercent: feeSplit.feePercent,
