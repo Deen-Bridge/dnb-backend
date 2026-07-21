@@ -61,6 +61,13 @@ export const getQuote = async (req, res) => {
       });
     }
 
+    if (sendAssetCode && !sendAssetIssuer && sendAssetCode !== "XLM" && sendAssetCode !== "native") {
+      return res.status(400).json({
+        success: false,
+        message: "Non-native assets require an issuer. Omit sendAssetIssuer only for native XLM.",
+      });
+    }
+
     const sendAsset = sendAssetIssuer
       ? new StellarSdk.Asset(sendAssetCode, sendAssetIssuer)
       : StellarSdk.Asset.native();
