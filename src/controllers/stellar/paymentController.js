@@ -20,6 +20,7 @@ import {
 } from "../../services/stellar/stellarService.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { recordSaleEarnings } from "../../services/payoutService.js";
+import { enqueue } from "../../jobs/queue.js";
 import logger from "../../config/logger.js";
 import {
   paymentsInitialized,
@@ -480,9 +481,32 @@ export const submitPayment = async (req, res) => {
     );
 
     if (!verification.verified) {
+      transaction.stellarTxHash = result.hash;
+      if (verification.transient) {
+        transaction.status = "retrying";
+        transaction.failureReason = verification.reason;
+        await transaction.save({ session });
+        await enqueue(
+          "verifyPaymentOnChain",
+          { transactionId: transaction._id.toString() },
+          {
+            attempts: 5,
+            backoffMs: 1000,
+            idempotencyKey: `verify:${result.hash}`,
+            session,
+          }
+        );
+        await session.commitTransaction();
+        return res.status(202).json({
+          success: true,
+          message: "Payment submitted; confirmation is in progress",
+          transactionId: transaction._id,
+          txHash: result.hash,
+          status: "retrying",
+        });
+      }
       transaction.status = "failed";
       transaction.failureReason = `On-chain verification failed: ${verification.reason}`;
-      transaction.stellarTxHash = result.hash;
       await transaction.save({ session });
       await session.commitTransaction();
       paymentsFailed.inc({ type: "purchase", reason: "verification_failed" });
@@ -538,6 +562,16 @@ export const submitPayment = async (req, res) => {
     }
 
     await buyer.save({ session });
+    await enqueue(
+      "generateReceipt",
+      { transactionId: transaction._id.toString() },
+      {
+        attempts: 5,
+        backoffMs: 1000,
+        idempotencyKey: `receipt:${result.hash}`,
+        session,
+      }
+    );
     await session.commitTransaction();
 
     logger.info(
