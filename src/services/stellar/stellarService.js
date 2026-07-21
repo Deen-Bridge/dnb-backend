@@ -39,7 +39,7 @@ const PLATFORM_FEE_PERCENT = (() => {
   return percent;
 })();
 
-const STROOPS_PER_UNIT = 10000000n;
+export const STROOPS_PER_UNIT = 10000000n;
 
 async function timedHorizonCall(operation, fn) {
   const start = Date.now();
@@ -496,7 +496,4 @@ export {
   DONATION_WALLET_PUBLIC_KEY,
   PLATFORM_FEE_PERCENT,
   PLATFORM_WALLET_PUBLIC_KEY,
-  STROOPS_PER_UNIT,
-  toStroops,
-  fromStroops,
 };
