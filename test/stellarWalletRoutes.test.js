@@ -10,9 +10,6 @@ const isValidPublicKey = jest.fn();
 const authUserId = new mongoose.Types.ObjectId().toString();
 const targetUserId = new mongoose.Types.ObjectId().toString();
 
-process.env.JWT_SECRET =
-  process.env.JWT_SECRET || "test-secret-key-for-ci-minimum-32-chars";
-
 const User = {
   findById: jest.fn(),
   findOne: jest.fn(),
@@ -86,7 +83,7 @@ describe("Stellar wallet lookup route protection", () => {
       .set("Authorization", authHeader());
 
     expect(res.statusCode).toBe(400);
-    expect(res.body).toMatchObject({
+    expect(res.body).toEqual({
       success: false,
       message: "Invalid user ID",
     });
@@ -94,15 +91,61 @@ describe("Stellar wallet lookup route protection", () => {
     expect(User.findById).toHaveBeenCalledWith(authUserId);
   });
 
-  it("returns only wallet status for authenticated lookup requests", async () => {
+  it("returns 403 when an authenticated user checks another user's wallet status", async () => {
     const res = await request(buildApp())
       .get(`/wallet/check/${targetUserId}`)
+      .set("Authorization", authHeader());
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({
+      success: false,
+      message: "Forbidden: You can only check your own wallet status",
+    });
+    expect(User.findById).toHaveBeenCalledTimes(1);
+    expect(User.findById).toHaveBeenCalledWith(authUserId);
+  });
+
+  it("returns 404 when the authenticated user's wallet record disappears", async () => {
+    User.findById
+      .mockReturnValueOnce(makeQuery({ _id: authUserId, name: "Authenticated User" }))
+      .mockReturnValueOnce(makeQuery(null));
+
+    const res = await request(buildApp())
+      .get(`/wallet/check/${authUserId}`)
+      .set("Authorization", authHeader());
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({
+      success: false,
+      message: "User not found",
+    });
+  });
+
+  it("returns only wallet status for authenticated self-lookup requests", async () => {
+    User.findById
+      .mockReturnValueOnce(makeQuery({ _id: authUserId, name: "Authenticated User" }))
+      .mockReturnValueOnce(
+        makeQuery({
+          _id: authUserId,
+          name: "Hidden Name",
+          stellarWallet: {
+            publicKey:
+              "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+          },
+        })
+      );
+
+    const res = await request(buildApp())
+      .get(`/wallet/check/${authUserId}`)
       .set("Authorization", authHeader());
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
       success: true,
-      hasWallet: true,
+      message: "Wallet status fetched successfully",
+      data: {
+        hasWallet: true,
+      },
     });
     expect(res.body.userName).toBeUndefined();
   });
@@ -125,7 +168,7 @@ describe("Stellar wallet lookup route protection", () => {
       .set("Authorization", authHeader());
 
     expect(res.statusCode).toBe(400);
-    expect(res.body).toMatchObject({
+    expect(res.body).toEqual({
       success: false,
       message: "Invalid public key",
     });
@@ -149,11 +192,14 @@ describe("Stellar wallet lookup route protection", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
       success: true,
-      publicKey,
-      exists: true,
-      xlmBalance: "3",
-      usdcBalance: "10",
-      hasTrustline: true,
+      message: "Wallet balance fetched successfully",
+      data: {
+        publicKey,
+        exists: true,
+        xlmBalance: "3",
+        usdcBalance: "10",
+        hasTrustline: true,
+      },
     });
     expect(getAccountBalance).toHaveBeenCalledWith(publicKey);
   });

@@ -260,6 +260,71 @@ export const submitTransaction = async (signedXdr) => {
   }
 };
 
+/**
+ * Validate a signed transaction XDR against expected payments and memo/source
+ * @param {string} signedXdr
+ * @param {Array<{destination:string, amount:string}>} expectedPayments
+ * @param {string} expectedMemo
+ * @param {string} expectedSource
+ * @param {boolean} requireSource
+ */
+export const validateSignedPaymentXdr = (
+  signedXdr,
+  expectedPayments = [],
+  expectedMemo,
+  expectedSource,
+  requireSource = true
+) => {
+  const tx = StellarSdk.TransactionBuilder.fromXDR(
+    signedXdr,
+    networkPassphrase
+  );
+
+  // Memo check
+  if (expectedMemo) {
+    const memo = tx.memo;
+    let memoText = null;
+    if (memo && memo._type === "text") {
+      const val = memo._value;
+      memoText = Buffer.isBuffer(val) ? val.toString() : String(val);
+    }
+    if (memoText !== expectedMemo) {
+      throw new Error("Memo mismatch");
+    }
+  }
+
+  // Source check
+  if (requireSource && expectedSource) {
+    if (tx.source !== expectedSource) {
+      throw new Error("Source account mismatch");
+    }
+  }
+
+  // Payment operations check
+  const paymentOps = tx.operations.filter((op) => op.type === "payment");
+
+  for (const expected of expectedPayments) {
+    const match = paymentOps.find((op) => {
+      const assetMatches =
+        (op.asset && op.asset.code === "USDC" && op.asset.issuer === USDC_ISSUER) ||
+        (op.asset_type === "credit_alphanum4" && op.asset?.code === "USDC" && op.asset?.issuer === USDC_ISSUER);
+
+      const amountMatches = toStroops(op.amount) === toStroops(expected.amount);
+      const destMatches = op.destination === expected.destination;
+
+      return assetMatches && amountMatches && destMatches;
+    });
+
+    if (!match) {
+      throw new Error(
+        `Signed XDR missing expected USDC payment of ${expected.amount} to ${expected.destination}`
+      );
+    }
+  }
+
+  return tx;
+};
+
 export const verifyTransaction = async (txHash) => {
   try {
     const tx = await timedHorizonCall("fetchTransaction", () =>

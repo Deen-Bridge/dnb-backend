@@ -122,8 +122,11 @@ export const getWalletBalance = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      publicKey,
-      ...balance,
+      message: "Wallet balance fetched successfully",
+      data: {
+        publicKey,
+        ...balance,
+      },
     });
   } catch (error) {
     logger.error("Get wallet balance error:", error);
@@ -184,9 +187,14 @@ export const checkUserWallet = async (req, res) => {
       });
     }
 
-    const user = await User.findById(userId).select(
-      "stellarWallet.publicKey"
-    );
+    if (userId !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You can only check your own wallet status",
+      });
+    }
+
+    const user = await User.findById(userId).select("stellarWallet.publicKey");
 
     if (!user) {
       return res.status(404).json({
@@ -197,7 +205,10 @@ export const checkUserWallet = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      hasWallet: !!user.stellarWallet?.publicKey,
+      message: "Wallet status fetched successfully",
+      data: {
+        hasWallet: !!user.stellarWallet?.publicKey,
+      },
     });
   } catch (error) {
     logger.error("Check user wallet error:", error);
