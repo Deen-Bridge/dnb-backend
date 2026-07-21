@@ -37,6 +37,15 @@ export const validateEnv = () => {
   process.env.ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
   process.env.REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || "30d";
 
+  // During tests, relax strict env validation and provide sane defaults
+  if (process.env.NODE_ENV === "test") {
+    process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
+    process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/deenbridge_test";
+    process.env.PORT = process.env.PORT || "3000";
+    logger.info("✅ Skipping strict env validation in test mode");
+    return;
+  }
+
   const missing = [];
 
   requiredEnvVars.forEach((envVar) => {

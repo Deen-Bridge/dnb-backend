@@ -4,12 +4,6 @@ import mongoose from "mongoose";
 const transactionSchema = new mongoose.Schema(
   {
     // Transaction identification
-    stellarTxHash: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true,
-    },
     stellarLedger: {
       type: Number,
     },
@@ -44,6 +38,14 @@ const transactionSchema = new mongoose.Schema(
     creatorWallet: {
       type: String,
       required: true,
+    },
+
+    // Transaction hash from the Stellar network, only set after confirmation
+    stellarTxHash: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
     },
 
     // Item being purchased (not applicable to donations)
@@ -89,6 +91,13 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       enum: ["testnet", "mainnet"],
       required: true,
+    },
+    expectedHash: {
+      type: String,
+      index: true,
+    },
+    memo: {
+      type: String,
     },
 
     // Platform fee split (only set when a fee was applied at build time)
