@@ -416,7 +416,7 @@ export const verifyPaymentOperations = async (txHash, expectedPayments) => {
     const verification = await verifyTransaction(txHash);
 
     if (!verification.exists) {
-      return { verified: false, reason: "Transaction not found on network" };
+      return { verified: false, transient: true, reason: "Transaction not found on network" };
     }
     if (!verification.successful) {
       return { verified: false, reason: "Transaction was not successful" };
@@ -458,7 +458,7 @@ export const verifyPaymentOperations = async (txHash, expectedPayments) => {
     return { verified: true };
   } catch (error) {
     logger.error("Error verifying payment operations:", error);
-    return { verified: false, reason: "Verification failed" };
+    return { verified: false, transient: true, reason: "Verification failed" };
   }
 };
 
