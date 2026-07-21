@@ -53,7 +53,12 @@ async function timedHorizonCall(operation, fn) {
   }
 }
 
-const toStroops = (amount) => {
+/**
+ * Convert a decimal amount (string or number) to stroops (BigInt, 7 decimals)
+ * @param {string|number} amount - The amount to convert
+ * @returns {BigInt} - Amount in stroops
+ */
+export const toStroops = (amount) => {
   const [whole, frac = ""] = amount.toString().split(".");
   return (
     BigInt(whole || "0") * STROOPS_PER_UNIT +
@@ -61,7 +66,12 @@ const toStroops = (amount) => {
   );
 };
 
-const fromStroops = (stroops) => {
+/**
+ * Convert stroops (BigInt) back to a decimal amount string
+ * @param {BigInt} stroops - Amount in stroops
+ * @returns {string} - Decimal amount string
+ */
+export const fromStroops = (stroops) => {
   const whole = stroops / STROOPS_PER_UNIT;
   const frac = (stroops % STROOPS_PER_UNIT)
     .toString()
