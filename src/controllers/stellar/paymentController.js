@@ -25,7 +25,9 @@ import logger from "../../config/logger.js";
 import {
   FeeSponsorshipError,
   getFeeSponsorStatus,
-  submitSponsoredTransaction,
+  prepareSponsoredTransaction,
+  reconcileSponsoredTransaction,
+  submitPreparedSponsoredTransaction,
 } from "../../services/stellar/feeSponsorService.js";
 import {
   paymentsInitialized,
@@ -417,9 +419,17 @@ export const submitPayment = async (req, res) => {
         message: "Transaction ID and signed XDR are required",
       });
     }
+    if (typeof requestSponsorship !== "boolean") {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "requestSponsorship must be a boolean",
+        data: null,
+      });
+    }
 
     // Find the pending transaction
-    const transaction = await Transaction.findOne({
+    let transaction = await Transaction.findOne({
       _id: transactionId,
       buyer: buyerId,
       status: "pending",
@@ -433,23 +443,103 @@ export const submitPayment = async (req, res) => {
       });
     }
 
-    // Validate, cap and submit sponsorship before mutating the payment row so
-    // clients can safely fall back to normal submission after a rejection.
     let result;
     if (requestSponsorship === true) {
-      try {
-        result = await submitSponsoredTransaction(signedXdr, transaction, buyerId);
-      } catch (error) {
-        await session.abortTransaction();
-        if (error instanceof FeeSponsorshipError) {
-          return res.status(error.status).json({
+      if (
+        transaction.sponsorshipAttemptKey &&
+        ["prepared", "unknown"].includes(transaction.sponsorshipStatus)
+      ) {
+        result = await reconcileSponsoredTransaction(
+          transaction.sponsorshipAttemptKey
+        );
+        if (!result) {
+          await session.abortTransaction();
+          return res.status(409).json({
             success: false,
-            message: error.message,
-            code: error.code,
-            canSubmitNormally: true,
+            message: "The previous sponsorship outcome is still being reconciled",
+            data: {
+              code: "sponsorship_outcome_unknown",
+              canSubmitNormally: false,
+            },
           });
         }
-        throw error;
+      } else {
+        let prepared;
+        try {
+          prepared = await prepareSponsoredTransaction(signedXdr, transaction);
+          transaction.sponsorshipAttemptKey = prepared.innerHash;
+          transaction.sponsorshipStatus = "prepared";
+          transaction.sponsorshipAttemptedAt = new Date();
+          await transaction.save({ session });
+          await session.commitTransaction();
+          result = await submitPreparedSponsoredTransaction(
+            prepared,
+            transaction,
+            buyerId
+          );
+        } catch (error) {
+          const safeToRetry =
+            error instanceof FeeSponsorshipError &&
+            error.code !== "sponsored_submission_failed";
+          if (safeToRetry) {
+            if (session.inTransaction()) await session.abortTransaction();
+            await Transaction.updateOne(
+              { _id: transaction._id },
+              {
+                $set: {
+                  sponsorshipStatus: "rejected",
+                  sponsorshipFailureCode: error.code,
+                },
+              }
+            );
+            return res.status(error.status).json({
+              success: false,
+              message: error.message,
+              data: { code: error.code, canSubmitNormally: true },
+            });
+          }
+          result = prepared
+            ? await reconcileSponsoredTransaction(prepared.innerHash)
+            : null;
+          if (!result) {
+            if (session.inTransaction()) await session.abortTransaction();
+            await Transaction.updateOne(
+              { _id: transaction._id },
+              { $set: { sponsorshipStatus: "unknown" } }
+            );
+            return res.status(409).json({
+              success: false,
+              message: "Sponsored submission outcome is unknown; do not resubmit normally",
+              data: {
+                code: "sponsorship_outcome_unknown",
+                canSubmitNormally: false,
+              },
+            });
+          }
+        }
+
+        session.startTransaction();
+        transaction = await Transaction.findOne({
+          _id: transactionId,
+          buyer: buyerId,
+          status: "pending",
+        }).session(session);
+        if (!transaction) {
+          await session.abortTransaction();
+          return res.status(409).json({
+            success: false,
+            message: "Payment state changed while sponsorship was submitted",
+            data: { code: "payment_state_changed", canSubmitNormally: false },
+          });
+        }
+      }
+
+      if (!session.inTransaction()) session.startTransaction();
+      if (!transaction.$session()) transaction.$session(session);
+      if (result.reconciled && transaction.sponsorshipStatus !== "submitted") {
+        logger.info("Recovered sponsored payment by inner transaction hash", {
+          transactionId: transaction._id.toString(),
+        });
       }
     }
 
@@ -481,9 +571,10 @@ export const submitPayment = async (req, res) => {
 
     if (requestSponsorship === true) {
       transaction.sponsored = true;
-      transaction.sponsorFeeStroops = result.feeCharged;
+      transaction.sponsorFeeStroops = result.feeCharged.toString();
       transaction.innerTxHash = result.innerHash;
       transaction.feeBumpTxHash = result.hash;
+      transaction.sponsorshipStatus = "submitted";
     }
 
     // Verify on-chain that the creator (and platform, when a fee was applied)
@@ -638,11 +729,15 @@ export const submitPayment = async (req, res) => {
 /** GET /api/stellar/payment/sponsorship/status */
 export const getSponsorshipStatus = async (req, res) => {
   try {
-    res.status(200).json({ success: true, sponsorship: await getFeeSponsorStatus() });
+    res.status(200).json({
+      success: true,
+      message: "Fee sponsorship status retrieved",
+      data: { sponsorship: await getFeeSponsorStatus() },
+    });
   } catch (error) {
     logger.error("Fee sponsorship status error:", error);
     const status = error instanceof FeeSponsorshipError ? error.status : 500;
-    res.status(status).json({ success: false, message: error.message });
+    res.status(status).json({ success: false, message: error.message, data: null });
   }
 };
 

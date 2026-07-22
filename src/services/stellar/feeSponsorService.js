@@ -6,6 +6,7 @@ import {
   USDC_ISSUER,
   networkPassphrase,
   DONATION_WALLET_PUBLIC_KEY,
+  toStroops,
 } from "./stellarService.js";
 
 export class FeeSponsorshipError extends Error {
@@ -38,8 +39,11 @@ const assetMatches = (asset) =>
   asset?.getCode?.() === "USDC" && asset?.getIssuer?.() === USDC_ISSUER;
 
 const sameAmount = (left, right) => {
-  const normalize = (value) => Number(value).toFixed(7);
-  return normalize(left) === normalize(right);
+  try {
+    return toStroops(left) === toStroops(right);
+  } catch {
+    return false;
+  }
 };
 
 export const validateInnerTransaction = (signedXdr, row) => {
@@ -175,9 +179,12 @@ export const releaseSponsorship = async (reservation, actualFee = 0) => {
   await FeeSponsorDailySpend.updateOne({ dateKey: reservation.dateKey }, update);
 };
 
-export const submitSponsoredTransaction = async (signedXdr, row, userId) => {
+export const prepareSponsoredTransaction = async (signedXdr, row) => {
   const innerTransaction = validateInnerTransaction(signedXdr, row);
-  const wrapped = await wrapWithFeeBump(innerTransaction);
+  return wrapWithFeeBump(innerTransaction);
+};
+
+export const submitPreparedSponsoredTransaction = async (wrapped, row, userId) => {
   let reservation;
   try {
     reservation = await reserveSponsorship(userId, wrapped.reservedStroops);
@@ -202,10 +209,49 @@ export const submitSponsoredTransaction = async (signedXdr, row, userId) => {
       innerHash: wrapped.innerHash,
     };
   } catch (error) {
-    await releaseSponsorship(reservation);
+    // Once Horizon submission has been attempted the outcome may be ambiguous.
+    // Keep the full reservation charged; reconciliation can safely under-count
+    // neither an accepted transaction nor its fee.
     logger.warn("Fee sponsorship rejected", { transactionId: row._id?.toString(), code: error.code || "submission_failed" });
     if (error instanceof FeeSponsorshipError) throw error;
     throw new FeeSponsorshipError("Sponsored submission failed; submit normally instead", "sponsored_submission_failed", 422);
+  }
+};
+
+export const submitSponsoredTransaction = async (signedXdr, row, userId) => {
+  const wrapped = await prepareSponsoredTransaction(signedXdr, row);
+  return submitPreparedSponsoredTransaction(wrapped, row, userId);
+};
+
+export const reconcileSponsoredTransaction = async (innerHash) => {
+  const keypair = sponsorKeypair();
+  try {
+    const page = await server
+      .transactions()
+      .forAccount(keypair.publicKey())
+      .order("desc")
+      .limit(200)
+      .call();
+    const transaction = page.records.find(
+      (record) =>
+        record.inner_transaction_hash === innerHash ||
+        record.innerTransactionHash === innerHash
+    );
+    if (!transaction) return null;
+    return {
+      hash: transaction.hash,
+      ledger: transaction.ledger,
+      successful: transaction.successful,
+      feeCharged: Number(transaction.fee_charged || transaction.feeCharged || 0),
+      innerHash,
+      reconciled: true,
+    };
+  } catch (error) {
+    logger.warn("Unable to reconcile sponsored transaction", {
+      innerHash,
+      message: error.message,
+    });
+    return null;
   }
 };
 

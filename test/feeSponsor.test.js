@@ -92,6 +92,19 @@ describe("fee sponsorship transaction whitelist", () => {
     ] });
     expect(validateInnerTransaction(split.toXDR(), splitRow).operations).toHaveLength(2);
   });
+
+  it("compares high-value amounts with exact stroop precision", () => {
+    const highValueRow = { ...row, amount: "922337203685.4775806" };
+    const highValuePayment = build({ operations: [
+      StellarSdk.Operation.payment({
+        destination: creator.publicKey(),
+        asset: USDC,
+        amount: "922337203685.4775807",
+      }),
+    ] });
+    expect(() => validateInnerTransaction(highValuePayment.toXDR(), highValueRow))
+      .toThrow("non-whitelisted payment");
+  });
 });
 
 describe("fee-bump construction", () => {

@@ -58,6 +58,16 @@ export const validateEnv = () => {
     process.exit(1);
   }
 
+  if (
+    process.env.FEE_SPONSOR_ENABLED === "true" &&
+    !process.env.FEE_SPONSOR_SECRET
+  ) {
+    logger.error(
+      "FEE_SPONSOR_ENABLED is 'true' but FEE_SPONSOR_SECRET is not set."
+    );
+    process.exit(1);
+  }
+
   // Check JWT_SECRET strength
   if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
     logger.warn(
