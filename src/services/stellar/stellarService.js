@@ -354,6 +354,7 @@ export const submitTransaction = async (signedXdr) => {
       hash: result.hash,
       ledger: result.ledger,
       successful: result.successful,
+      feeCharged: Number(result.fee_charged || 0),
     };
   } catch (error) {
     logger.error("Error submitting transaction:", error);

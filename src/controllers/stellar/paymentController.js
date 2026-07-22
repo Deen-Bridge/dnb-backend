@@ -23,6 +23,11 @@ import { recordSaleEarnings } from "../../services/payoutService.js";
 import { enqueue } from "../../jobs/queue.js";
 import logger from "../../config/logger.js";
 import {
+  FeeSponsorshipError,
+  getFeeSponsorStatus,
+  submitSponsoredTransaction,
+} from "../../services/stellar/feeSponsorService.js";
+import {
   paymentsInitialized,
   paymentsSubmitted,
   paymentsConfirmed,
@@ -402,7 +407,7 @@ export const submitPayment = async (req, res) => {
   session.startTransaction();
 
   try {
-    const { transactionId, signedXdr } = req.body;
+    const { transactionId, signedXdr, requestSponsorship = false } = req.body;
     const buyerId = req.user._id;
 
     if (!transactionId || !signedXdr) {
@@ -428,6 +433,26 @@ export const submitPayment = async (req, res) => {
       });
     }
 
+    // Validate, cap and submit sponsorship before mutating the payment row so
+    // clients can safely fall back to normal submission after a rejection.
+    let result;
+    if (requestSponsorship === true) {
+      try {
+        result = await submitSponsoredTransaction(signedXdr, transaction, buyerId);
+      } catch (error) {
+        await session.abortTransaction();
+        if (error instanceof FeeSponsorshipError) {
+          return res.status(error.status).json({
+            success: false,
+            message: error.message,
+            code: error.code,
+            canSubmitNormally: true,
+          });
+        }
+        throw error;
+      }
+    }
+
     // Update status to submitted
     transaction.status = "submitted";
     transaction.submittedAt = new Date();
@@ -435,9 +460,8 @@ export const submitPayment = async (req, res) => {
     paymentsSubmitted.inc({ type: "purchase" });
 
     // Submit to Stellar network
-    let result;
     try {
-      result = await submitTransaction(signedXdr);
+      result = result || (await submitTransaction(signedXdr));
     } catch (stellarError) {
       // Handle Stellar submission errors
       transaction.status = "failed";
@@ -453,6 +477,13 @@ export const submitPayment = async (req, res) => {
         message: "Transaction failed on Stellar network",
         error: stellarError.message,
       });
+    }
+
+    if (requestSponsorship === true) {
+      transaction.sponsored = true;
+      transaction.sponsorFeeStroops = result.feeCharged;
+      transaction.innerTxHash = result.innerHash;
+      transaction.feeBumpTxHash = result.hash;
     }
 
     // Verify on-chain that the creator (and platform, when a fee was applied)
@@ -601,6 +632,17 @@ export const submitPayment = async (req, res) => {
     });
   } finally {
     session.endSession();
+  }
+};
+
+/** GET /api/stellar/payment/sponsorship/status */
+export const getSponsorshipStatus = async (req, res) => {
+  try {
+    res.status(200).json({ success: true, sponsorship: await getFeeSponsorStatus() });
+  } catch (error) {
+    logger.error("Fee sponsorship status error:", error);
+    const status = error instanceof FeeSponsorshipError ? error.status : 500;
+    res.status(status).json({ success: false, message: error.message });
   }
 };
 

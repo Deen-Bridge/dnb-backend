@@ -13,6 +13,10 @@ const transactionSchema = new mongoose.Schema(
     stellarLedger: {
       type: Number,
     },
+    sponsored: { type: Boolean, default: false },
+    sponsorFeeStroops: { type: Number, min: 0 },
+    innerTxHash: { type: String },
+    feeBumpTxHash: { type: String },
 
     // Transaction kind: item purchase or sadaqah donation
     type: {

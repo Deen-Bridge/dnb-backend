@@ -13,6 +13,10 @@ import {
   DONATION_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
 import logger from "../../config/logger.js";
+import {
+  FeeSponsorshipError,
+  submitSponsoredTransaction,
+} from "../../services/stellar/feeSponsorService.js";
 import { enqueue } from "../../jobs/queue.js";
 import {
   paymentsInitialized,
@@ -132,7 +136,7 @@ export const submitDonation = async (req, res) => {
   session.startTransaction();
 
   try {
-    const { donationId, signedXdr } = req.body;
+    const { donationId, signedXdr, requestSponsorship = false } = req.body;
     const donorId = req.user._id;
 
     if (!donationId || !signedXdr) {
@@ -159,6 +163,24 @@ export const submitDonation = async (req, res) => {
       });
     }
 
+    let result;
+    if (requestSponsorship === true) {
+      try {
+        result = await submitSponsoredTransaction(signedXdr, donation, donorId);
+      } catch (error) {
+        await session.abortTransaction();
+        if (error instanceof FeeSponsorshipError) {
+          return res.status(error.status).json({
+            success: false,
+            message: error.message,
+            code: error.code,
+            canSubmitNormally: true,
+          });
+        }
+        throw error;
+      }
+    }
+
     // Update status to submitted
     donation.status = "submitted";
     donation.submittedAt = new Date();
@@ -166,9 +188,8 @@ export const submitDonation = async (req, res) => {
     paymentsSubmitted.inc({ type: "donation" });
 
     // Submit to Stellar network
-    let result;
     try {
-      result = await submitTransaction(signedXdr);
+      result = result || (await submitTransaction(signedXdr));
     } catch (stellarError) {
       donation.status = "failed";
       donation.failureReason = stellarError.message;
@@ -183,6 +204,13 @@ export const submitDonation = async (req, res) => {
         message: "Donation failed on Stellar network",
         error: stellarError.message,
       });
+    }
+
+    if (requestSponsorship === true) {
+      donation.sponsored = true;
+      donation.sponsorFeeStroops = result.feeCharged;
+      donation.innerTxHash = result.innerHash;
+      donation.feeBumpTxHash = result.hash;
     }
 
     // Verify on-chain that the donation actually paid the fund (amount, destination, asset)
