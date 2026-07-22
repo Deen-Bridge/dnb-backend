@@ -1,4 +1,6 @@
 import express from "express";
+import { invalidateCacheMiddleware } from "../../middlewares/cache.js";
+import { CACHE_KEYS } from "../../utils/cache.js";
 import {
   createCourse,
   getCourses,
@@ -60,13 +62,13 @@ router.get(
 router.post(
   "/",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.CATEGORIES}*`, `${CACHE_KEYS.CATEGORY}*`]),
   createCourse
 );
 router.post(
   "/:id/enroll",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.CATEGORIES}*`, `${CACHE_KEYS.CATEGORY}*`]),
   enrollInCourse
 );
 router.post(
@@ -78,7 +80,7 @@ router.post(
 router.put(
   "/:id",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.CATEGORIES}*`, `${CACHE_KEYS.CATEGORY}*`]),
   updateCourse
 );
 

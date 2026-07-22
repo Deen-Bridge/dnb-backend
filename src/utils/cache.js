@@ -12,6 +12,7 @@ export const CACHE_TTL = {
 
   // Specific entities
   COURSES: 60 * 15, // 15 minutes
+  CATEGORIES: 60 * 60, // 1 hour
   BOOKS: 60 * 15, // 15 minutes
   USERS: 60 * 10, // 10 minutes
   SPACES: 60 * 5, // 5 minutes
@@ -25,6 +26,8 @@ export const CACHE_TTL = {
 export const CACHE_KEYS = {
   COURSES: "courses:",
   COURSE: "course:",
+  CATEGORIES: "categories:",
+  CATEGORY: "category:",
   BOOKS: "books:",
   BOOK: "book:",
   USERS: "users:",

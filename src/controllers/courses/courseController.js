@@ -1,4 +1,5 @@
 import Course from "../../models/Course.js";
+import Category from "../../models/Category.js";
 import mongoose from "mongoose";
 import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
@@ -20,11 +21,25 @@ export const createCourse = catchAsync(async (req, res, next) => {
     );
   }
 
+  const isObjectId = mongoose.Types.ObjectId.isValid(category);
+  const catQuery = isObjectId ? { _id: category, isActive: true } : { slug: category, isActive: true };
+  const resolvedCategory = await Category.findOne(catQuery);
+
+  if (!resolvedCategory) {
+    const validCategories = await Category.find({ isActive: true }).select('slug').lean();
+    const validSlugs = validCategories.map(c => c.slug).join(', ');
+    return res.status(400).json({
+      success: false,
+      message: `Invalid or inactive category. Valid categories are: ${validSlugs}`,
+    });
+  }
+
   // Create course with URLs from frontend
   const course = await Course.create({
     title,
     description,
-    category,
+    category: resolvedCategory.name,
+    categoryRef: resolvedCategory._id,
     price: price || 0,
     createdBy: req.user._id,
     thumbnail: thumbnail || null, // URL from frontend
@@ -41,9 +56,19 @@ export const createCourse = catchAsync(async (req, res, next) => {
 });
 
 // 📚 Get all courses
-export const getCourses = async (_req, res) => {
+export const getCourses = async (req, res) => {
   try {
-    const courses = await Course.find().populate(
+    const { category } = req.query;
+    let query = {};
+    if (category) {
+      const cat = await Category.findOne({ slug: category });
+      if (!cat) {
+        return res.status(200).json({ success: true, courses: [] });
+      }
+      query.categoryRef = cat._id;
+    }
+
+    const courses = await Course.find(query).populate(
       "createdBy",
       "name email avatar"
     );
@@ -178,8 +203,24 @@ export const updateCourse = catchAsync(async (req, res, next) => {
   // Update fields (URLs from frontend)
   course.title = title || course.title;
   course.description = description || course.description;
-  course.category = category || course.category;
   course.price = price !== undefined ? price : course.price;
+
+  if (category) {
+    const isObjectId = mongoose.Types.ObjectId.isValid(category);
+    const catQuery = isObjectId ? { _id: category, isActive: true } : { slug: category, isActive: true };
+    const resolvedCategory = await Category.findOne(catQuery);
+
+    if (!resolvedCategory) {
+      const validCategories = await Category.find({ isActive: true }).select('slug').lean();
+      const validSlugs = validCategories.map(c => c.slug).join(', ');
+      return res.status(400).json({
+        success: false,
+        message: `Invalid or inactive category. Valid categories are: ${validSlugs}`,
+      });
+    }
+    course.category = resolvedCategory.name;
+    course.categoryRef = resolvedCategory._id;
+  }
 
   // Update media URLs if provided
   if (thumbnail) course.thumbnail = thumbnail;
