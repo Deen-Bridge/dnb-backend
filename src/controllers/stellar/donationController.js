@@ -13,6 +13,12 @@ import {
   DONATION_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
 import logger from "../../config/logger.js";
+import {
+  FeeSponsorshipError,
+  prepareSponsoredTransaction,
+  reconcileSponsoredTransaction,
+  submitPreparedSponsoredTransaction,
+} from "../../services/stellar/feeSponsorService.js";
 import { enqueue } from "../../jobs/queue.js";
 import {
   paymentsInitialized,
@@ -132,7 +138,7 @@ export const submitDonation = async (req, res) => {
   session.startTransaction();
 
   try {
-    const { donationId, signedXdr } = req.body;
+    const { donationId, signedXdr, requestSponsorship = false } = req.body;
     const donorId = req.user._id;
 
     if (!donationId || !signedXdr) {
@@ -142,9 +148,17 @@ export const submitDonation = async (req, res) => {
         message: "Donation ID and signed XDR are required",
       });
     }
+    if (typeof requestSponsorship !== "boolean") {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "requestSponsorship must be a boolean",
+        data: null,
+      });
+    }
 
     // Find the pending donation
-    const donation = await Transaction.findOne({
+    let donation = await Transaction.findOne({
       _id: donationId,
       buyer: donorId,
       type: "donation",
@@ -159,6 +173,107 @@ export const submitDonation = async (req, res) => {
       });
     }
 
+    let result;
+    if (requestSponsorship === true) {
+      if (
+        donation.sponsorshipAttemptKey &&
+        ["prepared", "unknown"].includes(donation.sponsorshipStatus)
+      ) {
+        result = await reconcileSponsoredTransaction(
+          donation.sponsorshipAttemptKey
+        );
+        if (!result) {
+          await session.abortTransaction();
+          return res.status(409).json({
+            success: false,
+            message: "The previous sponsorship outcome is still being reconciled",
+            data: {
+              code: "sponsorship_outcome_unknown",
+              canSubmitNormally: false,
+            },
+          });
+        }
+      } else {
+        let prepared;
+        try {
+          prepared = await prepareSponsoredTransaction(signedXdr, donation);
+          donation.sponsorshipAttemptKey = prepared.innerHash;
+          donation.sponsorshipStatus = "prepared";
+          donation.sponsorshipAttemptedAt = new Date();
+          await donation.save({ session });
+          await session.commitTransaction();
+          result = await submitPreparedSponsoredTransaction(
+            prepared,
+            donation,
+            donorId
+          );
+        } catch (error) {
+          const safeToRetry =
+            error instanceof FeeSponsorshipError &&
+            error.code !== "sponsored_submission_failed";
+          if (safeToRetry) {
+            if (session.inTransaction()) await session.abortTransaction();
+            await Transaction.updateOne(
+              { _id: donation._id },
+              {
+                $set: {
+                  sponsorshipStatus: "rejected",
+                  sponsorshipFailureCode: error.code,
+                },
+              }
+            );
+            return res.status(error.status).json({
+              success: false,
+              message: error.message,
+              data: { code: error.code, canSubmitNormally: true },
+            });
+          }
+          result = prepared
+            ? await reconcileSponsoredTransaction(prepared.innerHash)
+            : null;
+          if (!result) {
+            if (session.inTransaction()) await session.abortTransaction();
+            await Transaction.updateOne(
+              { _id: donation._id },
+              { $set: { sponsorshipStatus: "unknown" } }
+            );
+            return res.status(409).json({
+              success: false,
+              message: "Sponsored submission outcome is unknown; do not resubmit normally",
+              data: {
+                code: "sponsorship_outcome_unknown",
+                canSubmitNormally: false,
+              },
+            });
+          }
+        }
+
+        session.startTransaction();
+        donation = await Transaction.findOne({
+          _id: donationId,
+          buyer: donorId,
+          type: "donation",
+          status: "pending",
+        }).session(session);
+        if (!donation) {
+          await session.abortTransaction();
+          return res.status(409).json({
+            success: false,
+            message: "Donation state changed while sponsorship was submitted",
+            data: { code: "donation_state_changed", canSubmitNormally: false },
+          });
+        }
+      }
+
+      if (!session.inTransaction()) session.startTransaction();
+      if (!donation.$session()) donation.$session(session);
+      if (result.reconciled && donation.sponsorshipStatus !== "submitted") {
+        logger.info("Recovered sponsored donation by inner transaction hash", {
+          transactionId: donation._id.toString(),
+        });
+      }
+    }
+
     // Update status to submitted
     donation.status = "submitted";
     donation.submittedAt = new Date();
@@ -166,9 +281,8 @@ export const submitDonation = async (req, res) => {
     paymentsSubmitted.inc({ type: "donation" });
 
     // Submit to Stellar network
-    let result;
     try {
-      result = await submitTransaction(signedXdr);
+      result = result || (await submitTransaction(signedXdr));
     } catch (stellarError) {
       donation.status = "failed";
       donation.failureReason = stellarError.message;
@@ -183,6 +297,14 @@ export const submitDonation = async (req, res) => {
         message: "Donation failed on Stellar network",
         error: stellarError.message,
       });
+    }
+
+    if (requestSponsorship === true) {
+      donation.sponsored = true;
+      donation.sponsorFeeStroops = result.feeCharged.toString();
+      donation.innerTxHash = result.innerHash;
+      donation.feeBumpTxHash = result.hash;
+      donation.sponsorshipStatus = "submitted";
     }
 
     // Verify on-chain that the donation actually paid the fund (amount, destination, asset)

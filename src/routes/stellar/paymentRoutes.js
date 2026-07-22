@@ -8,6 +8,7 @@ import {
   getTransactionHistory,
   getTransaction,
   cancelTransaction,
+  getSponsorshipStatus,
 } from "../../controllers/stellar/paymentController.js";
 
 const router = express.Router();
@@ -19,6 +20,7 @@ router.use(protect);
 router.post("/quote", getQuote);
 router.post("/initialize", initializePayment);
 router.post("/submit", submitPayment);
+router.get("/sponsorship/status", getSponsorshipStatus);
 
 // Transaction management
 router.get("/transactions", getTransactionHistory);
