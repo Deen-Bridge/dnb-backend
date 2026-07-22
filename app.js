@@ -42,6 +42,7 @@ import callRoutes from "./src/routes/callRoutes.js";
 import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
+import stellarGiftRoutes from "./src/routes/stellar/giftRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 
 handleUncaughtException();
@@ -178,6 +179,7 @@ app.use("/api/calls", callRoutes);
 app.use("/api/stellar/wallet", stellarWalletRoutes);
 app.use("/api/stellar/payment", stellarPaymentRoutes);
 app.use("/api/stellar/donation", stellarDonationRoutes);
+app.use("/api/stellar/gifts", stellarGiftRoutes);
 app.use("/api/payouts", payoutRoutes);
 
 // ======================
@@ -187,6 +189,13 @@ app.use("/api/payouts", payoutRoutes);
 app.use(notFound);
 app.use(errorHandler);
 handleUnhandledRejection();
+
+import { startGiftSweepJob } from "./src/jobs/sweepExpiredGifts.js";
+
+// Start background jobs
+if (process.env.NODE_ENV !== "test") {
+  startGiftSweepJob();
+}
 
 logger.info("DeenBridge API initialized");
 logger.info(`Logging enabled - Level: ${logger.level}`);
