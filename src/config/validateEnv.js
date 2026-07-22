@@ -28,12 +28,24 @@ const optionalEnvVars = [
   "JOBS_ENABLED",
   "JOBS_DASHBOARD_TOKEN",
   "EMAILJS_RECEIPT_TEMPLATE_ID",
+  "ANCHOR_HOME_DOMAINS",
+  "ANCHOR_TOML_CACHE_TTL",
 ];
 
 export const validateEnv = () => {
   // Default values for TTLs if not provided
   process.env.ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
   process.env.REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || "30d";
+
+  // Anchor allowlist defaults to Stellar's public test anchor on testnet only;
+  // mainnet requires an operator to explicitly opt in to a real anchor domain.
+  if (
+    !process.env.ANCHOR_HOME_DOMAINS &&
+    (process.env.STELLAR_NETWORK || "testnet") === "testnet"
+  ) {
+    process.env.ANCHOR_HOME_DOMAINS = "testanchor.stellar.org";
+  }
+  process.env.ANCHOR_TOML_CACHE_TTL = process.env.ANCHOR_TOML_CACHE_TTL || "3600";
 
   const missing = [];
 

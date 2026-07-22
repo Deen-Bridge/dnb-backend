@@ -2,6 +2,7 @@ import app from "./app.js";
 import logger from "./src/config/logger.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
 import { startJobs, stopJobs } from "./src/jobs/queue.js";
+import { startAnchorPoller, stopAnchorPoller } from "./src/jobs/anchorPoller.js";
 import "./src/jobs/handlers.js";
 
 const PORT = process.env.PORT || 5000;
@@ -21,6 +22,7 @@ const server = app.listen(PORT, () => {
 });
 
 startJobs().catch((err) => logger.error(err, "Background job startup failed"));
+startAnchorPoller();
 
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
@@ -30,6 +32,7 @@ const gracefulShutdown = async (signal) => {
     logger.info("HTTP server closed");
 
     await stopJobs();
+    await stopAnchorPoller();
 
     // Close Redis connection
     await closeRedis();

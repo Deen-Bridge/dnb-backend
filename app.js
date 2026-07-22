@@ -43,6 +43,7 @@ import callRoutes from "./src/routes/callRoutes.js";
 import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
+import stellarAnchorRoutes from "./src/routes/stellar/anchorRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
 
@@ -180,6 +181,7 @@ app.use("/api/calls", callRoutes);
 app.use("/api/stellar/wallet", stellarWalletRoutes);
 app.use("/api/stellar/payment", stellarPaymentRoutes);
 app.use("/api/stellar/donation", stellarDonationRoutes);
+app.use("/api/stellar/anchor", stellarAnchorRoutes);
 app.use("/api/payouts", payoutRoutes);
 app.use("/admin/jobs", jobsRoutes);
 

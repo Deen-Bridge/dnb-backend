@@ -181,6 +181,20 @@ describe("Stellar donations", () => {
   });
 });
 
+describe("Stellar anchor", () => {
+  it("should require auth for GET /api/stellar/anchor/info", async () => {
+    const res = await request(app).get("/api/stellar/anchor/info");
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("should require auth for POST /api/stellar/anchor/auth/challenge", async () => {
+    const res = await request(app)
+      .post("/api/stellar/anchor/auth/challenge")
+      .send({ homeDomain: "testanchor.stellar.org" });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
 describe("Stellar service (unit, no network)", () => {
   const PLATFORM_WALLET =
     "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";

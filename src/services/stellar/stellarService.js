@@ -278,6 +278,35 @@ export const getAccountBalance = async (publicKey) => {
   }
 };
 
+/**
+ * Build an unsigned changeTrust transaction so a wallet without a USDC
+ * trustline can add one before (or alongside) an anchor deposit.
+ */
+export const buildChangeTrustTransaction = async ({ publicKey, asset = USDC }) => {
+  try {
+    const account = await timedHorizonCall("loadAccount", () =>
+      server.loadAccount(publicKey)
+    );
+
+    const transaction = new StellarSdk.TransactionBuilder(account, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase,
+    })
+      .addOperation(StellarSdk.Operation.changeTrust({ asset }))
+      .setTimeout(300)
+      .build();
+
+    return {
+      xdr: transaction.toXDR(),
+      hash: transaction.hash().toString("hex"),
+      networkPassphrase,
+    };
+  } catch (error) {
+    logger.error("Error building change trust transaction:", error);
+    throw error;
+  }
+};
+
 export const buildPaymentTransaction = async ({
   sourcePublicKey,
   destinationPublicKey,
