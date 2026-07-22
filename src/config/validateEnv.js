@@ -31,6 +31,13 @@ const optionalEnvVars = [
 ];
 
 export const validateEnv = () => {
+  // Test mode: provide defaults for development of tests
+  if (process.env.NODE_ENV === "test") {
+    process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-key-at-least-32-characters-long";
+    process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://test-db:27017/dnb-test";
+    process.env.PORT = process.env.PORT || "5000";
+  }
+
   // Default values for TTLs if not provided
   process.env.ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
   process.env.REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || "30d";

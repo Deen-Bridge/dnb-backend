@@ -6,9 +6,16 @@ const transactionSchema = new mongoose.Schema(
     // Transaction identification
     stellarTxHash: {
       type: String,
-      required: true,
+      sparse: true,
       unique: true,
       index: true,
+    },
+    expectedHash: {
+      type: String,
+      index: true,
+    },
+    memo: {
+      type: String,
     },
     stellarLedger: {
       type: Number,
