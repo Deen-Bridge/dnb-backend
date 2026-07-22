@@ -109,7 +109,68 @@ describe("Anchor routes (integration, mocked anchor HTTP)", () => {
       .query({ homeDomain: HOME_DOMAIN });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.anchor.currency.issuer).toBe(USDC_ISSUER);
-    expect(res.body.anchor.deposit.enabled).toBe(true);
+    expect(res.body.data.anchor.currency.issuer).toBe(USDC_ISSUER);
+    expect(res.body.data.anchor.deposit.enabled).toBe(true);
+    expect(typeof res.body.message).toBe("string");
+  });
+
+  it("returns the { success, message, data } contract for every anchor route", async () => {
+    const { accessToken, userId } = await registerAndGetToken();
+    const publicKey = StellarSdk.Keypair.random().publicKey();
+    await User.findByIdAndUpdate(userId, {
+      stellarWallet: { publicKey, connectedAt: new Date(), network: "testnet" },
+    });
+    process.env.ANCHOR_HOME_DOMAINS = HOME_DOMAIN;
+
+    jest.spyOn(StellarSdk.StellarToml.Resolver, "resolve").mockResolvedValue({
+      TRANSFER_SERVER_SEP0024: `https://${HOME_DOMAIN}/sep24`,
+      WEB_AUTH_ENDPOINT: `https://${HOME_DOMAIN}/auth`,
+      SIGNING_KEY: StellarSdk.Keypair.random().publicKey(),
+      CURRENCIES: [{ code: "USDC", issuer: USDC_ISSUER }],
+    });
+    jest.spyOn(axios, "get").mockResolvedValue({
+      data: { deposit: { USDC: { enabled: true } }, withdraw: { USDC: { enabled: true } } },
+    });
+
+    const infoRes = await request(app)
+      .get("/api/stellar/anchor/info")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .query({ homeDomain: HOME_DOMAIN });
+    expect(infoRes.body).toEqual(
+      expect.objectContaining({
+        success: true,
+        message: expect.any(String),
+        data: expect.any(Object),
+      })
+    );
+
+    // The challenge route's success path requires a real SEP-10 challenge
+    // (StellarSdk.WebAuth.readChallengeTx is a read-only ESM export and can't
+    // be jest.spyOn'd), so its contract is asserted here on the validation
+    // error path instead - same route, same response shape rules.
+    const challengeRes = await request(app)
+      .post("/api/stellar/anchor/auth/challenge")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({});
+    expect(challengeRes.body).toEqual(
+      expect.objectContaining({
+        success: false,
+        message: expect.any(String),
+      })
+    );
+
+    const transactionsRes = await request(app)
+      .get("/api/stellar/anchor/transactions")
+      .set("Authorization", `Bearer ${accessToken}`);
+    expect(transactionsRes.body).toEqual(
+      expect.objectContaining({
+        success: true,
+        message: expect.any(String),
+        data: expect.objectContaining({
+          transactions: expect.any(Array),
+          pagination: expect.any(Object),
+        }),
+      })
+    );
   });
 });

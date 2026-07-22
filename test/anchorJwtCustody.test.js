@@ -2,6 +2,7 @@ import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
 import jsonwebtoken from "jsonwebtoken";
+import crypto from "crypto";
 import axios from "axios";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import app from "../app.js";
@@ -21,9 +22,12 @@ const testUser = {
 };
 
 // The anchor's own JWT (we never verify its signature, only decode `exp`).
+// Signed with an ephemeral, per-run secret rather than a literal in source -
+// this test only needs a token with an `exp` claim, never the secret itself.
+const ANCHOR_TEST_SIGNING_SECRET = crypto.randomBytes(32).toString("hex");
 const FAKE_ANCHOR_JWT = jsonwebtoken.sign(
   { sub: "GABC", iss: HOME_DOMAIN },
-  "anchor-side-secret-we-never-know",
+  ANCHOR_TEST_SIGNING_SECRET,
   { expiresIn: "1h" }
 );
 

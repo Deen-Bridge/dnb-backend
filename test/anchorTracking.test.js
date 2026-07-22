@@ -52,7 +52,7 @@ describe("Anchor transaction ownership isolation", () => {
       .get(`/api/stellar/anchor/transactions/${ownedByA._id}`)
       .set("Authorization", `Bearer ${a.accessToken}`);
     expect(resAsOwner.statusCode).toBe(200);
-    expect(String(resAsOwner.body.transaction._id)).toBe(String(ownedByA._id));
+    expect(String(resAsOwner.body.data.transaction._id)).toBe(String(ownedByA._id));
 
     const resAsStranger = await request(app)
       .get(`/api/stellar/anchor/transactions/${ownedByA._id}`)
@@ -86,8 +86,8 @@ describe("Anchor transaction ownership isolation", () => {
       .set("Authorization", `Bearer ${a.accessToken}`);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.transactions.length).toBeGreaterThan(0);
-    for (const tx of res.body.transactions) {
+    expect(res.body.data.transactions.length).toBeGreaterThan(0);
+    for (const tx of res.body.data.transactions) {
       expect(String(tx.user)).toBe(String(a.userId));
     }
   });
@@ -108,5 +108,42 @@ describe("Anchor transaction ownership isolation", () => {
       .get(`/api/stellar/anchor/transactions/${new mongoose.Types.ObjectId()}`)
       .set("Authorization", `Bearer ${a.accessToken}`);
     expect(res.statusCode).toBe(404);
+  });
+
+  it("clamps an out-of-range limit instead of passing it straight to Mongo", async () => {
+    const a = await registerAndGetToken(userA);
+
+    const res = await request(app)
+      .get("/api/stellar/anchor/transactions")
+      .query({ limit: "999999" })
+      .set("Authorization", `Bearer ${a.accessToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.pagination.limit).toBe(100);
+  });
+
+  it("falls back to page 1 for a negative page instead of producing a negative skip", async () => {
+    const a = await registerAndGetToken(userA);
+
+    const res = await request(app)
+      .get("/api/stellar/anchor/transactions")
+      .query({ page: "-5" })
+      .set("Authorization", `Bearer ${a.accessToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.pagination.page).toBe(1);
+  });
+
+  it("falls back to defaults for non-numeric page/limit", async () => {
+    const a = await registerAndGetToken(userA);
+
+    const res = await request(app)
+      .get("/api/stellar/anchor/transactions")
+      .query({ page: "not-a-number", limit: "not-a-number" })
+      .set("Authorization", `Bearer ${a.accessToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.pagination.page).toBe(1);
+    expect(res.body.data.pagination.limit).toBe(20);
   });
 });

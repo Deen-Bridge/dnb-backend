@@ -40,7 +40,11 @@ export const getInfo = async (req, res) => {
     }
 
     const info = await getAnchorInfo(homeDomain);
-    res.status(200).json({ success: true, anchor: info });
+    res.status(200).json({
+      success: true,
+      message: "Anchor info fetched",
+      data: { anchor: info },
+    });
   } catch (error) {
     logger.error("Get anchor info error:", error);
     res.status(error.statusCode || 500).json({
@@ -88,11 +92,14 @@ export const requestChallenge = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      challenge: {
-        xdr: challengeXdr,
-        networkPassphrase,
-        homeDomain,
-        webAuthEndpoint,
+      message: "Anchor challenge fetched",
+      data: {
+        challenge: {
+          xdr: challengeXdr,
+          networkPassphrase,
+          homeDomain,
+          webAuthEndpoint,
+        },
       },
     });
   } catch (error) {
@@ -139,6 +146,7 @@ export const verifyChallenge = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Anchor authentication successful",
+      data: null,
     });
   } catch (error) {
     logger.error("Verify anchor challenge error:", error);
@@ -211,19 +219,30 @@ const initiateInteractiveFlow = async (req, res, kind) => {
 
     let trustlineXdr;
     if (kind === "deposit") {
-      const balance = await getAccountBalance(publicKey);
-      if (!balance.hasTrustline) {
-        const trustlineTx = await buildChangeTrustTransaction({ publicKey });
-        trustlineXdr = trustlineTx.xdr;
+      try {
+        const balance = await getAccountBalance(publicKey);
+        if (!balance.hasTrustline) {
+          const trustlineTx = await buildChangeTrustTransaction({ publicKey });
+          trustlineXdr = trustlineTx.xdr;
+        }
+      } catch (error) {
+        // The deposit is already created and persisted at the anchor above -
+        // a failure here isn't fatal - fall through and return the
+        // successful url/id without a trustline XDR rather than erroring
+        // out a deposit the anchor already knows about.
+        logger.warn(`Trustline build failed for anchor deposit ${id}:`, error);
       }
     }
 
     res.status(200).json({
       success: true,
-      [kind]: {
-        url,
-        id,
-        ...(trustlineXdr && { trustlineXdr }),
+      message: `Anchor ${kind} started`,
+      data: {
+        [kind]: {
+          url,
+          id,
+          ...(trustlineXdr && { trustlineXdr }),
+        },
       },
     });
   } catch (error) {
@@ -254,25 +273,45 @@ const LIVE_REFRESH_STALE_MS = 60 * 1000;
  * List the requesting user's own anchor transactions, paginated.
  * GET /api/stellar/anchor/transactions
  */
+const MAX_TRANSACTIONS_PAGE_LIMIT = 100;
+const DEFAULT_TRANSACTIONS_PAGE_LIMIT = 20;
+
+// Clamps rather than rejects: an out-of-range page/limit is a client mistake
+// we can recover from silently, not a request we need to bounce with a 400.
+const parsePage = (value) => {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+};
+
+const parseLimit = (value) => {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_TRANSACTIONS_PAGE_LIMIT;
+  return Math.min(parsed, MAX_TRANSACTIONS_PAGE_LIMIT);
+};
+
 export const getTransactions = async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const page = parsePage(req.query.page);
+    const limit = parseLimit(req.query.limit);
     const query = { user: req.user._id };
 
     const transactions = await AnchorTransaction.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .limit(limit);
     const total = await AnchorTransaction.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      transactions,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit),
+      message: "Anchor transactions fetched",
+      data: {
+        transactions,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
       },
     });
   } catch (error) {
@@ -336,7 +375,11 @@ export const getTransactionById = async (req, res) => {
       }
     }
 
-    res.status(200).json({ success: true, transaction });
+    res.status(200).json({
+      success: true,
+      message: "Anchor transaction fetched",
+      data: { transaction },
+    });
   } catch (error) {
     logger.error("Get anchor transaction error:", error);
     res.status(500).json({

@@ -150,12 +150,12 @@ describe("Anchor interactive deposit/withdrawal flows", () => {
       .send({ homeDomain: HOME_DOMAIN });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.deposit.url).toBe("https://anchor/interactive/abc");
-    expect(res.body.deposit.id).toBe("anchor-tx-1");
-    expect(typeof res.body.deposit.trustlineXdr).toBe("string");
+    expect(res.body.data.deposit.url).toBe("https://anchor/interactive/abc");
+    expect(res.body.data.deposit.id).toBe("anchor-tx-1");
+    expect(typeof res.body.data.deposit.trustlineXdr).toBe("string");
 
     const parsed = StellarSdk.TransactionBuilder.fromXDR(
-      res.body.deposit.trustlineXdr,
+      res.body.data.deposit.trustlineXdr,
       StellarSdk.Networks.TESTNET
     );
     expect(parsed.operations).toHaveLength(1);
@@ -185,7 +185,36 @@ describe("Anchor interactive deposit/withdrawal flows", () => {
       .send({ homeDomain: HOME_DOMAIN });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.deposit.trustlineXdr).toBeUndefined();
+    expect(res.body.data.deposit.trustlineXdr).toBeUndefined();
+  });
+
+  it("still returns the deposit url/id when trustline building throws after the deposit is created at the anchor", async () => {
+    const { accessToken } = await setupUserWithSession();
+    mockAnchorDiscovery();
+    jest
+      .spyOn(server, "loadAccount")
+      .mockRejectedValue(new Error("horizon unreachable"));
+    jest.spyOn(axios, "post").mockResolvedValue({
+      data: {
+        type: "interactive_customer_info_needed",
+        url: "https://anchor/interactive/jkl",
+        id: "anchor-tx-4",
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/stellar/anchor/deposits")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ homeDomain: HOME_DOMAIN });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.deposit.url).toBe("https://anchor/interactive/jkl");
+    expect(res.body.data.deposit.id).toBe("anchor-tx-4");
+    expect(res.body.data.deposit.trustlineXdr).toBeUndefined();
+
+    const persisted = await AnchorTransaction.findOne({ anchorTransactionId: "anchor-tx-4" });
+    expect(persisted).not.toBeNull();
+    expect(persisted.status).toBe("incomplete");
   });
 
   it("starts a withdrawal and never includes a trustline XDR", async () => {
@@ -204,8 +233,8 @@ describe("Anchor interactive deposit/withdrawal flows", () => {
       .send({ homeDomain: HOME_DOMAIN });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.withdrawal.url).toBe("https://anchor/interactive/ghi");
-    expect(res.body.withdrawal.trustlineXdr).toBeUndefined();
+    expect(res.body.data.withdrawal.url).toBe("https://anchor/interactive/ghi");
+    expect(res.body.data.withdrawal.trustlineXdr).toBeUndefined();
 
     const persisted = await AnchorTransaction.findOne({ anchorTransactionId: "anchor-tx-3" });
     expect(persisted.kind).toBe("withdrawal");

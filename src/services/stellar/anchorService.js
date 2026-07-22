@@ -8,6 +8,15 @@ import { USDC_ISSUER, networkPassphrase } from "./stellarService.js";
 
 const anchorJwtCacheKey = (userId, homeDomain) => `anchor:jwt:${userId}:${homeDomain}`;
 
+// No project-wide axios timeout convention exists elsewhere (bookController's
+// file-proxy call is unbounded too), so this picks a value deliberately: SEP-24
+// anchors are third-party servers we don't control, and both the request path
+// and the background poller (anchorPoller) call into them - an unresponsive
+// anchor must not be able to hang either. 10s is generous enough for a real
+// anchor's /info, web-auth, or /transaction round trip, but bounded enough
+// that a hung anchor fails fast instead of stalling a request or poll cycle.
+const ANCHOR_HTTP_TIMEOUT_MS = 10_000;
+
 // SEP-24 terminal statuses: the poller stops refreshing a record once it
 // reaches one of these. Every other anchor-reported status is stored and
 // surfaced verbatim.
@@ -83,7 +92,9 @@ export const getAnchorInfo = async (homeDomain) => {
 
   let sep24Info;
   try {
-    const response = await axios.get(`${transferServer}/info`);
+    const response = await axios.get(`${transferServer}/info`, {
+      timeout: ANCHOR_HTTP_TIMEOUT_MS,
+    });
     sep24Info = response.data;
   } catch (error) {
     throw new APIError(
@@ -118,6 +129,7 @@ export const fetchAndValidateChallenge = async ({ homeDomain, account }) => {
   try {
     response = await axios.get(anchorInfo.webAuthEndpoint, {
       params: { account },
+      timeout: ANCHOR_HTTP_TIMEOUT_MS,
     });
   } catch (error) {
     throw new APIError(
@@ -176,9 +188,11 @@ export const submitChallengeResponse = async ({ homeDomain, signedXdr }) => {
 
   let response;
   try {
-    response = await axios.post(anchorInfo.webAuthEndpoint, {
-      transaction: signedXdr,
-    });
+    response = await axios.post(
+      anchorInfo.webAuthEndpoint,
+      { transaction: signedXdr },
+      { timeout: ANCHOR_HTTP_TIMEOUT_MS }
+    );
   } catch (error) {
     throw new APIError(
       `Failed to submit signed challenge to '${homeDomain}': ${error.message}`,
@@ -244,7 +258,10 @@ export const startInteractiveFlow = async ({
     response = await axios.post(
       `${transferServer}/transactions/${kind}/interactive`,
       form,
-      { headers: { Authorization: `Bearer ${jwtToken}` } }
+      {
+        headers: { Authorization: `Bearer ${jwtToken}` },
+        timeout: ANCHOR_HTTP_TIMEOUT_MS,
+      }
     );
   } catch (error) {
     throw new APIError(
@@ -277,6 +294,7 @@ export const fetchAnchorTransactionStatus = async ({
     response = await axios.get(`${transferServer}/transaction`, {
       params: { id: anchorTransactionId },
       headers: { Authorization: `Bearer ${jwtToken}` },
+      timeout: ANCHOR_HTTP_TIMEOUT_MS,
     });
   } catch (error) {
     throw new APIError(

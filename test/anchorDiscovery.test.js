@@ -142,4 +142,49 @@ describe("getAnchorInfo", () => {
     });
     expect(info.withdraw.enabled).toBe(false);
   });
+
+  it("passes a bounded timeout to the /info call so a hung anchor rejects instead of hanging the request", async () => {
+    jest.spyOn(StellarSdk.StellarToml.Resolver, "resolve").mockResolvedValue({
+      TRANSFER_SERVER_SEP0024: "https://testanchor.stellar.org/sep24",
+      WEB_AUTH_ENDPOINT: "https://testanchor.stellar.org/auth",
+      SIGNING_KEY: "GDMOCKSIGNINGKEY0000000000000000000000000000000000000",
+      CURRENCIES: [{ code: "USDC", issuer: USDC_ISSUER }],
+    });
+    const axiosSpy = jest.spyOn(axios, "get").mockResolvedValue({ data: {} });
+
+    await getAnchorInfo(ALLOWED_DOMAIN);
+
+    expect(axiosSpy).toHaveBeenCalledWith(
+      "https://testanchor.stellar.org/sep24/info",
+      expect.objectContaining({ timeout: expect.any(Number) })
+    );
+    const [, options] = axiosSpy.mock.calls[0];
+    expect(options.timeout).toBeGreaterThan(0);
+  });
+
+  it("surfaces a hung /info call as a 502 rather than hanging forever", async () => {
+    jest.spyOn(StellarSdk.StellarToml.Resolver, "resolve").mockResolvedValue({
+      TRANSFER_SERVER_SEP0024: "https://testanchor.stellar.org/sep24",
+      WEB_AUTH_ENDPOINT: "https://testanchor.stellar.org/auth",
+      SIGNING_KEY: "GDMOCKSIGNINGKEY0000000000000000000000000000000000000",
+      CURRENCIES: [{ code: "USDC", issuer: USDC_ISSUER }],
+    });
+    // Simulate the real axios timeout behavior: a request that never resolves
+    // on its own is rejected by axios once the configured timeout elapses.
+    jest.spyOn(axios, "get").mockImplementation((url, options) => {
+      expect(options.timeout).toBeGreaterThan(0);
+      return new Promise((_resolve, reject) => {
+        const timer = setTimeout(() => {
+          const err = new Error("timeout of " + options.timeout + "ms exceeded");
+          err.code = "ECONNABORTED";
+          reject(err);
+        }, 50);
+        timer.unref?.();
+      });
+    });
+
+    await expect(getAnchorInfo(ALLOWED_DOMAIN)).rejects.toMatchObject({
+      statusCode: 502,
+    });
+  });
 });
