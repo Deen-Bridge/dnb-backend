@@ -8,7 +8,20 @@ import { jest } from "@jest/globals";
 // getStoredAnchorJwt actually round-trip in a test.
 const fakeStore = new Map();
 
+// This test is the only one in the suite that also dynamically imports
+// app.js below, which pulls in the full route graph (bookRoutes, courseRoutes,
+// searchRoutes, userRoutes, spaceRoutes) - several of those import CACHE_TTL/
+// CACHE_KEYS from this same file. jest.unstable_mockModule fully replaces the
+// module in the registry for every subsequent importer, not just the one
+// under test, so a mock factory that only returns the 3 functions this suite
+// needs left every other consumer of this file without CACHE_TTL/CACHE_KEYS,
+// throwing "does not provide an export named 'CACHE_TTL'" the moment app.js's
+// route graph loaded. Spreading the real module's exports here keeps every
+// other named export intact and only overrides the 3 this suite fakes.
+const actualCache = await import("../src/utils/cache.js");
+
 jest.unstable_mockModule("../src/utils/cache.js", () => ({
+  ...actualCache,
   setCacheExpireAt: jest.fn(async (key, value, timestamp) => {
     fakeStore.set(key, { value, expiresAt: timestamp });
     return true;
