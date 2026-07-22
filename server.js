@@ -2,6 +2,7 @@ import app from "./app.js";
 import logger from "./src/config/logger.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
 import { startJobs, stopJobs } from "./src/jobs/queue.js";
+import { startPledgeScheduler, stopPledgeScheduler } from "./src/workers/pledgeScheduler.js";
 import "./src/jobs/handlers.js";
 
 const PORT = process.env.PORT || 5000;
@@ -20,7 +21,10 @@ const server = app.listen(PORT, () => {
   logger.info(`Process ID: ${process.pid}`);
 });
 
+let pledgeSchedulerTimer = null;
+
 startJobs().catch((err) => logger.error(err, "Background job startup failed"));
+pledgeSchedulerTimer = startPledgeScheduler();
 
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
@@ -30,6 +34,7 @@ const gracefulShutdown = async (signal) => {
     logger.info("HTTP server closed");
 
     await stopJobs();
+    stopPledgeScheduler(pledgeSchedulerTimer);
 
     // Close Redis connection
     await closeRedis();
