@@ -102,6 +102,7 @@ dashboard is available at `/admin/jobs`.
 | `npm start` | Start in production mode |
 | `npm test` | Run the Jest + Supertest suite |
 | `npm run seed` | Seed sample data |
+| `npm run seed:categories` | Idempotent migration/seed script to populate initial categories based on current course categories |
 
 ## 🔗 API Overview
 

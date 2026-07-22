@@ -6,7 +6,7 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --forceExit",
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "seed": "node src/scripts/seedDatabase.js",
+    "seed:categories": "node src/scripts/seedCategories.js",
     "test-redis": "node test-redis.js",
     "payouts:audit": "node src/scripts/auditPayouts.js"
   },

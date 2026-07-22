@@ -1,4 +1,6 @@
 import express from "express";
+import { invalidateCacheMiddleware } from "../../middlewares/cache.js";
+import { CACHE_KEYS } from "../../utils/cache.js";
 import {
   createCourse,
   getCourses,
@@ -33,11 +35,30 @@ router.delete("/:courseId/bookmark", protect, removeBookmark); // Remove bookmar
 // Dynamic routes (MUST come after specific routes like /bookmarks)
 router.get("/:id", getCourseById); // GET /api/courses/123
 
-// Protected routes
-// Note: No file upload middleware needed - files uploaded from frontend
-router.post("/", protect, createCourse);
-router.post("/:id/enroll", protect, enrollInCourse);
-router.post("/:id/reviews", protect, addCourseReview);
-router.put("/:id", protect, updateCourse);
+// Protected routes with cache invalidation
+router.post(
+  "/",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.CATEGORIES}*`, `${CACHE_KEYS.CATEGORY}*`]),
+  createCourse
+);
+router.post(
+  "/:id/enroll",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.CATEGORIES}*`, `${CACHE_KEYS.CATEGORY}*`]),
+  enrollInCourse
+);
+router.post(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  addCourseReview
+);
+router.put(
+  "/:id",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.CATEGORIES}*`, `${CACHE_KEYS.CATEGORY}*`]),
+  updateCourse
+);
 
 export default router;

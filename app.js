@@ -45,6 +45,7 @@ import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
+import categoryRoutes from "./src/routes/categoryRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -167,6 +168,7 @@ app.use("/api", apiLimiter);
 app.use("/api/auth", authLimiter, authRoutes);
 
 // Other API routes
+app.use("/api/categories", categoryRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/reels", reelsRoute);
 app.use("/api/books", bookRoutes);
