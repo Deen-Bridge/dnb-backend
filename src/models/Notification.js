@@ -26,6 +26,7 @@ const notificationSchema = new mongoose.Schema(
         "system", // System notification
         "welcome", // Welcome notification
         "recommendation", // New recommendation
+        "pledge_due", // Recurring pledge due notification
       ],
       required: true,
     },
