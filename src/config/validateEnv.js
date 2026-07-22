@@ -30,6 +30,12 @@ const optionalEnvVars = [
   "EMAILJS_RECEIPT_TEMPLATE_ID",
   "ANCHOR_HOME_DOMAINS",
   "ANCHOR_TOML_CACHE_TTL",
+  // Redis configuration (optional - app works without Redis)
+  "REDIS_URL",
+  "REDIS_HOST",
+  "REDIS_PORT",
+  "REDIS_USERNAME",
+  "REDIS_PASSWORD",
 ];
 
 export const validateEnv = () => {
