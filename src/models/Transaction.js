@@ -104,12 +104,19 @@ const transactionSchema = new mongoose.Schema(
       creatorAmount: String,
     },
 
-    // Settlement mode: direct payment to creator or platform collect for payouts
+    // Settlement mode: direct payment to creator, platform collect for payouts, or claimable balance
     settlement: {
       type: String,
-      enum: ["direct", "platform_collect"],
+      enum: ["direct", "platform_collect", "claimable_balance"],
       default: "direct",
       index: true,
+    },
+    
+    // Balance ID for claimable balance fallback
+    balanceId: {
+      type: String,
+      sparse: true,
+      unique: true,
     },
 
     // Status tracking

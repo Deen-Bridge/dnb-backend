@@ -19,8 +19,9 @@ import {
   getExplorerUrl,
   USDC,
   PLATFORM_WALLET_PUBLIC_KEY,
+  hasUsdcTrustline,
 } from "../../services/stellar/stellarService.js";
-import * as StellarSdk from "@stellar/stellar-sdk";
+import { buildCreateClaimableBalanceTx, resolveBalanceId } from "../../services/stellar/claimableBalanceService.js";
 import { recordSaleEarnings } from "../../services/payoutService.js";
 import { enqueue } from "../../jobs/queue.js";
 import logger from "../../config/logger.js";
@@ -369,45 +370,28 @@ export const initializePayment = async (req, res) => {
     // Generate unique memo for this transaction
     const memo = buildPurchaseMemo(itemType, itemId);
 
-    // Build the payment transaction (single op full amount for platform collect, split for direct if fee configured)
-    const isPathPayment = sendAssetInput && sendMax;
+    const hasTrustline = await hasUsdcTrustline(destinationPublicKey);
     let paymentTx;
-    let sep7Uri = null;
+    let fallback = null;
 
-    if (isPathPayment) {
-      const sendAsset = sendAssetInput.issuer
-        ? new StellarSdk.Asset(sendAssetInput.code, sendAssetInput.issuer)
-        : StellarSdk.Asset.native();
-
-      const path = (pathInput || []).map((a) => ({
-        asset_type: a.asset_type,
-        ...(a.asset_type !== "native" && {
-          asset_code: a.asset_code,
-          asset_issuer: a.asset_issuer,
-        }),
-      }));
-
-      paymentTx = await buildPathPaymentTransaction({
-        sourcePublicKey: buyer.stellarWallet.publicKey,
-        destinationPublicKey,
-        destAmount: item.price.toString(),
-        sendAsset,
-        sendMax,
-        path,
-        memo,
-        applyPlatformFee: settlementMode === "direct",
-      });
-    } else {
-      const feeSplitPreview =
-        settlementMode === "direct" ? calculateFeeSplit(item.price) : null;
-
-      const preflight = await preflightPayment({
+    if (hasTrustline || settlementMode === "platform_collect") {
+      paymentTx = await buildPaymentTransaction({
         sourcePublicKey: buyer.stellarWallet.publicKey,
         destinationPublicKey,
         amount: item.price.toString(),
         memo,
-        operationCount: feeSplitPreview ? 2 : 1,
+        applyPlatformFee: settlementMode === "direct",
       });
+    } else {
+      fallback = "claimable_balance";
+      settlementMode = "claimable_balance";
+      paymentTx = await buildCreateClaimableBalanceTx({
+        sourcePublicKey: buyer.stellarWallet.publicKey,
+        claimantPublicKey: destinationPublicKey,
+        amount: item.price.toString(),
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      });
+    }
 
       if (!preflight.ok) {
         await session.abortTransaction();
@@ -475,6 +459,7 @@ export const initializePayment = async (req, res) => {
     res.status(200).json({
       success: true,
       transactionId: transaction._id,
+      fallback,
       payment: {
         xdr: paymentTx.xdr,
         networkPassphrase: paymentTx.networkPassphrase,
@@ -573,68 +558,63 @@ export const submitPayment = async (req, res) => {
 
     // Verify on-chain that the creator (and platform, when a fee was applied)
     // actually received the expected USDC amounts
-    const expectedPayments = transaction.platformFee?.platformAmount
-      ? [
-          {
-            destination: transaction.creatorWallet,
-            amount: transaction.platformFee.creatorAmount,
-          },
-          {
-            destination: transaction.platformFee.platformWallet,
-            amount: transaction.platformFee.platformAmount,
-          },
-        ]
-      : [
-          {
-            destination: transaction.creatorWallet,
-            amount: transaction.amount,
-          },
-        ];
+    let verified = false;
+    let failureReason = "";
 
-    const verification = await verifyPaymentOperations(
-      result.hash,
-      expectedPayments
-    );
-
-    if (!verification.verified) {
-      transaction.stellarTxHash = result.hash;
-      if (verification.transient) {
-        transaction.status = "retrying";
-        transaction.failureReason = verification.reason;
-        await transaction.save({ session });
-        await enqueue(
-          "verifyPaymentOnChain",
-          { transactionId: transaction._id.toString() },
-          {
-            attempts: 5,
-            backoffMs: 1000,
-            idempotencyKey: `verify:${result.hash}`,
-            session,
-          }
-        );
-        await session.commitTransaction();
-        return res.status(202).json({
-          success: true,
-          message: "Payment submitted; confirmation is in progress",
-          transactionId: transaction._id,
-          txHash: result.hash,
-          status: "retrying",
-        });
+    if (transaction.settlement === "claimable_balance") {
+      const verification = await verifyTransaction(result.hash);
+      if (!verification.exists || !verification.successful) {
+        verified = false;
+        failureReason = "On-chain verification failed";
+      } else {
+        verified = true;
+        transaction.balanceId = await resolveBalanceId(result.hash);
       }
+    } else {
+      const expectedPayments = transaction.platformFee?.platformAmount
+        ? [
+            {
+              destination: transaction.creatorWallet,
+              amount: transaction.platformFee.creatorAmount,
+            },
+            {
+              destination: transaction.platformFee.platformWallet,
+              amount: transaction.platformFee.platformAmount,
+            },
+          ]
+        : [
+            {
+              destination: transaction.creatorWallet,
+              amount: transaction.amount,
+            },
+          ];
+
+      const verification = await verifyPaymentOperations(
+        result.hash,
+        expectedPayments
+      );
+      verified = verification.verified;
+      if (!verified) {
+        failureReason = verification.reason;
+      }
+    }
+
+    if (!verified) {
       transaction.status = "failed";
-      transaction.failureReason = `On-chain verification failed: ${verification.reason}`;
+      transaction.failureReason = `On-chain verification failed: ${failureReason}`;
+      transaction.stellarTxHash = result.hash;
       await transaction.save({ session });
       await session.commitTransaction();
       paymentsFailed.inc({ type: "purchase", reason: "verification_failed" });
 
       logger.error(
-        `Transaction ${transactionId} verification failed: ${verification.reason}`
+        `Transaction ${transactionId} verification failed: ${failureReason}`
       );
 
       return res.status(400).json({
         success: false,
         message: "Payment could not be verified on the Stellar network",
-        error: verification.reason,
+        error: failureReason,
       });
     }
 
