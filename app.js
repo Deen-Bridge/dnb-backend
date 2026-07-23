@@ -43,6 +43,8 @@ import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
+import webhookRoutes from "./src/routes/webhookRoutes.js";
+import { startDeliveryWorker } from "./src/services/webhooks/deliveryWorker.js";
 
 handleUncaughtException();
 validateEnv();
@@ -179,6 +181,16 @@ app.use("/api/stellar/wallet", stellarWalletRoutes);
 app.use("/api/stellar/payment", stellarPaymentRoutes);
 app.use("/api/stellar/donation", stellarDonationRoutes);
 app.use("/api/payouts", payoutRoutes);
+app.use("/api/webhooks", webhookRoutes);
+
+// ======================
+// WEBHOOK DELIVERY WORKER
+// ======================
+
+let webhookWorker = null;
+if (process.env.NODE_ENV !== "test") {
+  webhookWorker = startDeliveryWorker();
+}
 
 // ======================
 // ERROR HANDLING

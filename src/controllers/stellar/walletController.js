@@ -5,6 +5,7 @@ import {
   getAccountBalance,
   NETWORK,
 } from "../../services/stellar/stellarService.js";
+import { emitEvent } from "../../services/webhooks/webhookService.js";
 import logger from "../../config/logger.js";
 
 /**
@@ -55,6 +56,13 @@ export const connectWallet = async (req, res) => {
 
     logger.info(`Wallet connected for user ${userId}: ${publicKey}`);
 
+    // Emit event — fire-and-forget
+    emitEvent("wallet.connected", {
+      userId: userId.toString(),
+      publicKey,
+      network: NETWORK,
+    });
+
     res.status(200).json({
       success: true,
       message: "Wallet connected successfully",
@@ -88,6 +96,11 @@ export const disconnectWallet = async (req, res) => {
     });
 
     logger.info(`Wallet disconnected for user ${userId}`);
+
+    // Emit event — fire-and-forget
+    emitEvent("wallet.disconnected", {
+      userId: userId.toString(),
+    });
 
     res.status(200).json({
       success: true,
