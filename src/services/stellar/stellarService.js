@@ -477,6 +477,50 @@ export const buildPaymentTransaction = async ({
   }
 };
 
+export const buildReversePaymentTransaction = async ({
+  sourcePublicKey,
+  destinationPublicKey,
+  amount,
+  originalTxHash,
+}) => {
+  try {
+    const sourceAccount = await timedHorizonCall("loadAccount", () =>
+      server.loadAccount(sourcePublicKey)
+    );
+
+    const builder = new StellarSdk.TransactionBuilder(sourceAccount, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase,
+    });
+
+    builder.addOperation(
+      StellarSdk.Operation.payment({
+        destination: destinationPublicKey,
+        asset: USDC,
+        amount: amount.toString(),
+      })
+    );
+
+    const memoText = originalTxHash
+      ? `RFND:${originalTxHash.slice(0, 20)}`
+      : "DeenBridge Refund";
+
+    const transaction = builder
+      .addMemo(StellarSdk.Memo.text(memoText))
+      .setTimeout(300)
+      .build();
+
+    return {
+      xdr: transaction.toXDR(),
+      hash: transaction.hash().toString("hex"),
+      networkPassphrase,
+    };
+  } catch (error) {
+    logger.error("Error building reverse payment transaction:", error);
+    throw error;
+  }
+};
+
 export const submitTransaction = async (signedXdr) => {
   try {
     const transaction = StellarSdk.TransactionBuilder.fromXDR(
