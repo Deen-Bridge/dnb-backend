@@ -248,21 +248,32 @@ export const isValidPublicKey = (publicKey) => {
   }
 };
 
+const parseAccountSummary = (account) => {
+  const usdcBalance = account.balances?.find(
+    (b) => b.asset_code === "USDC" && b.asset_issuer === USDC_ISSUER
+  );
+  const xlmBalance = account.balances?.find((b) => b.asset_type === "native");
+
+  return {
+    xlmBalance: xlmBalance?.balance || "0",
+    usdcBalance: usdcBalance?.balance || "0",
+    hasTrustline: !!usdcBalance,
+    subentryCount: account.subentry_count ?? 0,
+  };
+};
+
 export const getAccountBalance = async (publicKey) => {
   try {
     const account = await timedHorizonCall("loadAccount", () =>
       server.loadAccount(publicKey)
     );
-    const usdcBalance = account.balances.find(
-      (b) => b.asset_code === "USDC" && b.asset_issuer === USDC_ISSUER
-    );
+    const summary = parseAccountSummary(account);
 
     return {
       exists: true,
-      xlmBalance:
-        account.balances.find((b) => b.asset_type === "native")?.balance || "0",
-      usdcBalance: usdcBalance?.balance || "0",
-      hasTrustline: !!usdcBalance,
+      xlmBalance: summary.xlmBalance,
+      usdcBalance: summary.usdcBalance,
+      hasTrustline: summary.hasTrustline,
     };
   } catch (error) {
     if (error.response?.status === 404) {
@@ -276,6 +287,132 @@ export const getAccountBalance = async (publicKey) => {
     logger.error("Error fetching account balance:", error);
     throw error;
   }
+};
+
+// SEP-29: an account opts into requiring a memo on incoming payments by
+// setting a manageData entry with key "config.memo_required" (value is
+// conventionally "1", base64-encoded by Horizon like all data_attr values).
+export const MEMO_REQUIRED_DATA_KEY = "config.memo_required";
+
+export const isMemoRequired = (account) => {
+  const raw = account?.data_attr?.[MEMO_REQUIRED_DATA_KEY];
+  if (!raw) return false;
+  try {
+    const decoded = Buffer.from(raw, "base64").toString("utf8").trim();
+    return decoded === "1" || decoded.toLowerCase() === "true";
+  } catch {
+    return false;
+  }
+};
+
+export const PREFLIGHT_REASON_CODES = Object.freeze({
+  SOURCE_ACCOUNT_MISSING: "source_account_missing",
+  DESTINATION_ACCOUNT_MISSING: "destination_account_missing",
+  DESTINATION_NO_TRUSTLINE: "destination_no_trustline",
+  SOURCE_INSUFFICIENT_BALANCE: "source_insufficient_balance",
+  SOURCE_INSUFFICIENT_RESERVE: "source_insufficient_reserve",
+  DESTINATION_MEMO_REQUIRED: "destination_memo_required",
+});
+
+// Stellar protocol base reserve is 0.5 XLM per ledger entry (2 base entries
+// per account, plus one more per subentry: trustlines, offers, signers, data).
+const BASE_RESERVE_STROOPS = 5000000n;
+
+const loadAccountOrNull = async (publicKey) => {
+  try {
+    return await timedHorizonCall("loadAccount", () =>
+      server.loadAccount(publicKey)
+    );
+  } catch (error) {
+    if (error.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+/**
+ * Validate a prospective USDC payment before an unsigned XDR is built, so the
+ * wallet is never asked to sign something that will bounce on submission.
+ * Only account-not-found is treated as a structured reason; other Horizon
+ * errors (network, rate limit) propagate to the caller.
+ */
+export const preflightPayment = async ({
+  sourcePublicKey,
+  destinationPublicKey,
+  amount,
+  memo,
+  operationCount = 1,
+}) => {
+  const reasons = [];
+  const warnings = [];
+
+  const [sourceAccount, destinationAccount] = await Promise.all([
+    loadAccountOrNull(sourcePublicKey),
+    loadAccountOrNull(destinationPublicKey),
+  ]);
+
+  if (!sourceAccount) {
+    reasons.push({
+      code: PREFLIGHT_REASON_CODES.SOURCE_ACCOUNT_MISSING,
+      message: "Your Stellar account does not exist or is unfunded on the network.",
+    });
+  } else {
+    const summary = parseAccountSummary(sourceAccount);
+    const requiredStroops = toStroops(amount);
+    const availableStroops = toStroops(summary.usdcBalance);
+
+    if (availableStroops < requiredStroops) {
+      reasons.push({
+        code: PREFLIGHT_REASON_CODES.SOURCE_INSUFFICIENT_BALANCE,
+        message: "Your wallet does not hold enough USDC to complete this payment.",
+      });
+    }
+
+    const minReserveStroops =
+      (2n + BigInt(summary.subentryCount)) * BASE_RESERVE_STROOPS;
+    const feeStroops = BigInt(StellarSdk.BASE_FEE) * BigInt(operationCount);
+    const xlmAvailableStroops = toStroops(summary.xlmBalance);
+
+    if (xlmAvailableStroops < minReserveStroops + feeStroops) {
+      reasons.push({
+        code: PREFLIGHT_REASON_CODES.SOURCE_INSUFFICIENT_RESERVE,
+        message:
+          "Your wallet does not hold enough XLM to cover the minimum reserve and network fee.",
+      });
+    }
+  }
+
+  if (!destinationAccount) {
+    reasons.push({
+      code: PREFLIGHT_REASON_CODES.DESTINATION_ACCOUNT_MISSING,
+      message: "Recipient account does not exist or is unfunded on the network.",
+    });
+  } else {
+    const summary = parseAccountSummary(destinationAccount);
+
+    if (!summary.hasTrustline) {
+      reasons.push({
+        code: PREFLIGHT_REASON_CODES.DESTINATION_NO_TRUSTLINE,
+        message:
+          "Recipient needs to add a USDC trustline to their wallet before they can receive this payment.",
+      });
+    }
+
+    if (isMemoRequired(destinationAccount) && !memo) {
+      reasons.push({
+        code: PREFLIGHT_REASON_CODES.DESTINATION_MEMO_REQUIRED,
+        message:
+          "Recipient requires a memo on incoming payments (SEP-29), commonly the case for exchange or custodial wallets.",
+      });
+    }
+  }
+
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    warnings,
+  };
 };
 
 export const buildPaymentTransaction = async ({
