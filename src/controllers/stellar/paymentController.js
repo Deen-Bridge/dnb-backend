@@ -8,6 +8,8 @@ import {
   buildPaymentTransaction,
   buildPathPaymentTransaction,
   buildSep7Uri,
+  calculateFeeSplit,
+  preflightPayment,
   submitTransaction,
   verifyTransaction,
   verifyPaymentOperations,
@@ -28,6 +30,66 @@ import {
   paymentsConfirmed,
   paymentsFailed,
 } from "../../config/metrics.js";
+
+/**
+ * Resolve the item, its creator, and the settlement destination wallet for a
+ * purchase. Shared by initializePayment and the pre-flight endpoint so both
+ * look up the same destination the same way.
+ */
+const resolvePaymentDestination = async ({ itemType, itemId, session }) => {
+  const Model = itemType === "book" ? Book : Course;
+  const populateField = itemType === "book" ? "author" : "createdBy";
+
+  const query = Model.findById(itemId).populate(populateField, "stellarWallet name");
+  const item = session ? await query.session(session) : await query;
+
+  if (!item) {
+    return { error: { status: 404, message: `${itemType} not found` } };
+  }
+
+  const creator = itemType === "book" ? item.author : item.createdBy;
+  const platformCollectEnabled = process.env.PLATFORM_COLLECT_ENABLED === "true";
+  let destinationPublicKey;
+  let settlementMode = "direct";
+
+  if (!creator?.stellarWallet?.publicKey) {
+    if (!platformCollectEnabled) {
+      return {
+        error: {
+          status: 400,
+          message: "Creator has not connected their Stellar wallet yet",
+        },
+      };
+    }
+
+    const platformWalletKey =
+      process.env.PLATFORM_WALLET_PUBLIC_KEY || PLATFORM_WALLET_PUBLIC_KEY;
+    if (!platformWalletKey) {
+      return {
+        error: {
+          status: 500,
+          message: "Platform wallet is not configured for platform-collect mode",
+        },
+      };
+    }
+
+    destinationPublicKey = platformWalletKey;
+    settlementMode = "platform_collect";
+  } else {
+    destinationPublicKey = creator.stellarWallet.publicKey;
+  }
+
+  return { item, creator, destinationPublicKey, settlementMode };
+};
+
+/**
+ * Platform memo convention: purchases are tagged DNB-<ITEMTYPE>-<last 8 chars
+ * of the Mongo item id>, always as a text memo. This is always non-empty, so
+ * it already satisfies SEP-29 "some memo present" destinations; it does not
+ * substitute for a destination-specific memo (e.g. an exchange deposit id).
+ */
+const buildPurchaseMemo = (itemType, itemId) =>
+  `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
 
 /**
  * Get a quote for paying with a non-USDC asset via path payment
@@ -141,6 +203,76 @@ export const getQuote = async (req, res) => {
 };
 
 /**
+ * Run pre-flight payment safety checks (destination existence, USDC
+ * trustline, source balance/reserve, SEP-29 memo-required) before the
+ * frontend prompts the wallet to sign anything.
+ * POST /api/stellar/payment/preflight
+ */
+export const getPaymentPreflight = async (req, res) => {
+  try {
+    const buyerId = req.user._id;
+    const { itemType, itemId } = req.body;
+
+    if (!["book", "course"].includes(itemType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid item type. Must be 'book' or 'course'",
+      });
+    }
+
+    const buyer = await User.findById(buyerId);
+    if (!buyer?.stellarWallet?.publicKey) {
+      return res.status(400).json({
+        success: false,
+        message: "Please connect your Stellar wallet first",
+      });
+    }
+
+    const resolved = await resolvePaymentDestination({ itemType, itemId });
+    if (resolved.error) {
+      return res.status(resolved.error.status).json({
+        success: false,
+        message: resolved.error.message,
+      });
+    }
+
+    const { item, destinationPublicKey, settlementMode } = resolved;
+
+    if (!item.price || item.price === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "This item is free, no payment required",
+      });
+    }
+
+    const memo = buildPurchaseMemo(itemType, itemId);
+    const feeSplitPreview =
+      settlementMode === "direct" ? calculateFeeSplit(item.price) : null;
+
+    const preflight = await preflightPayment({
+      sourcePublicKey: buyer.stellarWallet.publicKey,
+      destinationPublicKey,
+      amount: item.price.toString(),
+      memo,
+      operationCount: feeSplitPreview ? 2 : 1,
+    });
+
+    res.status(200).json({
+      success: true,
+      preflight,
+    });
+  } catch (error) {
+    logger.error("Payment preflight error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to run payment pre-flight checks",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
  * Initialize a payment - creates pending transaction and returns XDR to sign
  * POST /api/stellar/payment/initialize
  */
@@ -180,53 +312,17 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Get item details
-    const Model = itemType === "book" ? Book : Course;
-    const populateField = itemType === "book" ? "author" : "createdBy";
-
-    const item = await Model.findById(itemId)
-      .populate(populateField, "stellarWallet name")
-      .session(session);
-
-    if (!item) {
+    // Get item details and resolve the settlement destination
+    const resolved = await resolvePaymentDestination({ itemType, itemId, session });
+    if (resolved.error) {
       await session.abortTransaction();
-      return res.status(404).json({
+      return res.status(resolved.error.status).json({
         success: false,
-        message: `${itemType} not found`,
+        message: resolved.error.message,
       });
     }
 
-    const creator = itemType === "book" ? item.author : item.createdBy;
-    const platformCollectEnabled =
-      process.env.PLATFORM_COLLECT_ENABLED === "true";
-    let destinationPublicKey;
-    let settlementMode = "direct";
-
-    // Check creator has wallet or platform-collect mode is enabled
-    if (!creator?.stellarWallet?.publicKey) {
-      if (!platformCollectEnabled) {
-        await session.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          message: "Creator has not connected their Stellar wallet yet",
-        });
-      }
-
-      const platformWalletKey =
-        process.env.PLATFORM_WALLET_PUBLIC_KEY || PLATFORM_WALLET_PUBLIC_KEY;
-      if (!platformWalletKey) {
-        await session.abortTransaction();
-        return res.status(500).json({
-          success: false,
-          message: "Platform wallet is not configured for platform-collect mode",
-        });
-      }
-
-      destinationPublicKey = platformWalletKey;
-      settlementMode = "platform_collect";
-    } else {
-      destinationPublicKey = creator.stellarWallet.publicKey;
-    }
+    const { item, creator, destinationPublicKey, settlementMode } = resolved;
 
     // Check if item is free
     if (!item.price || item.price === 0) {
@@ -271,7 +367,7 @@ export const initializePayment = async (req, res) => {
     }
 
     // Generate unique memo for this transaction
-    const memo = `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
+    const memo = buildPurchaseMemo(itemType, itemId);
 
     // Build the payment transaction (single op full amount for platform collect, split for direct if fee configured)
     const isPathPayment = sendAssetInput && sendMax;
@@ -302,6 +398,26 @@ export const initializePayment = async (req, res) => {
         applyPlatformFee: settlementMode === "direct",
       });
     } else {
+      const feeSplitPreview =
+        settlementMode === "direct" ? calculateFeeSplit(item.price) : null;
+
+      const preflight = await preflightPayment({
+        sourcePublicKey: buyer.stellarWallet.publicKey,
+        destinationPublicKey,
+        amount: item.price.toString(),
+        memo,
+        operationCount: feeSplitPreview ? 2 : 1,
+      });
+
+      if (!preflight.ok) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Payment failed pre-flight safety checks",
+          reasons: preflight.reasons,
+        });
+      }
+
       paymentTx = await buildPaymentTransaction({
         sourcePublicKey: buyer.stellarWallet.publicKey,
         destinationPublicKey,
