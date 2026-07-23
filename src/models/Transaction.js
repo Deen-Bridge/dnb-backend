@@ -85,6 +85,11 @@ const transactionSchema = new mongoose.Schema(
       default: "USDC",
       enum: ["USDC"],
     },
+    sendAsset: {
+      code: { type: String },
+      issuer: { type: String },
+    },
+    sendMax: { type: String },
     network: {
       type: String,
       enum: ["testnet", "mainnet"],

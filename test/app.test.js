@@ -1,4 +1,5 @@
 import request from "supertest";
+import mongoose from "mongoose";
 import app from "../app.js";
 import {
   calculateFeeSplit,
@@ -11,6 +12,26 @@ import {
   paymentsConfirmed,
   paymentsFailed,
 } from "../src/config/metrics.js";
+
+// app.js skips connectDB() under NODE_ENV=test; routes that touch the DB need
+// a live connection, so this suite manages its own.
+beforeAll(async () => {
+  await mongoose.connect(process.env.MONGO_URI);
+});
+
+afterAll(async () => {
+  await mongoose.disconnect();
+});
+
+// Read a labeled counter value via prom-client's public API (internals like
+// counter.hashMap are not part of the v15 contract).
+const counterValue = async (counter, labels) => {
+  const { values } = await counter.get();
+  const match = values.find(
+    (v) => JSON.stringify(v.labels) === JSON.stringify(labels)
+  );
+  return match ? match.value : 0;
+};
 
 describe("DeenBridge API", () => {
   it("should respond to GET / with welcome message", async () => {
@@ -90,63 +111,41 @@ describe("Metrics endpoint", () => {
 
 describe("Funnel counter increments", () => {
   beforeEach(() => {
-    paymentsInitialized.reset({ type: "purchase" });
-    paymentsInitialized.reset({ type: "donation" });
-    paymentsSubmitted.reset({ type: "purchase" });
-    paymentsSubmitted.reset({ type: "donation" });
-    paymentsConfirmed.reset({ type: "purchase" });
-    paymentsConfirmed.reset({ type: "donation" });
-    paymentsFailed.reset({ type: "purchase" });
-    paymentsFailed.reset({ type: "donation" });
+    paymentsInitialized.reset();
+    paymentsSubmitted.reset();
+    paymentsConfirmed.reset();
+    paymentsFailed.reset();
   });
 
-  it("purchase funnel counters increment correctly", () => {
+  it("purchase funnel counters increment correctly", async () => {
     paymentsInitialized.inc({ type: "purchase" });
     paymentsSubmitted.inc({ type: "purchase" });
     paymentsConfirmed.inc({ type: "purchase" });
 
-    const init = paymentsInitialized.hashMap.get(
-      JSON.stringify({ type: "purchase" })
-    );
-    const sub = paymentsSubmitted.hashMap.get(
-      JSON.stringify({ type: "purchase" })
-    );
-    const conf = paymentsConfirmed.hashMap.get(
-      JSON.stringify({ type: "purchase" })
-    );
-
-    expect(init?.values[0].value).toBe(1);
-    expect(sub?.values[0].value).toBe(1);
-    expect(conf?.values[0].value).toBe(1);
+    expect(await counterValue(paymentsInitialized, { type: "purchase" })).toBe(1);
+    expect(await counterValue(paymentsSubmitted, { type: "purchase" })).toBe(1);
+    expect(await counterValue(paymentsConfirmed, { type: "purchase" })).toBe(1);
   });
 
-  it("donation funnel counters increment correctly", () => {
+  it("donation funnel counters increment correctly", async () => {
     paymentsInitialized.inc({ type: "donation" });
     paymentsSubmitted.inc({ type: "donation" });
     paymentsConfirmed.inc({ type: "donation" });
 
-    const init = paymentsInitialized.hashMap.get(
-      JSON.stringify({ type: "donation" })
-    );
-    const sub = paymentsSubmitted.hashMap.get(
-      JSON.stringify({ type: "donation" })
-    );
-    const conf = paymentsConfirmed.hashMap.get(
-      JSON.stringify({ type: "donation" })
-    );
-
-    expect(init?.values[0].value).toBe(1);
-    expect(sub?.values[0].value).toBe(1);
-    expect(conf?.values[0].value).toBe(1);
+    expect(await counterValue(paymentsInitialized, { type: "donation" })).toBe(1);
+    expect(await counterValue(paymentsSubmitted, { type: "donation" })).toBe(1);
+    expect(await counterValue(paymentsConfirmed, { type: "donation" })).toBe(1);
   });
 
-  it("failed counter increments with reason label", () => {
+  it("failed counter increments with reason label", async () => {
     paymentsFailed.inc({ type: "purchase", reason: "stellar_error" });
 
-    const fail = paymentsFailed.hashMap.get(
-      JSON.stringify({ type: "purchase", reason: "stellar_error" })
-    );
-    expect(fail?.values[0].value).toBe(1);
+    expect(
+      await counterValue(paymentsFailed, {
+        type: "purchase",
+        reason: "stellar_error",
+      })
+    ).toBe(1);
   });
 });
 
