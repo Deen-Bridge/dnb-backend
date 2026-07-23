@@ -3,13 +3,9 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import logger from "../../config/logger.js";
 import { observeHorizonDuration } from "../../config/metrics.js";
 
-const NETWORK = process.env.STELLAR_NETWORK || "testnet";
-const HORIZON_URL =
-  NETWORK === "mainnet"
-    ? "https://horizon.stellar.org"
-    : "https://horizon-testnet.stellar.org";
+import { client } from "./horizonClient.js";
 
-const server = new StellarSdk.Horizon.Server(HORIZON_URL);
+const NETWORK = process.env.STELLAR_NETWORK || "testnet";
 const networkPassphrase =
   NETWORK === "mainnet"
     ? StellarSdk.Networks.PUBLIC
@@ -134,7 +130,7 @@ export const isValidPublicKey = (publicKey) => {
 export const getAccountBalance = async (publicKey) => {
   try {
     const account = await timedHorizonCall("loadAccount", () =>
-      server.loadAccount(publicKey)
+      client.execute(server => server.loadAccount(publicKey))
     );
     const usdcBalance = account.balances.find(
       (b) => b.asset_code === "USDC" && b.asset_issuer === USDC_ISSUER
@@ -170,7 +166,7 @@ export const buildPaymentTransaction = async ({
 }) => {
   try {
     const sourceAccount = await timedHorizonCall("loadAccount", () =>
-      server.loadAccount(sourcePublicKey)
+      client.execute(server => server.loadAccount(sourcePublicKey))
     );
 
     const feeSplit = applyPlatformFee ? calculateFeeSplit(amount) : null;
@@ -230,8 +226,17 @@ export const submitTransaction = async (signedXdr) => {
       networkPassphrase
     );
 
+    // Using mode: 'submit' and passing a verifyFn to safely handle timeouts
+    const verifyFn = async () => {
+      const ver = await verifyTransaction(transaction.hash().toString("hex"));
+      if (ver.exists) {
+        return { hash: transaction.hash().toString("hex"), ledger: ver.ledger, successful: ver.successful };
+      }
+      return null;
+    };
+
     const result = await timedHorizonCall("submitTransaction", () =>
-      server.submitTransaction(transaction)
+      client.execute(server => server.submitTransaction(transaction), { mode: 'submit', verifyFn })
     );
     return {
       hash: result.hash,
@@ -263,10 +268,10 @@ export const submitTransaction = async (signedXdr) => {
 export const verifyTransaction = async (txHash) => {
   try {
     const tx = await timedHorizonCall("fetchTransaction", () =>
-      server.transactions().transaction(txHash).call()
+      client.execute(server => server.transactions().transaction(txHash).call())
     );
     const operations = await timedHorizonCall("fetchOperations", () =>
-      server.operations().forTransaction(txHash).call()
+      client.execute(server => server.operations().forTransaction(txHash).call())
     );
 
     return {
@@ -349,8 +354,10 @@ export const getAccountExplorerUrl = (publicKey) => {
   return baseUrl + publicKey;
 };
 
+// Export client.endpoints[0].server as a fallback for other modules not yet refactored (e.g. payoutService)
+export const server = client.endpoints[0].server;
+
 export {
-  server,
   USDC,
   USDC_ISSUER,
   NETWORK,
