@@ -22,6 +22,7 @@ import {
   paymentsConfirmed,
   paymentsFailed,
 } from "../../config/metrics.js";
+import { emitEvent } from "../../services/webhooks/webhookService.js";
 
 /**
  * Initialize a payment - creates pending transaction and returns XDR to sign
@@ -203,6 +204,20 @@ export const initializePayment = async (req, res) => {
     await session.commitTransaction();
     paymentsInitialized.inc({ type: "purchase" });
 
+    // Emit event after commit — fire-and-forget
+    emitEvent("payment.initialized", {
+      transactionId: transaction._id.toString(),
+      buyerId: buyerId.toString(),
+      buyerWallet: buyer.stellarWallet.publicKey,
+      creatorId: creator._id.toString(),
+      creatorWallet: destinationPublicKey,
+      itemType,
+      itemId: itemId.toString(),
+      itemTitle: item.title,
+      amount: item.price.toString(),
+      network: NETWORK,
+    });
+
     logger.info(
       `Payment initialized: ${transaction._id} for ${itemType} ${itemId}`
     );
@@ -293,6 +308,21 @@ export const submitPayment = async (req, res) => {
       await session.commitTransaction();
       paymentsFailed.inc({ type: "purchase", reason: "stellar_error" });
 
+      // Emit event after commit
+      emitEvent("payment.failed", {
+        transactionId: transaction._id.toString(),
+        buyerId: buyerId.toString(),
+        buyerWallet: transaction.buyerWallet,
+        creatorId: transaction.creator.toString(),
+        creatorWallet: transaction.creatorWallet,
+        itemType: transaction.itemType,
+        itemId: transaction.itemId.toString(),
+        itemTitle: transaction.itemTitle,
+        amount: transaction.amount,
+        network: transaction.network,
+        failureReason: stellarError.message,
+      });
+
       logger.error(`Transaction ${transactionId} failed:`, stellarError);
 
       return res.status(400).json({
@@ -334,6 +364,22 @@ export const submitPayment = async (req, res) => {
       await transaction.save({ session });
       await session.commitTransaction();
       paymentsFailed.inc({ type: "purchase", reason: "verification_failed" });
+
+      // Emit event after commit
+      emitEvent("payment.failed", {
+        transactionId: transaction._id.toString(),
+        buyerId: buyerId.toString(),
+        buyerWallet: transaction.buyerWallet,
+        creatorId: transaction.creator.toString(),
+        creatorWallet: transaction.creatorWallet,
+        itemType: transaction.itemType,
+        itemId: transaction.itemId.toString(),
+        itemTitle: transaction.itemTitle,
+        amount: transaction.amount,
+        network: transaction.network,
+        stellarTxHash: result.hash,
+        failureReason: `On-chain verification failed: ${verification.reason}`,
+      });
 
       logger.error(
         `Transaction ${transactionId} verification failed: ${verification.reason}`
@@ -387,6 +433,23 @@ export const submitPayment = async (req, res) => {
 
     await buyer.save({ session });
     await session.commitTransaction();
+    paymentsConfirmed.inc({ type: "purchase" });
+
+    // Emit event after commit — fire-and-forget
+    emitEvent("payment.confirmed", {
+      transactionId: transaction._id.toString(),
+      buyerId: buyerId.toString(),
+      buyerWallet: transaction.buyerWallet,
+      creatorId: transaction.creator.toString(),
+      creatorWallet: transaction.creatorWallet,
+      itemType: transaction.itemType,
+      itemId: transaction.itemId.toString(),
+      itemTitle: transaction.itemTitle,
+      amount: transaction.amount,
+      network: transaction.network,
+      stellarTxHash: result.hash,
+      ledger: result.ledger,
+    });
 
     logger.info(
       `Payment successful: ${transactionId}, Stellar TX: ${result.hash}`
@@ -551,6 +614,20 @@ export const cancelTransaction = async (req, res) => {
         message: "Transaction not found or cannot be cancelled",
       });
     }
+
+    // Emit event after update
+    emitEvent("payment.expired", {
+      transactionId: transaction._id.toString(),
+      buyerId: userId.toString(),
+      buyerWallet: transaction.buyerWallet,
+      creatorId: transaction.creator.toString(),
+      creatorWallet: transaction.creatorWallet,
+      itemType: transaction.itemType,
+      itemId: transaction.itemId.toString(),
+      itemTitle: transaction.itemTitle,
+      amount: transaction.amount,
+      network: transaction.network,
+    });
 
     logger.info(`Transaction ${transactionId} cancelled by user ${userId}`);
 
