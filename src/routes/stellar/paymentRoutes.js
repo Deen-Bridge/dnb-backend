@@ -4,6 +4,8 @@ import { protect } from "../../middlewares/authMiddleware.js";
 import {
   initializePayment,
   submitPayment,
+  getQuote,
+  getPaymentPreflight,
   getTransactionHistory,
   getTransaction,
   cancelTransaction,
@@ -15,6 +17,8 @@ const router = express.Router();
 router.use(protect);
 
 // Payment flow
+router.post("/quote", getQuote);
+router.post("/preflight", getPaymentPreflight);
 router.post("/initialize", initializePayment);
 router.post("/submit", submitPayment);
 

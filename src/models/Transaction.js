@@ -85,6 +85,11 @@ const transactionSchema = new mongoose.Schema(
       default: "USDC",
       enum: ["USDC"],
     },
+    sendAsset: {
+      code: { type: String },
+      issuer: { type: String },
+    },
+    sendMax: { type: String },
     network: {
       type: String,
       enum: ["testnet", "mainnet"],
@@ -117,7 +122,7 @@ const transactionSchema = new mongoose.Schema(
     // Status tracking
     status: {
       type: String,
-      enum: ["pending", "submitted", "confirmed", "failed", "expired"],
+      enum: ["pending", "submitted", "retrying", "confirmed", "failed", "expired"],
       default: "pending",
       index: true,
     },
