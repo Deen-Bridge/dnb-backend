@@ -110,9 +110,16 @@ const transactionSchema = new mongoose.Schema(
     // Status tracking
     status: {
       type: String,
-      enum: ["pending", "submitted", "confirmed", "failed", "expired"],
+      enum: ["pending", "submitted", "confirmed", "failed", "expired", "refunded", "disputed"],
       default: "pending",
       index: true,
+    },
+
+    // Refund linkage
+    refund: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Refund",
+      default: null,
     },
 
     // Error handling
