@@ -259,17 +259,8 @@ export const submitRefund = async (req, res) => {
       });
     }
 
-    // Atomic Access Revocation via Mongoose Session Transaction
-    let session = null;
-    try {
-      session = await mongoose.startSession();
-      session.startTransaction();
-    } catch (sErr) {
-      session = null;
-    }
-
-    const sessionOpts = session ? { session } : {};
-
+    // Access Revocation — sequential writes (no session/transaction required;
+    // the Stellar on-chain verification above is the source of truth)
     try {
       const buyer = await User.findById(refund.buyer);
 
@@ -279,7 +270,7 @@ export const submitRefund = async (req, res) => {
           buyer.purchasedCourses = (buyer.purchasedCourses || []).filter(
             (cId) => cId.toString() !== refund.itemId.toString()
           );
-          await buyer.save(sessionOpts);
+          await buyer.save();
         }
 
         // Remove buyer from Course.enrolledUsers
@@ -288,7 +279,7 @@ export const submitRefund = async (req, res) => {
           course.enrolledUsers = (course.enrolledUsers || []).filter(
             (uId) => uId.toString() !== refund.buyer.toString()
           );
-          await course.save(sessionOpts);
+          await course.save();
         }
       } else if (refund.itemType === "book") {
         // Remove book from buyer's purchased list
@@ -296,36 +287,25 @@ export const submitRefund = async (req, res) => {
           buyer.purchasedBooks = (buyer.purchasedBooks || []).filter(
             (bId) => bId.toString() !== refund.itemId.toString()
           );
-          await buyer.save(sessionOpts);
+          await buyer.save();
         }
       }
 
-      // Update refund & transaction status atomically
+      // Update refund & transaction status
       refund.status = "confirmed";
       refund.refundTxHash = submissionResult.hash;
       refund.refundLedger = submissionResult.ledger;
-      await refund.save(sessionOpts);
+      await refund.save();
 
       await Transaction.findByIdAndUpdate(
         refund.originalTransaction,
-        { status: "refunded", refund: refund._id },
-        sessionOpts
+        { status: "refunded", refund: refund._id }
       );
 
-      if (session) {
-        await session.commitTransaction();
-      }
       logger.info(`Refund confirmed and access revoked atomically for refund ${refund._id}`);
-    } catch (atomicErr) {
-      if (session) {
-        await session.abortTransaction();
-      }
-      logger.error("Error during atomic access revocation:", atomicErr);
-      throw atomicErr;
-    } finally {
-      if (session) {
-        session.endSession();
-      }
+    } catch (revokeErr) {
+      logger.error("Error during atomic access revocation:", revokeErr);
+      throw revokeErr;
     }
 
     return res.status(200).json({
