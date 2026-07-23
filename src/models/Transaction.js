@@ -110,7 +110,7 @@ const transactionSchema = new mongoose.Schema(
     // Status tracking
     status: {
       type: String,
-      enum: ["pending", "submitted", "confirmed", "failed", "expired", "refunded", "disputed"],
+      enum: ["pending", "submitted", "retrying", "confirmed", "failed", "expired", "refunded", "disputed"],
       default: "pending",
       index: true,
     },
