@@ -70,7 +70,7 @@ The API serves ecosystem metadata at `/.well-known/stellar.toml`:
 curl http://localhost:5000/.well-known/stellar.toml
 ```
 
-Optional env vars for the TOML: `STELLAR_PLATFORM_PUBLIC_KEY`, `ORG_NAME`, `ORG_URL`, `ORG_DESCRIPTION`, `ORG_LOGO`, `ORG_TWITTER`, `ORG_GITHUB`, `SIGNING_KEY`. See `.env.example`.
+Optional env vars for the TOML: `STELLAR_PLATFORM_PUBLIC_KEY`, `ORG_NAME`, `ORG_URL`, `ORG_DESCRIPTION`, `ORG_LOGO`, `ORG_TWITTER`, `ORG_GITHUB`. (`SIGNING_KEY` is a placeholder that must remain unset until SEP-10 #25). See `.env.example`.
 
 ---
 

@@ -1,7 +1,6 @@
 import {
   USDC_ISSUER,
   networkPassphrase,
-  PLATFORM_WALLET_PUBLIC_KEY,
 } from "./stellarService.js";
 
 const CURRENCIES = [
@@ -18,6 +17,8 @@ const CURRENCIES = [
   },
 ];
 
+const quoteTomlString = (val) => JSON.stringify(String(val));
+
 export function buildStellarToml() {
   const lines = [];
 
@@ -28,17 +29,21 @@ export function buildStellarToml() {
   lines.push(``);
 
   // ── ACCOUNTS ──
-  const platformKey =
-    process.env.STELLAR_PLATFORM_PUBLIC_KEY || PLATFORM_WALLET_PUBLIC_KEY;
-  if (platformKey) {
-    lines.push(`ACCOUNTS = ["${platformKey}"]`);
+  // Use strictly STELLAR_PLATFORM_PUBLIC_KEY; omit ACCOUNTS entirely if unset/blank
+  const platformKey = process.env.STELLAR_PLATFORM_PUBLIC_KEY;
+  if (platformKey && platformKey.trim() !== "") {
+    lines.push(`ACCOUNTS = ["${platformKey.trim()}"]`);
     lines.push(``);
   }
 
   // ── SEP endpoint hooks ──
+  // Emit SIGNING_KEY only if it is a valid public key starting with G; never emit secret seeds or invalid values
   const signingKey = process.env.SIGNING_KEY;
-  if (signingKey) {
-    lines.push(`SIGNING_KEY = "${signingKey}"`);
+  const isValidPublicKey =
+    typeof signingKey === "string" && /^G[A-Z2-7]{55}$/.test(signingKey.trim());
+
+  if (isValidPublicKey) {
+    lines.push(`SIGNING_KEY = "${signingKey.trim()}"`);
   } else {
     lines.push(`# SIGNING_KEY = "G..."  # Populated by SEP-10 (#25)`);
   }
@@ -56,12 +61,12 @@ export function buildStellarToml() {
     ["ORG_GITHUB", process.env.ORG_GITHUB],
   ];
 
-  const setDocFields = docFields.filter(([, value]) => value);
+  const setDocFields = docFields.filter(([, value]) => value !== undefined && value !== null && value !== "");
 
   if (setDocFields.length > 0) {
     lines.push(`[DOCUMENTATION]`);
     for (const [key, value] of setDocFields) {
-      lines.push(`${key} = "${value}"`);
+      lines.push(`${key} = ${quoteTomlString(value)}`);
     }
     lines.push(``);
   }
@@ -75,9 +80,9 @@ export function buildStellarToml() {
     lines.push(`is_asset_anchored = ${currency.is_asset_anchored}`);
     lines.push(`anchor_asset_type = "${currency.anchor_asset_type}"`);
     lines.push(`anchor_asset = "${currency.anchor_asset}"`);
-    lines.push(`desc = "${currency.desc}"`);
+    lines.push(`desc = ${quoteTomlString(currency.desc)}`);
     lines.push(`display_decimals = ${currency.display_decimals}`);
-    lines.push(`name = "${currency.name}"`);
+    lines.push(`name = ${quoteTomlString(currency.name)}`);
     lines.push(``);
   }
 
