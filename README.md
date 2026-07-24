@@ -81,6 +81,7 @@ The API runs at `http://localhost:5000`.
 | `QUEUE_DRIVER` | `mongo` (durable production default) or `inline` (tests/CI) |
 | `JOBS_ENABLED` | Start background workers; defaults to `true` |
 | `JOBS_DASHBOARD_TOKEN` | Bearer token protecting `/admin/jobs` |
+| `STELLAR_PLATFORM_PUBLIC_KEY` | Public key published in `stellar.toml` `ACCOUNTS[]` |
 
 See `.env.example` for the full list.
 
@@ -107,6 +108,7 @@ dashboard is available at `/admin/jobs`.
 
 | Area | Base Route |
 |------|-----------|
+| SEP-1 Metadata | `/.well-known/stellar.toml` |
 | Auth & Users | `/api/auth`, `/api/users` |
 | Courses & Books | `/api/courses`, `/api/books` |
 | Spaces & Reels | `/api/spaces`, `/api/reels` |
