@@ -6,15 +6,21 @@ import Course from "../../models/Course.js";
 import Transaction from "../../models/Transaction.js";
 import {
   buildPaymentTransaction,
+  buildPathPaymentTransaction,
   buildSep7Uri,
   submitTransaction,
   verifyTransaction,
   verifyPaymentOperations,
+  findPaymentPaths,
+  applySlippage,
   NETWORK,
   getExplorerUrl,
+  USDC,
   PLATFORM_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
+import * as StellarSdk from "@stellar/stellar-sdk";
 import { recordSaleEarnings } from "../../services/payoutService.js";
+import { enqueue } from "../../jobs/queue.js";
 import logger from "../../config/logger.js";
 import {
   paymentsInitialized,
@@ -22,6 +28,117 @@ import {
   paymentsConfirmed,
   paymentsFailed,
 } from "../../config/metrics.js";
+
+/**
+ * Get a quote for paying with a non-USDC asset via path payment
+ * POST /api/stellar/payment/quote
+ */
+export const getQuote = async (req, res) => {
+  try {
+    const { itemType, itemId, sendAssetCode, sendAssetIssuer } = req.body;
+
+    if (!["book", "course"].includes(itemType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid item type. Must be 'book' or 'course'",
+      });
+    }
+
+    const Model = itemType === "book" ? Book : Course;
+    const item = await Model.findById(itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: `${itemType} not found`,
+      });
+    }
+
+    if (!item.price || item.price === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "This item is free, no quote needed",
+      });
+    }
+
+    if (sendAssetCode && !sendAssetIssuer && sendAssetCode !== "XLM" && sendAssetCode !== "native") {
+      return res.status(400).json({
+        success: false,
+        message: "Non-native assets require an issuer. Omit sendAssetIssuer only for native XLM.",
+      });
+    }
+
+    const sendAsset = sendAssetIssuer
+      ? new StellarSdk.Asset(sendAssetCode, sendAssetIssuer)
+      : StellarSdk.Asset.native();
+
+    const destAmount = item.price.toString();
+    const paths = await findPaymentPaths(sendAsset, destAmount);
+
+    if (!paths || paths.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No payment path found for the given asset",
+      });
+    }
+
+    const bestPath = paths[0];
+    const slippageBps = Math.min(
+      500,
+      Math.max(10, Number(req.body.slippageBps) || 100)
+    );
+    const sendMax = applySlippage(bestPath.source_amount, slippageBps);
+
+    const sourceAsset = {
+      asset_type: bestPath.source_asset_type,
+      ...(bestPath.source_asset_type !== "native" && {
+        asset_code: bestPath.source_asset_code,
+        asset_issuer: bestPath.source_asset_issuer,
+      }),
+    };
+
+    const pathAssets = (bestPath.path || []).map((a) => ({
+      asset_type: a.asset_type,
+      ...(a.asset_type !== "native" && {
+        asset_code: a.asset_code,
+        asset_issuer: a.asset_issuer,
+      }),
+    }));
+
+    const expiresAt = new Date(Date.now() + 30 * 1000).toISOString();
+
+    res.status(200).json({
+      success: true,
+      quote: {
+        source_asset: sourceAsset,
+        source_amount: bestPath.source_amount,
+        destination_asset: { asset_type: "credit_alphanum4", asset_code: "USDC", asset_issuer: USDC.getIssuer() },
+        destination_amount: destAmount,
+        path: pathAssets,
+        sendMax,
+        slippageBps,
+        expiresAt,
+        note: "Quote is an estimate. The on-chain bound enforced is sendMax, not the quoted source_amount.",
+      },
+    });
+  } catch (error) {
+    logger.error("Quote error:", error);
+    if (
+      error.message?.includes("Invalid asset") ||
+      error.message?.includes("bad asset")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Unknown or invalid asset",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to get quote",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
 
 /**
  * Initialize a payment - creates pending transaction and returns XDR to sign
@@ -33,7 +150,7 @@ export const initializePayment = async (req, res) => {
 
   try {
     const buyerId = req.user._id;
-    const { itemType, itemId, buyerWallet } = req.body;
+    const { itemType, itemId, buyerWallet, sendAsset: sendAssetInput, sendMax, path: pathInput } = req.body;
 
     // Validate item type
     if (!["book", "course"].includes(itemType)) {
@@ -157,20 +274,48 @@ export const initializePayment = async (req, res) => {
     const memo = `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
 
     // Build the payment transaction (single op full amount for platform collect, split for direct if fee configured)
-    const paymentTx = await buildPaymentTransaction({
-      sourcePublicKey: buyer.stellarWallet.publicKey,
-      destinationPublicKey,
-      amount: item.price.toString(),
-      memo,
-      applyPlatformFee: settlementMode === "direct",
-    });
+    const isPathPayment = sendAssetInput && sendMax;
+    let paymentTx;
+    let sep7Uri = null;
 
-    // SEP-7 URI so wallets can deep-link the payment
-    const sep7Uri = buildSep7Uri({
-      destination: destinationPublicKey,
-      amount: item.price.toString(),
-      memo,
-    });
+    if (isPathPayment) {
+      const sendAsset = sendAssetInput.issuer
+        ? new StellarSdk.Asset(sendAssetInput.code, sendAssetInput.issuer)
+        : StellarSdk.Asset.native();
+
+      const path = (pathInput || []).map((a) => ({
+        asset_type: a.asset_type,
+        ...(a.asset_type !== "native" && {
+          asset_code: a.asset_code,
+          asset_issuer: a.asset_issuer,
+        }),
+      }));
+
+      paymentTx = await buildPathPaymentTransaction({
+        sourcePublicKey: buyer.stellarWallet.publicKey,
+        destinationPublicKey,
+        destAmount: item.price.toString(),
+        sendAsset,
+        sendMax,
+        path,
+        memo,
+        applyPlatformFee: settlementMode === "direct",
+      });
+    } else {
+      paymentTx = await buildPaymentTransaction({
+        sourcePublicKey: buyer.stellarWallet.publicKey,
+        destinationPublicKey,
+        amount: item.price.toString(),
+        memo,
+        applyPlatformFee: settlementMode === "direct",
+      });
+
+      sep7Uri = buildSep7Uri({
+        destination: destinationPublicKey,
+        amount: item.price.toString(),
+        memo,
+      });
+    }
 
     const feeSplit = paymentTx.feeSplit;
 
@@ -188,7 +333,11 @@ export const initializePayment = async (req, res) => {
       network: NETWORK,
       status: "pending",
       settlement: settlementMode,
-      stellarTxHash: paymentTx.hash, // Temporary hash, will be replaced with actual
+      stellarTxHash: paymentTx.hash,
+      ...(sendAssetInput && {
+        sendAsset: sendAssetInput,
+        sendMax,
+      }),
       ...(feeSplit && {
         platformFee: {
           feePercent: feeSplit.feePercent,
@@ -215,7 +364,11 @@ export const initializePayment = async (req, res) => {
         networkPassphrase: paymentTx.networkPassphrase,
         expectedHash: paymentTx.hash,
       },
-      sep7Uri,
+      ...(sep7Uri && { sep7Uri }),
+      ...(isPathPayment && {
+        pathPaymentNote:
+          "Path payment XDR provided. SEP-7 URI is not available for path payments; use the XDR signing flow.",
+      }),
       item: {
         title: item.title,
         price: item.price,
@@ -328,9 +481,32 @@ export const submitPayment = async (req, res) => {
     );
 
     if (!verification.verified) {
+      transaction.stellarTxHash = result.hash;
+      if (verification.transient) {
+        transaction.status = "retrying";
+        transaction.failureReason = verification.reason;
+        await transaction.save({ session });
+        await enqueue(
+          "verifyPaymentOnChain",
+          { transactionId: transaction._id.toString() },
+          {
+            attempts: 5,
+            backoffMs: 1000,
+            idempotencyKey: `verify:${result.hash}`,
+            session,
+          }
+        );
+        await session.commitTransaction();
+        return res.status(202).json({
+          success: true,
+          message: "Payment submitted; confirmation is in progress",
+          transactionId: transaction._id,
+          txHash: result.hash,
+          status: "retrying",
+        });
+      }
       transaction.status = "failed";
       transaction.failureReason = `On-chain verification failed: ${verification.reason}`;
-      transaction.stellarTxHash = result.hash;
       await transaction.save({ session });
       await session.commitTransaction();
       paymentsFailed.inc({ type: "purchase", reason: "verification_failed" });
@@ -386,6 +562,16 @@ export const submitPayment = async (req, res) => {
     }
 
     await buyer.save({ session });
+    await enqueue(
+      "generateReceipt",
+      { transactionId: transaction._id.toString() },
+      {
+        attempts: 5,
+        backoffMs: 1000,
+        idempotencyKey: `receipt:${result.hash}`,
+        session,
+      }
+    );
     await session.commitTransaction();
 
     logger.info(

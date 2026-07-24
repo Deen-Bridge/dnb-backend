@@ -15,6 +15,10 @@ const courseSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    categoryRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+    },
     thumbnail: {
       type: String, // image URL
     },
@@ -47,5 +51,15 @@ const courseSchema = new mongoose.Schema(
 
   { timestamps: true }
 );
+
+courseSchema.pre('save', async function(next) {
+  if (this.isModified('categoryRef') && this.categoryRef) {
+    const category = await mongoose.model('Category').findById(this.categoryRef).select('name').lean();
+    if (category) {
+      this.category = category.name;
+    }
+  }
+  next();
+});
 
 export default mongoose.model("Course", courseSchema);

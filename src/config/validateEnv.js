@@ -24,17 +24,10 @@ const optionalEnvVars = [
   "PAYOUT_ADMIN_USER_IDS",
   "ACCESS_TOKEN_TTL",
   "REFRESH_TOKEN_TTL",
-  // Redis configuration (optional - app works without Redis)
-  "REDIS_URL",
-  "REDIS_HOST",
-  "REDIS_PORT",
-  "REDIS_USERNAME",
-  "REDIS_PASSWORD",
-  "HORIZON_URLS",
-  "HORIZON_TIMEOUT_MS",
-  "HORIZON_MAX_RETRIES",
-  "HORIZON_CB_THRESHOLD",
-  "HORIZON_CB_COOLDOWN_MS",
+  "QUEUE_DRIVER",
+  "JOBS_ENABLED",
+  "JOBS_DASHBOARD_TOKEN",
+  "EMAILJS_RECEIPT_TEMPLATE_ID",
 ];
 
 export const validateEnv = () => {

@@ -11,6 +11,10 @@ const bookSchema = new mongoose.Schema({
     required: true,
   },
   category: String,
+  categoryRef: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Category",
+  },
   price: {
     type: Number,
     default: 0,
@@ -51,6 +55,16 @@ const bookSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+});
+
+bookSchema.pre('save', async function(next) {
+  if (this.isModified('categoryRef') && this.categoryRef) {
+    const category = await mongoose.model('Category').findById(this.categoryRef).select('name').lean();
+    if (category) {
+      this.category = category.name;
+    }
+  }
+  next();
 });
 
 const Book = mongoose.model("Book", bookSchema);

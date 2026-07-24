@@ -1,6 +1,8 @@
 import app from "./app.js";
 import logger from "./src/config/logger.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
+import { startJobs, stopJobs } from "./src/jobs/queue.js";
+import "./src/jobs/handlers.js";
 
 const PORT = process.env.PORT || 5000;
 
@@ -18,12 +20,16 @@ const server = app.listen(PORT, () => {
   logger.info(`Process ID: ${process.pid}`);
 });
 
+startJobs().catch((err) => logger.error(err, "Background job startup failed"));
+
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
 
   server.close(async () => {
     logger.info("HTTP server closed");
+
+    await stopJobs();
 
     // Close Redis connection
     await closeRedis();
