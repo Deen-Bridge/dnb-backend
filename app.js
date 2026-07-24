@@ -45,6 +45,7 @@ import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
+import { getStellarToml } from "./src/routes/wellKnownRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -104,6 +105,9 @@ app.get("/metrics", metricsMiddleware);
 
 app.use(helmetMiddleware);
 app.use(customSecurityHeaders);
+
+// SEP-1 discovery must allow requests from wallets on any origin.
+app.get("/.well-known/stellar.toml", getStellarToml);
 
 const corsOptions = {
   origin: function (origin, callback) {

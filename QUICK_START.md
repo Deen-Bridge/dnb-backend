@@ -19,6 +19,21 @@ NODE_ENV=development
 PORT=5000
 ```
 
+Optional Stellar discovery settings:
+
+```env
+STELLAR_NETWORK=testnet
+STELLAR_PLATFORM_PUBLIC_KEY=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ORG_URL=https://deenbridge.com
+ORG_LOGO=https://deenbridge.com/logo.png
+SIGNING_KEY=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+WEB_AUTH_ENDPOINT=https://api.deenbridge.com/auth
+TRANSFER_SERVER_SEP0024=https://api.deenbridge.com/sep24
+```
+
+Unset optional values are left out of `GET /.well-known/stellar.toml`. The
+endpoint remains available and returns the configured network and USDC metadata.
+
 ### **3. Start Server**
 
 ```bash
