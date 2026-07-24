@@ -1,4 +1,5 @@
 import TOML from "@iarna/toml";
+import * as StellarSdk from "@stellar/stellar-sdk";
 import request from "supertest";
 import {
   NETWORK,
@@ -15,14 +16,28 @@ const PLATFORM_ACCOUNT =
 
 describe("SEP-1 stellar.toml", () => {
   let app;
+  let originalPlatformAccount;
+  let originalOrgName;
 
   beforeAll(async () => {
+    originalPlatformAccount = process.env.STELLAR_PLATFORM_PUBLIC_KEY;
+    originalOrgName = process.env.ORG_NAME;
     process.env.STELLAR_PLATFORM_PUBLIC_KEY = PLATFORM_ACCOUNT;
+    process.env.ORG_NAME = "DeenBridge";
     ({ default: app } = await import("../app.js"));
   });
 
   afterAll(() => {
-    delete process.env.STELLAR_PLATFORM_PUBLIC_KEY;
+    if (originalPlatformAccount === undefined) {
+      delete process.env.STELLAR_PLATFORM_PUBLIC_KEY;
+    } else {
+      process.env.STELLAR_PLATFORM_PUBLIC_KEY = originalPlatformAccount;
+    }
+    if (originalOrgName === undefined) {
+      delete process.env.ORG_NAME;
+    } else {
+      process.env.ORG_NAME = originalOrgName;
+    }
   });
 
   it("serves parseable network and asset metadata with SEP-1 headers", async () => {
@@ -57,5 +72,20 @@ describe("SEP-1 stellar.toml", () => {
     expect(document.SIGNING_KEY).toBeUndefined();
     expect(document.DOCUMENTATION.ORG_URL).toBeUndefined();
     expect(document.CURRENCIES[0].issuer).toBe(USDC_ISSUER);
+  });
+
+  it("does not serialize invalid Stellar public keys", () => {
+    const secretSeed = StellarSdk.Keypair.random().secret();
+    const document = TOML.parse(
+      buildStellarToml(
+        createStellarTomlConfig({
+          STELLAR_PLATFORM_PUBLIC_KEY: secretSeed,
+          SIGNING_KEY: "not-a-public-key",
+        })
+      )
+    );
+
+    expect(document.ACCOUNTS).toBeUndefined();
+    expect(document.SIGNING_KEY).toBeUndefined();
   });
 });

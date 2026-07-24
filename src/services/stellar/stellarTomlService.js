@@ -1,4 +1,5 @@
 import {
+  isValidPublicKey,
   NETWORK,
   USDC_ISSUER,
   networkPassphrase,
@@ -12,6 +13,7 @@ import {
  * @property {string} [webAuthEndpoint]
  * @property {string} [signingKey]
  * @property {string} [transferServerSep0024]
+ * @property {string} [telegramUrl]
  * @property {Record<string, string>} documentation
  * @property {Array<Record<string, string|number|boolean>>} currencies
  */
@@ -42,19 +44,19 @@ const appendFields = (lines, fields) => {
 export const createStellarTomlConfig = (env = process.env) => ({
   version: "2.7.0",
   networkPassphrase,
-  accounts: env.STELLAR_PLATFORM_PUBLIC_KEY
+  accounts: isValidPublicKey(env.STELLAR_PLATFORM_PUBLIC_KEY)
     ? [env.STELLAR_PLATFORM_PUBLIC_KEY]
     : [],
   webAuthEndpoint: env.WEB_AUTH_ENDPOINT,
-  signingKey: env.SIGNING_KEY,
+  signingKey: isValidPublicKey(env.SIGNING_KEY) ? env.SIGNING_KEY : undefined,
   transferServerSep0024: env.TRANSFER_SERVER_SEP0024,
+  telegramUrl: env.ORG_TELEGRAM_URL,
   documentation: {
-    ORG_NAME: "DeenBridge",
+    ORG_NAME: env.ORG_NAME,
     ORG_URL: env.ORG_URL,
-    ORG_DESCRIPTION:
-      "A platform for Islamic education and Stellar-based creator payments.",
+    ORG_DESCRIPTION: env.ORG_DESCRIPTION,
     ORG_LOGO: env.ORG_LOGO,
-    ORG_GITHUB: "Deen-Bridge",
+    ORG_GITHUB: env.ORG_GITHUB,
   },
   currencies: [
     {
@@ -95,9 +97,11 @@ export const buildStellarToml = (config = createStellarTomlConfig()) => {
     appendFields(lines, currency);
   });
 
+  lines.push("");
+  if (config.telegramUrl) {
+    lines.push(`# Telegram: ${config.telegramUrl}`);
+  }
   lines.push(
-    "",
-    "# Telegram: https://t.me/+nst9lXNj1wc4ZDE0",
     "# Set TRANSFER_SERVER_SEP0024 when the SEP-24 service is available.",
     "# Add another [[CURRENCIES]] table here when multi-asset support is enabled.",
     ""
