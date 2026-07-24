@@ -9,6 +9,7 @@ import {
   getTransactionHistory,
   getTransaction,
   cancelTransaction,
+  getSponsorshipStatus,
 } from "../../controllers/stellar/paymentController.js";
 import {
   requestRefund,
@@ -29,6 +30,7 @@ router.post("/quote", getQuote);
 router.post("/preflight", getPaymentPreflight);
 router.post("/initialize", initializePayment);
 router.post("/submit", submitPayment);
+router.get("/sponsorship/status", getSponsorshipStatus);
 
 // Transaction management
 router.get("/transactions", getTransactionHistory);

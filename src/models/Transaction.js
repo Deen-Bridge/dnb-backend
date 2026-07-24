@@ -13,6 +13,23 @@ const transactionSchema = new mongoose.Schema(
     stellarLedger: {
       type: Number,
     },
+    sponsored: { type: Boolean, default: false },
+    sponsorFeeStroops: {
+      type: String,
+      validate: {
+        validator: (value) => value == null || /^(0|[1-9]\d*)$/.test(value),
+        message: "Sponsor fee must be a non-negative integer stroop string",
+      },
+    },
+    innerTxHash: { type: String },
+    feeBumpTxHash: { type: String },
+    sponsorshipAttemptKey: { type: String, index: true },
+    sponsorshipStatus: {
+      type: String,
+      enum: ["prepared", "submitted", "rejected", "unknown"],
+    },
+    sponsorshipAttemptedAt: { type: Date },
+    sponsorshipFailureCode: { type: String },
 
     // Transaction kind: item purchase or sadaqah donation
     type: {

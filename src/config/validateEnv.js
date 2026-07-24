@@ -28,6 +28,11 @@ const optionalEnvVars = [
   "JOBS_ENABLED",
   "JOBS_DASHBOARD_TOKEN",
   "EMAILJS_RECEIPT_TEMPLATE_ID",
+  "FEE_SPONSOR_SECRET",
+  "FEE_SPONSOR_ENABLED",
+  "FEE_SPONSOR_MAX_FEE_STROOPS",
+  "FEE_SPONSOR_DAILY_CAP_STROOPS",
+  "FEE_SPONSOR_PER_USER_DAILY_LIMIT",
 ];
 
 export const validateEnv = () => {
@@ -49,6 +54,16 @@ export const validateEnv = () => {
     );
     logger.error(
       "Please check your .env file and ensure all required variables are set."
+    );
+    process.exit(1);
+  }
+
+  if (
+    process.env.FEE_SPONSOR_ENABLED === "true" &&
+    !process.env.FEE_SPONSOR_SECRET
+  ) {
+    logger.error(
+      "FEE_SPONSOR_ENABLED is 'true' but FEE_SPONSOR_SECRET is not set."
     );
     process.exit(1);
   }
