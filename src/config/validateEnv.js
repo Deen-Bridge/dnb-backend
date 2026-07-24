@@ -39,6 +39,14 @@ const optionalEnvVars = [
   "JOBS_ENABLED",
   "JOBS_DASHBOARD_TOKEN",
   "EMAILJS_RECEIPT_TEMPLATE_ID",
+  "STELLAR_PLATFORM_PUBLIC_KEY",
+  "ORG_NAME",
+  "ORG_URL",
+  "ORG_DESCRIPTION",
+  "ORG_LOGO",
+  "ORG_TWITTER",
+  "ORG_GITHUB",
+  "SIGNING_KEY",
 ];
 
 export const validateEnv = () => {

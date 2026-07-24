@@ -46,6 +46,7 @@ import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
+import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -161,6 +162,9 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// SEP-1 stellar.toml — must be outside /api rate limiter
+app.use("/.well-known", wellKnownRoutes);
 
 app.use("/api", apiLimiter);
 
