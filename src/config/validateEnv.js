@@ -35,6 +35,19 @@ export const validateEnv = () => {
   process.env.ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
   process.env.REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || "30d";
 
+  // Default values for Horizon resilient client if not provided
+  const network = process.env.STELLAR_NETWORK || "testnet";
+  if (!process.env.HORIZON_URLS) {
+    process.env.HORIZON_URLS =
+      network === "mainnet"
+        ? "https://horizon.stellar.org"
+        : "https://horizon-testnet.stellar.org";
+  }
+  process.env.HORIZON_TIMEOUT_MS = process.env.HORIZON_TIMEOUT_MS || "10000";
+  process.env.HORIZON_MAX_RETRIES = process.env.HORIZON_MAX_RETRIES || "3";
+  process.env.HORIZON_CB_THRESHOLD = process.env.HORIZON_CB_THRESHOLD || "5";
+  process.env.HORIZON_CB_COOLDOWN_MS = process.env.HORIZON_CB_COOLDOWN_MS || "30000";
+
   const missing = [];
 
   requiredEnvVars.forEach((envVar) => {
