@@ -8,6 +8,7 @@ import app from "../app.js";
 describe("Upload Routes", () => {
   let mongoServer;
   let token;
+  let testUserId;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -17,6 +18,7 @@ describe("Upload Routes", () => {
       .post("/api/auth/register")
       .send({ name: "Uploader", email: "uploader@example.com", password: "password", role: "student" });
     token = authRes.body.accessToken;
+    testUserId = authRes.body.user._id || authRes.body.user.id;
   });
 
   afterAll(async () => {
@@ -54,14 +56,8 @@ describe("Upload Routes", () => {
 
   describe("PUT /api/users/update/:id", () => {
     it("should allow the owner to update their profile", async () => {
-      // Find the user created in beforeAll
-      const userRes = await request(app)
-        .get("/api/auth/me")
-        .set("Authorization", `Bearer ${token}`);
-      const userId = userRes.body.user._id;
-
       const res = await request(app)
-        .put(`/api/users/update/${userId}`)
+        .put(`/api/users/update/${testUserId}`)
         .set("Authorization", `Bearer ${token}`)
         .send({ bio: "Updated bio" });
       
