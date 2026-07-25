@@ -174,8 +174,8 @@ export const updateCourse = catchAsync(async (req, res, next) => {
     return next(new APIError("Course not found", 404));
   }
 
-  // Check if user is the creator (authorization)
-  if (course.createdBy.toString() !== req.user._id.toString()) {
+  // Check if user is the creator or admin (authorization)
+  if (req.user.role !== "admin" && course.createdBy.toString() !== req.user._id.toString()) {
     logger.warn(`Unauthorized course update attempt by user: ${req.user._id}`);
     return next(
       new APIError("You are not authorized to update this course", 403)

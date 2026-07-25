@@ -9,6 +9,13 @@ import { createFollowNotification, createUnfollowNotification } from "./notifica
 // Update user profile (including avatar upload to Cloudinary)
 export const updateUser = async (req, res) => {
   try {
+    if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to update this profile",
+      });
+    }
+
     const updates = req.body;
     let avatarUrl = updates.avatar;
 
@@ -122,6 +129,13 @@ export const getUser = async (req, res) => {
 // Delete user
 export const deleteUser = async (req, res) => {
   try {
+    if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this user",
+      });
+    }
+
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) {
       return res.status(404).json({
