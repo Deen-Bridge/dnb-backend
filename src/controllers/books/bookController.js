@@ -29,7 +29,7 @@ export const createBook = async (req, res) => {
     const isFileValid = await validateMagicBytes(req.files.file[0].buffer, ["application/pdf", "application/epub+zip"]);
 
     if (!isThumbnailValid || !isFileValid) {
-      return res.status(400).json({ success: false, message: "Invalid file content detected. Magic bytes do not match expected types." });
+      return res.status(400).json({ success: false, message: "Invalid file content detected. Magic bytes do not match expected types.", data: null });
     }
 
     // Upload thumbnail to Cloudinary
@@ -74,13 +74,15 @@ export const createBook = async (req, res) => {
       filePublicId: fileUpload.public_id,
     });
 
+    
     // Emit new book notification asynchronously to followers
     createNewBookNotification(book._id, req.user._id, book.title).catch((err) =>
       logger.error("Error creating book notification:", err)
     );
-
-    res.status(201).json({ success: true, book });
-  } catch (err) {
+    
+    res.status(201).json({ success: true, message: "Book created successfully", data: book });
+    
+      } catch (err) {
     logger.error("Book creation error:", err);
     res.status(500).json({ success: false, error: err.message });
   }

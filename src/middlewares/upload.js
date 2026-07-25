@@ -7,7 +7,7 @@ const imageFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
-    cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "Not an image! Please upload only images."));
+    cb(new APIError("Not an image! Please upload only images.", 400));
   }
 };
 
@@ -24,7 +24,7 @@ const bookFilter = (req, file, cb) => {
   ) {
     cb(null, true);
   } else {
-    cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "Invalid file format. Thumbnail must be an image, file must be PDF/EPUB."));
+    cb(new APIError("Invalid file format. Thumbnail must be an image, file must be PDF/EPUB.", 400));
   }
 };
 

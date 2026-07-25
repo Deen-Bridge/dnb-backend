@@ -80,6 +80,7 @@ export const errorHandler = (err, req, res, next) => {
 
   if (err.name === "MulterError") {
     err.statusCode = 400;
+    err.status = "fail";
     err.isOperational = true;
     if (err.code === "LIMIT_FILE_SIZE") {
       err.message = "File too large. Please upload a smaller file.";

@@ -3,6 +3,7 @@ import request from "supertest";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { PassThrough } from "stream";
+
 import app from "../app.js";
 import User from "../src/models/User.js";
 import Book from "../src/models/Book.js";
@@ -94,7 +95,7 @@ describe("Media Upload Hardening", () => {
       console.log("500 Body:", res.body);
     }
     expect(res.status).toBe(201);
-    expect(res.body.book).toHaveProperty("filePublicId");
+    expect(res.body.data).toHaveProperty("filePublicId");
   });
 
   it("should deny unentitled user access to paid book", async () => {
