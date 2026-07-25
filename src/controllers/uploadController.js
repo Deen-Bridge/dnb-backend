@@ -14,13 +14,16 @@ export const generateSignature = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      timestamp,
-      signature,
-      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-      apiKey: process.env.CLOUDINARY_API_KEY,
+      message: "Signature generated successfully",
+      data: {
+        timestamp,
+        signature,
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+        apiKey: process.env.CLOUDINARY_API_KEY,
+      }
     });
   } catch (error) {
     logger.error("Error generating Cloudinary signature:", error);
-    res.status(500).json({ success: false, message: "Failed to generate upload signature" });
+    res.status(500).json({ success: false, message: "Failed to generate upload signature", data: null });
   }
 };

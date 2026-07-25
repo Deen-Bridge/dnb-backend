@@ -13,11 +13,6 @@ export const validateMagicBytes = async (buffer, allowedMimeTypes) => {
     return false;
   }
 
-  if (process.env.NODE_ENV === "test") {
-    const str = buffer.toString();
-    return !str.includes("fake");
-  }
-
   try {
     const type = await fileTypeFromBuffer(buffer);
 

@@ -10,9 +10,10 @@ const searchCacheKey = (req) => {
   const query = req.query.q || req.query.query || "";
   const type = req.query.type || "all";
   const page = req.query.page || 1;
+  const limit = req.query.limit || 10;
   const filterKeys = ['minPrice', 'maxPrice', 'free', 'category', 'minRating', 'interest', 'sort'];
   const filtersStr = filterKeys.map(k => `${k}=${req.query[k] || ''}`).join('&');
-  return `${CACHE_KEYS.SEARCH}${type}:${query.toLowerCase().trim()}:page=${page}:${filtersStr}`;
+  return `${CACHE_KEYS.SEARCH}${req.path}:${type}:${query.toLowerCase().trim()}:page=${page}:limit=${limit}:${filtersStr}`;
 };
 
 // Main search endpoint

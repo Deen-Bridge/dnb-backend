@@ -5,10 +5,19 @@ import Space from "../../models/Space.js";
 import Reel from "../../models/Reel.js";
 import logger from "../../config/logger.js";
 
+const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const getSearchQuery = (q) => {
   if (!q) return {};
   if (q.length < 3) {
-    return { $regex: new RegExp(`^${q}`, "i") };
+    const safeQ = escapeRegex(q);
+    return {
+      $or: [
+        { title: { $regex: new RegExp(`^${safeQ}`, "i") } },
+        { name: { $regex: new RegExp(`^${safeQ}`, "i") } },
+        { description: { $regex: new RegExp(`^${safeQ}`, "i") } }
+      ]
+    };
   }
   return { $text: { $search: q } };
 };
@@ -53,8 +62,10 @@ const getProjection = (q, baseProjection) => {
 };
 
 export const searchCollections = async ({ q, type = "all", page = 1, limit = 10, sort, filters = {} }) => {
-  const skip = (page - 1) * limit;
-  const parsedLimit = Number(limit);
+  const validPage = Math.max(1, Number(page) || 1);
+  const validLimit = Math.min(100, Math.max(1, Number(limit) || 10));
+  const skip = (validPage - 1) * validLimit;
+  const parsedLimit = validLimit;
   const searchQuery = getSearchQuery(q);
   const sortOption = getSortOption(q, sort);
 
@@ -78,7 +89,7 @@ export const searchCollections = async ({ q, type = "all", page = 1, limit = 10,
     results[typeName] = items;
     pagination[typeName] = {
       total,
-      page: Number(page),
+      page: validPage,
       limit: parsedLimit,
       pages: Math.ceil(total / parsedLimit),
     };
@@ -87,7 +98,7 @@ export const searchCollections = async ({ q, type = "all", page = 1, limit = 10,
   const tasks = [];
 
   if (type === "all" || type === "courses") {
-    tasks.push(searchModel(Course, {}, ["category", "price", "rating"], { title: 1, description: 1, price: 1, thumbnail: 1, category: 1 }, "courses"));
+    tasks.push(searchModel(Course, {}, ["category", "price"], { title: 1, description: 1, price: 1, thumbnail: 1, category: 1 }, "courses"));
   }
   if (type === "all" || type === "books") {
     tasks.push(searchModel(Book, {}, ["category", "price", "rating"], { title: 1, description: 1, category: 1, price: 1, image: 1, author: 1 }, "books"));
@@ -112,14 +123,17 @@ export const searchCollections = async ({ q, type = "all", page = 1, limit = 10,
 };
 
 export const searchEducators = async ({ q, interest, page = 1, limit = 10 }) => {
-  const skip = (page - 1) * limit;
-  const parsedLimit = Number(limit);
+  const validPage = Math.max(1, Number(page) || 1);
+  const validLimit = Math.min(100, Math.max(1, Number(limit) || 10));
+  const skip = (validPage - 1) * validLimit;
+  const parsedLimit = validLimit;
   
   let query = { role: "tutor" };
   if (q) {
     if (q.length < 3) {
+       const safeQ = escapeRegex(q);
        query.$or = [
-         { name: { $regex: new RegExp(`^${q}`, "i") } }
+         { name: { $regex: new RegExp(`^${safeQ}`, "i") } }
        ];
     } else {
        query.$text = { $search: q };
@@ -145,7 +159,7 @@ export const searchEducators = async ({ q, interest, page = 1, limit = 10 }) => 
     results: educators,
     pagination: {
       total,
-      page: Number(page),
+      page: validPage,
       limit: parsedLimit,
       pages: Math.ceil(total / parsedLimit),
     }

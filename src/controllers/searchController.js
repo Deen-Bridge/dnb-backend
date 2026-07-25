@@ -16,7 +16,7 @@ export const searchAll = async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     logger.error("Search error:", err);
-    res.status(500).json({ success: false, error: "Server error", details: err.message });
+    res.status(500).json({ success: false, error: "Server error" });
   }
 };
 
@@ -33,6 +33,6 @@ export const searchEducatorsHandler = async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     logger.error("Search educators error:", err);
-    res.status(500).json({ success: false, error: "Server error", details: err.message });
+    res.status(500).json({ success: false, error: "Server error" });
   }
 };
