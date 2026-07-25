@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { getSupportedCodes } from "../config/assets.js";
 
 const courseSchema = new mongoose.Schema(
   {
@@ -24,6 +25,12 @@ const courseSchema = new mongoose.Schema(
     price: {
       type: Number,
       default: 0,
+    },
+    // Asset the price is denominated in; existing rows default to USDC.
+    currency: {
+      type: String,
+      default: "USDC",
+      enum: getSupportedCodes(),
     },
     reviews: [
       {

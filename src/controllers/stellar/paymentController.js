@@ -20,6 +20,7 @@ import {
   USDC,
   PLATFORM_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
+import { getAssetConfig, isAssetSupported, getSupportedCodes } from "../../config/assets.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { recordSaleEarnings } from "../../services/payoutService.js";
 import { enqueue } from "../../jobs/queue.js";
@@ -39,19 +40,15 @@ import {
 const resolvePaymentDestination = async ({ itemType, itemId, session }) => {
   const Model = itemType === "book" ? Book : Course;
   const populateField = itemType === "book" ? "author" : "createdBy";
-
   const query = Model.findById(itemId).populate(populateField, "stellarWallet name");
   const item = session ? await query.session(session) : await query;
-
   if (!item) {
     return { error: { status: 404, message: `${itemType} not found` } };
   }
-
   const creator = itemType === "book" ? item.author : item.createdBy;
   const platformCollectEnabled = process.env.PLATFORM_COLLECT_ENABLED === "true";
   let destinationPublicKey;
   let settlementMode = "direct";
-
   if (!creator?.stellarWallet?.publicKey) {
     if (!platformCollectEnabled) {
       return {
@@ -62,8 +59,7 @@ const resolvePaymentDestination = async ({ itemType, itemId, session }) => {
       };
     }
 
-    const platformWalletKey =
-      process.env.PLATFORM_WALLET_PUBLIC_KEY || PLATFORM_WALLET_PUBLIC_KEY;
+    const platformWalletKey = process.env.PLATFORM_WALLET_PUBLIC_KEY || PLATFORM_WALLET_PUBLIC_KEY;
     if (!platformWalletKey) {
       return {
         error: {
@@ -83,6 +79,12 @@ const resolvePaymentDestination = async ({ itemType, itemId, session }) => {
 };
 
 /**
+ * Resolve the asset code an item is priced in, defaulting to USDC for
+ * existing items with no currency set.
+ */
+const resolveItemCurrency = (item) => item.currency || "USDC";
+
+/**
  * Platform memo convention: purchases are tagged DNB-<ITEMTYPE>-<last 8 chars
  * of the Mongo item id>, always as a text memo. This is always non-empty, so
  * it already satisfies SEP-29 "some memo present" destinations; it does not
@@ -94,6 +96,10 @@ const buildPurchaseMemo = (itemType, itemId) =>
 /**
  * Get a quote for paying with a non-USDC asset via path payment
  * POST /api/stellar/payment/quote
+ *
+ * NOTE: path payments always settle in USDC regardless of the item's own
+ * currency - that mechanism is issue #27's scope. This endpoint is
+ * unchanged by the multi-asset registry work in this file.
  */
 export const getQuote = async (req, res) => {
   try {
@@ -203,9 +209,9 @@ export const getQuote = async (req, res) => {
 };
 
 /**
- * Run pre-flight payment safety checks (destination existence, USDC
- * trustline, source balance/reserve, SEP-29 memo-required) before the
- * frontend prompts the wallet to sign anything.
+ * Run pre-flight payment safety checks (destination existence, trustline
+ * for the item's currency, source balance/reserve, SEP-29 memo-required)
+ * before the frontend prompts the wallet to sign anything.
  * POST /api/stellar/payment/preflight
  */
 export const getPaymentPreflight = async (req, res) => {
@@ -245,6 +251,14 @@ export const getPaymentPreflight = async (req, res) => {
       });
     }
 
+    const assetCode = resolveItemCurrency(item);
+    if (!isAssetSupported(assetCode)) {
+      return res.status(400).json({
+        success: false,
+        message: `This item is priced in an unsupported asset (${assetCode}). Supported: ${getSupportedCodes().join(", ")}`,
+      });
+    }
+
     const memo = buildPurchaseMemo(itemType, itemId);
     const feeSplitPreview =
       settlementMode === "direct" ? calculateFeeSplit(item.price) : null;
@@ -255,6 +269,7 @@ export const getPaymentPreflight = async (req, res) => {
       amount: item.price.toString(),
       memo,
       operationCount: feeSplitPreview ? 2 : 1,
+      assetCode,
     });
 
     res.status(200).json({
@@ -333,6 +348,16 @@ export const initializePayment = async (req, res) => {
       });
     }
 
+    // Reject items priced in an asset this platform doesn't support
+    const itemAssetCode = resolveItemCurrency(item);
+    if (!isAssetSupported(itemAssetCode)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: `This item is priced in an unsupported asset (${itemAssetCode}). Supported: ${getSupportedCodes().join(", ")}`,
+      });
+    }
+
     // Check if already purchased
     const purchasedArray =
       itemType === "book" ? buyer.purchasedBooks : buyer.purchasedCourses;
@@ -373,6 +398,10 @@ export const initializePayment = async (req, res) => {
     const isPathPayment = sendAssetInput && sendMax;
     let paymentTx;
     let sep7Uri = null;
+    // Currency actually settled on-chain: path payments always settle in
+    // USDC (issue #27's mechanism); direct payments settle in the item's
+    // own currency.
+    let settledAssetCode = "USDC";
 
     if (isPathPayment) {
       const sendAsset = sendAssetInput.issuer
@@ -398,6 +427,7 @@ export const initializePayment = async (req, res) => {
         applyPlatformFee: settlementMode === "direct",
       });
     } else {
+      settledAssetCode = itemAssetCode;
       const feeSplitPreview =
         settlementMode === "direct" ? calculateFeeSplit(item.price) : null;
 
@@ -407,6 +437,7 @@ export const initializePayment = async (req, res) => {
         amount: item.price.toString(),
         memo,
         operationCount: feeSplitPreview ? 2 : 1,
+        assetCode: itemAssetCode,
       });
 
       if (!preflight.ok) {
@@ -424,16 +455,19 @@ export const initializePayment = async (req, res) => {
         amount: item.price.toString(),
         memo,
         applyPlatformFee: settlementMode === "direct",
+        assetCode: itemAssetCode,
       });
 
       sep7Uri = buildSep7Uri({
         destination: destinationPublicKey,
         amount: item.price.toString(),
         memo,
+        assetCode: itemAssetCode,
       });
     }
 
     const feeSplit = paymentTx.feeSplit;
+    const settledAssetConfig = getAssetConfig(settledAssetCode);
 
     // Create pending transaction record
     const transaction = new Transaction({
@@ -446,6 +480,8 @@ export const initializePayment = async (req, res) => {
       itemTypeModel: itemType === "book" ? "Book" : "Course",
       itemTitle: item.title,
       amount: item.price.toString(),
+      currency: settledAssetCode,
+      assetIssuer: settledAssetConfig?.issuer || null,
       network: NETWORK,
       status: "pending",
       settlement: settlementMode,
@@ -572,7 +608,8 @@ export const submitPayment = async (req, res) => {
     }
 
     // Verify on-chain that the creator (and platform, when a fee was applied)
-    // actually received the expected USDC amounts
+    // actually received the expected amounts, in the transaction's own
+    // settled currency (defaults to USDC for pre-existing rows).
     const expectedPayments = transaction.platformFee?.platformAmount
       ? [
           {
@@ -593,7 +630,8 @@ export const submitPayment = async (req, res) => {
 
     const verification = await verifyPaymentOperations(
       result.hash,
-      expectedPayments
+      expectedPayments,
+      transaction.currency || "USDC"
     );
 
     if (!verification.verified) {
@@ -741,7 +779,6 @@ export const getTransactionHistory = async (req, res) => {
 
     const total = await Transaction.countDocuments(query);
 
-    // Add explorer URLs
     const transactionsWithUrls = transactions.map((tx) => ({
       ...tx.toObject(),
       explorerUrl:
@@ -790,7 +827,6 @@ export const getTransaction = async (req, res) => {
       });
     }
 
-    // If confirmed, verify on Stellar
     let stellarVerification = null;
     if (transaction.status === "confirmed") {
       try {
