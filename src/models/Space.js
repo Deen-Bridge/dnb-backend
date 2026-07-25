@@ -83,4 +83,6 @@ spaceSchema.pre("validate", function (next) {
   next();
 });
 
+spaceSchema.index({ title: "text", description: "text", category: "text" });
+
 export default mongoose.model("Space", spaceSchema);

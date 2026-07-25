@@ -5,24 +5,62 @@ import mongoose from "mongoose";
 
 const buildPaymentTransaction = jest.fn();
 const buildSep7Uri = jest.fn();
+const calculateFeeSplit = jest.fn();
+const preflightPayment = jest.fn();
 const submitTransaction = jest.fn();
 const verifyPaymentOperations = jest.fn();
 const getExplorerUrl = jest.fn((hash) => `https://stellar.expert/tx/${hash}`);
 const recordSaleEarnings = jest.fn();
+const enqueue = jest.fn();
 
+// Mirrors every named export of stellarService.js, not just the ones this
+// suite exercises: other test files (preflightPayment.test.js,
+// pathPayments.test.js) statically import the real module, and Jest's ESM
+// module linker can resolve those against this mock's identity when both
+// run in the same worker - an incomplete mock then fails with "does not
+// provide an export named X" for exports this file never even references.
 jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
-  buildPaymentTransaction,
+  STROOPS_PER_UNIT: 10000000n,
+  toStroops: jest.fn(),
+  fromStroops: jest.fn(),
+  applySlippage: jest.fn(),
+  findPaymentPaths: jest.fn(),
+  buildPathPaymentTransaction: jest.fn(),
+  calculateFeeSplit,
   buildSep7Uri,
+  isValidPublicKey: jest.fn(),
+  getAccountBalance: jest.fn(),
+  MEMO_REQUIRED_DATA_KEY: "config.memo_required",
+  isMemoRequired: jest.fn(),
+  PREFLIGHT_REASON_CODES: {},
+  preflightPayment,
+  buildPaymentTransaction,
+  buildReversePaymentTransaction: jest.fn(),
   submitTransaction,
-  verifyPaymentOperations,
   verifyTransaction: jest.fn(),
-  NETWORK: "testnet",
+  verifyPaymentOperations,
+  hasUsdcTrustline: jest.fn(),
   getExplorerUrl,
+  getAccountExplorerUrl: jest.fn(),
+  server: {},
+  USDC: "USDC",
+  USDC_ISSUER: "",
+  NETWORK: "testnet",
+  networkPassphrase: "Test SDF Network ; September 2015",
+  DONATION_WALLET_PUBLIC_KEY: "",
+  PLATFORM_FEE_PERCENT: 0,
   PLATFORM_WALLET_PUBLIC_KEY: "",
 }));
 
 jest.unstable_mockModule("../src/services/payoutService.js", () => ({
   recordSaleEarnings,
+}));
+
+// paymentController.js enqueues background jobs (receipt generation, retry
+// verification) via the real job queue - mock it so those calls don't hit
+// the actual queue, which has no handlers registered in this suite.
+jest.unstable_mockModule("../src/jobs/queue.js", () => ({
+  enqueue,
 }));
 
 const { initializePayment, submitPayment } = await import(
@@ -78,10 +116,13 @@ describe("Stellar payment controller", () => {
     jest.restoreAllMocks();
     buildPaymentTransaction.mockReset();
     buildSep7Uri.mockReset();
+    calculateFeeSplit.mockReset().mockReturnValue(null);
+    preflightPayment.mockReset().mockResolvedValue({ ok: true });
     submitTransaction.mockReset();
     verifyPaymentOperations.mockReset();
     getExplorerUrl.mockClear();
     recordSaleEarnings.mockReset();
+    enqueue.mockReset().mockResolvedValue(undefined);
 
     buyerId = new mongoose.Types.ObjectId();
     creatorId = new mongoose.Types.ObjectId();

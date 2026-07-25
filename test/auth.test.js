@@ -366,4 +366,8 @@ describe("Authentication & Session Management", () => {
       expect(activeSessions.length).toBe(0);
     });
   });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
 });

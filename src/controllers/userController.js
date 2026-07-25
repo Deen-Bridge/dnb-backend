@@ -3,15 +3,29 @@ import cloudinary from "../utils/cloudinary.js";
 import Course from "../models/Course.js";
 import Book from "../models/Book.js";
 import logger from "../config/logger.js";
+import { validateMagicBytes } from "../utils/fileValidation.js";
+import { createFollowNotification, createUnfollowNotification } from "./notificationController.js";
 
 // Update user profile (including avatar upload to Cloudinary)
 export const updateUser = async (req, res) => {
   try {
+    if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to update this profile",
+      });
+    }
+
     const updates = req.body;
     let avatarUrl = updates.avatar;
 
     // If avatar file is uploaded, upload to Cloudinary with timeout
     if (req.file) {
+      const isValid = await validateMagicBytes(req.file.buffer, ["image/jpeg", "image/png", "image/webp"]);
+      if (!isValid) {
+        return res.status(400).json({ success: false, message: "Invalid file content. Magic bytes do not match expected image types.", data: null });
+      }
+
       try {
         const result = await Promise.race([
           new Promise((resolve, reject) => {
@@ -115,6 +129,13 @@ export const getUser = async (req, res) => {
 // Delete user
 export const deleteUser = async (req, res) => {
   try {
+    if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this user",
+      });
+    }
+
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) {
       return res.status(404).json({
@@ -177,6 +198,11 @@ export const followUser = async (req, res) => {
       $push: { followers: currentUserId },
     });
 
+    // Emit follow notification asynchronously
+    createFollowNotification(currentUserId, userId).catch((err) =>
+      logger.error("Error creating follow notification:", err)
+    );
+
     res.status(200).json({
       success: true,
       message: "Successfully followed user",
@@ -231,6 +257,11 @@ export const unfollowUser = async (req, res) => {
     await User.findByIdAndUpdate(userId, {
       $pull: { followers: currentUserId },
     });
+
+    // Emit unfollow notification asynchronously
+    createUnfollowNotification(currentUserId, userId).catch((err) =>
+      logger.error("Error creating unfollow notification:", err)
+    );
 
     res.status(200).json({
       success: true,

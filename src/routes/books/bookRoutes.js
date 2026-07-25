@@ -1,5 +1,5 @@
 import express from "express";
-import upload from "../../middlewares/upload.js";
+import { uploadBook } from "../../middlewares/upload.js";
 import {
   createBook,
   getBooks,
@@ -35,7 +35,7 @@ const booksByAuthorCacheKey = (req) =>
 router.post(
   "/",
   protect,
-  upload.fields([
+  uploadBook.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "file", maxCount: 1 },
   ]),
@@ -77,6 +77,7 @@ router.get(
 // delete a book - invalidates book caches
 router.delete(
   "/:id",
+  protect,
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.BOOK}*`]),
   deleteBook
 );

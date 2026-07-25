@@ -43,6 +43,9 @@ const bookSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  filePublicId: {
+    type: String,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -52,6 +55,8 @@ const bookSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
+
+bookSchema.index({ title: "text", description: "text", category: "text" }, { weights: { title: 5 } });
 
 const Book = mongoose.model("Book", bookSchema);
 
