@@ -2,6 +2,8 @@ import Course from "../../models/Course.js";
 import mongoose from "mongoose";
 import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
+import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
+import { createNewCourseNotification } from "../notificationController.js";
 
 /**
  * Create a new course
@@ -32,6 +34,11 @@ export const createCourse = catchAsync(async (req, res, next) => {
   });
 
   logger.info(`✅ Course created successfully: ${course._id} - ${title}`);
+
+  // Emit new course notification asynchronously to followers
+  createNewCourseNotification(course._id, req.user._id, course.title).catch((err) =>
+    logger.error("Error creating course notification:", err)
+  );
 
   res.status(201).json({
     success: true,
@@ -167,8 +174,8 @@ export const updateCourse = catchAsync(async (req, res, next) => {
     return next(new APIError("Course not found", 404));
   }
 
-  // Check if user is the creator (authorization)
-  if (course.createdBy.toString() !== req.user._id.toString()) {
+  // Check if user is the creator or admin (authorization)
+  if (req.user.role !== "admin" && course.createdBy.toString() !== req.user._id.toString()) {
     logger.warn(`Unauthorized course update attempt by user: ${req.user._id}`);
     return next(
       new APIError("You are not authorized to update this course", 403)
@@ -240,7 +247,20 @@ export const addCourseReview = async (req, res) => {
 export const fetchRecommendedCourses = async (req, res) => {
   try {
     const { interests } = req.body;
-    const recommended = await Course.find({ category: { $in: interests } });
+    const hasInterests = Array.isArray(interests) && interests.length > 0;
+
+    // This endpoint is POST (interests come in the body), so the shared
+    // cacheMiddleware (GET-only) can't key off req.query - cache explicitly here instead.
+    const cacheKey = hasInterests
+      ? `${CACHE_KEYS.COURSES}recommended:${[...interests].sort().join(",")}`
+      : `${CACHE_KEYS.COURSES}recommended:none`;
+
+    const recommended = await getCacheOrSet(
+      cacheKey,
+      () => Course.find({ category: { $in: interests } }),
+      CACHE_TTL.COURSES
+    );
+
     res.status(200).json({ success: true, recommended });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });

@@ -4,6 +4,7 @@ import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
 import logger from "../../config/logger.js";
 import { validateMagicBytes } from "../../utils/fileValidation.js";
+import { createNewBookNotification } from "../notificationController.js";
 
 //cretae a book
 export const createBook = async (req, res) => {
@@ -73,8 +74,15 @@ export const createBook = async (req, res) => {
       filePublicId: fileUpload.public_id,
     });
 
+    
+    // Emit new book notification asynchronously to followers
+    createNewBookNotification(book._id, req.user._id, book.title).catch((err) =>
+      logger.error("Error creating book notification:", err)
+    );
+    
     res.status(201).json({ success: true, message: "Book created successfully", data: book });
-  } catch (err) {
+    
+      } catch (err) {
     logger.error("Book creation error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
@@ -118,8 +126,24 @@ export const getBooksByAuthor = async (req, res) => {
 
 // delete book by id
 export const deleteBook = async (req, res) => {
-  await Book.findByIdAndDelete(req.params.id);
-  res.json({ message: "Book deleted" });
+  try {
+    const book = await Book.findById(req.params.id);
+    if (!book) {
+      return res.status(404).json({ success: false, message: "Book not found" });
+    }
+
+    if (req.user.role !== "admin" && book.author.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this book",
+      });
+    }
+
+    await Book.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: "Book deleted" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // review books
