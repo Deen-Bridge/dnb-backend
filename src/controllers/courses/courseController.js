@@ -2,6 +2,7 @@ import Course from "../../models/Course.js";
 import mongoose from "mongoose";
 import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
+import { emitEvent } from "../../services/webhooks/webhookService.js";
 
 /**
  * Create a new course
@@ -141,6 +142,14 @@ export const enrollInCourse = async (req, res) => {
         await user.save();
       }
     }
+
+    // Emit event after saves — fire-and-forget
+    emitEvent("course.enrolled", {
+      courseId: course._id.toString(),
+      courseTitle: course.title,
+      userId: req.user._id.toString(),
+      enrolledAt: new Date().toISOString(),
+    });
 
     res
       .status(200)
