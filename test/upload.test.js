@@ -46,12 +46,13 @@ describe("Upload Routes", () => {
       expect(res.body.message).toBe("Signature generated successfully");
       expect(res.body.data).toHaveProperty("signature");
       expect(res.body.data).toHaveProperty("timestamp");
+      const config = cloudinary.config();
       expect(res.body.data).toHaveProperty("cloudName");
       expect(res.body.data).toHaveProperty("apiKey");
       
       // Ensure we don't leak the API secret
       const resStr = JSON.stringify(res.body);
-      const apiSecret = cloudinary.config().api_secret;
+      const apiSecret = config.api_secret;
       expect(apiSecret).toBeDefined();
       expect(resStr).not.toContain(apiSecret);
     });
