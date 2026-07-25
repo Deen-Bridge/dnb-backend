@@ -89,10 +89,11 @@ const createSessionAndTokens = async (user, req, res) => {
   );
 
   // Set Cookie scoped to refresh path
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("refreshToken", rawRefreshToken, {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
     maxAge: refreshDurationMs,
   });
@@ -346,10 +347,11 @@ export const refreshSession = catchAsync(async (req, res, next) => {
     { expiresIn: accessTokenTtl }
   );
 
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("refreshToken", newRawToken, {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
     maxAge: refreshDurationMs,
   });
@@ -453,10 +455,11 @@ export const logoutUser = catchAsync(async (req, res, next) => {
     );
   }
 
+  const isProd = process.env.NODE_ENV === "production";
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
   });
 
