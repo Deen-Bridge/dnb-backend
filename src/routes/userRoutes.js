@@ -48,7 +48,7 @@ router.put(
   protect,
   (req, res, next) => {
     if (req.user._id.toString() !== req.params.id) {
-      return res.status(403).json({ success: false, message: "Not authorized to update this profile" });
+      return res.status(403).json({ success: false, message: "Not authorized to update this profile", data: null });
     }
     next();
   },
