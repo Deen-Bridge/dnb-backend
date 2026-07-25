@@ -2,6 +2,7 @@ import Course from "../../models/Course.js";
 import mongoose from "mongoose";
 import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
+import { createNewCourseNotification } from "../notificationController.js";
 
 /**
  * Create a new course
@@ -32,6 +33,11 @@ export const createCourse = catchAsync(async (req, res, next) => {
   });
 
   logger.info(`✅ Course created successfully: ${course._id} - ${title}`);
+
+  // Emit new course notification asynchronously to followers
+  createNewCourseNotification(course._id, req.user._id, course.title).catch((err) =>
+    logger.error("Error creating course notification:", err)
+  );
 
   res.status(201).json({
     success: true,

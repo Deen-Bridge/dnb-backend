@@ -3,6 +3,7 @@ import Book from "../../models/Book.js";
 import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
 import logger from "../../config/logger.js";
+import { createNewBookNotification } from "../notificationController.js";
 
 //cretae a book
 export const createBook = async (req, res) => {
@@ -63,6 +64,11 @@ export const createBook = async (req, res) => {
       image: thumbnailUpload.secure_url,
       fileUrl: fileUpload.secure_url,
     });
+
+    // Emit new book notification asynchronously to followers
+    createNewBookNotification(book._id, req.user._id, book.title).catch((err) =>
+      logger.error("Error creating book notification:", err)
+    );
 
     res.status(201).json({ success: true, book });
   } catch (err) {
