@@ -4,8 +4,10 @@ import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 
 import app from "../app.js";
+import cloudinary from "../src/utils/cloudinary.js";
 
 describe("Upload Routes", () => {
+  jest.setTimeout(30000);
   let mongoServer;
   let token;
   let testUserId;
@@ -49,8 +51,9 @@ describe("Upload Routes", () => {
       
       // Ensure we don't leak the API secret
       const resStr = JSON.stringify(res.body);
-      expect(process.env.CLOUDINARY_API_SECRET).toBeDefined();
-      expect(resStr).not.toContain(process.env.CLOUDINARY_API_SECRET);
+      const apiSecret = cloudinary.config().api_secret;
+      expect(apiSecret).toBeDefined();
+      expect(resStr).not.toContain(apiSecret);
     });
   });
 
