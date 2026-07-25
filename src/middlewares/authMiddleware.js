@@ -52,3 +52,6 @@ export const authorizeRoles = (...roles) => {
     next();
   };
 };
+
+export const restrictTo = (...roles) => authorizeRoles(...roles);
+export const authorize = (...roles) => authorizeRoles(...roles);

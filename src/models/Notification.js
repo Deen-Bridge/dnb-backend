@@ -74,13 +74,12 @@ const notificationSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    // Index for efficient queries
-    indexes: [
-      { recipient: 1, createdAt: -1 },
-      { recipient: 1, isRead: 1 },
-      { recipient: 1, isDeleted: 1 },
-    ],
   }
 );
+
+// Indexes for efficient querying
+notificationSchema.index({ recipient: 1, createdAt: -1 });
+notificationSchema.index({ recipient: 1, isRead: 1 });
+notificationSchema.index({ recipient: 1, isDeleted: 1 });
 
 export default mongoose.model("Notification", notificationSchema);

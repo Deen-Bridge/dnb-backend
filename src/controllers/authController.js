@@ -116,12 +116,16 @@ export const registerUser = catchAsync(async (req, res, next) => {
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 12);
 
+  // Prevent self-assignment of privileged roles (admin, arbiter)
+  const allowedSelfRegistrationRoles = ["student", "tutor", "mentor"];
+  const assignedRole = allowedSelfRegistrationRoles.includes(role) ? role : "student";
+
   // Create user
   const user = await User.create({
     name,
     email,
     password: hashedPassword,
-    role: role || "student",
+    role: assignedRole,
   });
 
   await enqueue(
