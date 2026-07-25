@@ -4,6 +4,7 @@ import Course from "../models/Course.js";
 import Book from "../models/Book.js";
 import logger from "../config/logger.js";
 import { validateMagicBytes } from "../utils/fileValidation.js";
+import { createFollowNotification, createUnfollowNotification } from "./notificationController.js";
 
 // Update user profile (including avatar upload to Cloudinary)
 export const updateUser = async (req, res) => {

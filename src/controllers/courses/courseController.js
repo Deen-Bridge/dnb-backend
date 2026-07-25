@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
 import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
+import { createNewCourseNotification } from "../notificationController.js";
 
 /**
  * Create a new course

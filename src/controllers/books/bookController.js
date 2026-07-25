@@ -4,6 +4,7 @@ import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
 import logger from "../../config/logger.js";
 import { validateMagicBytes } from "../../utils/fileValidation.js";
+import { createNewBookNotification } from "../notificationController.js";
 
 //cretae a book
 export const createBook = async (req, res) => {
