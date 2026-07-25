@@ -2,7 +2,7 @@ import Course from "../../models/Course.js";
 import mongoose from "mongoose";
 import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
-import { createNewCourseNotification } from "../notificationController.js";
+import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 
 /**
  * Create a new course
@@ -246,7 +246,20 @@ export const addCourseReview = async (req, res) => {
 export const fetchRecommendedCourses = async (req, res) => {
   try {
     const { interests } = req.body;
-    const recommended = await Course.find({ category: { $in: interests } });
+    const hasInterests = Array.isArray(interests) && interests.length > 0;
+
+    // This endpoint is POST (interests come in the body), so the shared
+    // cacheMiddleware (GET-only) can't key off req.query - cache explicitly here instead.
+    const cacheKey = hasInterests
+      ? `${CACHE_KEYS.COURSES}recommended:${[...interests].sort().join(",")}`
+      : `${CACHE_KEYS.COURSES}recommended:none`;
+
+    const recommended = await getCacheOrSet(
+      cacheKey,
+      () => Course.find({ category: { $in: interests } }),
+      CACHE_TTL.COURSES
+    );
+
     res.status(200).json({ success: true, recommended });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });

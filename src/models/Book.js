@@ -43,6 +43,9 @@ const bookSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  filePublicId: {
+    type: String,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

@@ -1,6 +1,6 @@
 import express from "express";
 import { protect } from "../middlewares/authMiddleware.js";
-import upload from "../middlewares/upload.js";
+import { uploadImage } from "../middlewares/upload.js";
 import {
   updateUser,
   getUser,
@@ -46,7 +46,7 @@ router.get(
 router.put(
   "/update/:id",
   protect,
-  upload.single("avatar"),
+  uploadImage.single("avatar"),
   invalidateCacheMiddleware([`${CACHE_KEYS.USER}*`]),
   updateUser
 );

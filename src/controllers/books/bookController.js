@@ -3,7 +3,7 @@ import Book from "../../models/Book.js";
 import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
 import logger from "../../config/logger.js";
-import { createNewBookNotification } from "../notificationController.js";
+import { validateMagicBytes } from "../../utils/fileValidation.js";
 
 //cretae a book
 export const createBook = async (req, res) => {
@@ -24,6 +24,13 @@ export const createBook = async (req, res) => {
       });
     }
 
+    const isThumbnailValid = await validateMagicBytes(req.files.thumbnail[0].buffer, ["image/jpeg", "image/png", "image/webp"]);
+    const isFileValid = await validateMagicBytes(req.files.file[0].buffer, ["application/pdf", "application/epub+zip"]);
+
+    if (!isThumbnailValid || !isFileValid) {
+      return res.status(400).json({ success: false, message: "Invalid file content detected. Magic bytes do not match expected types." });
+    }
+
     // Upload thumbnail to Cloudinary
     const thumbnailUpload = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
@@ -39,7 +46,7 @@ export const createBook = async (req, res) => {
     // Upload book file to Cloudinary (as raw file)
     const fileUpload = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
-        { folder: "library-books/files", resource_type: "raw" },
+        { folder: "library-books/files", resource_type: "raw", type: "authenticated" },
         (error, result) => {
           if (error) reject(error);
           else resolve(result);
@@ -63,6 +70,7 @@ export const createBook = async (req, res) => {
       rating,
       image: thumbnailUpload.secure_url,
       fileUrl: fileUpload.secure_url,
+      filePublicId: fileUpload.public_id,
     });
 
     // Emit new book notification asynchronously to followers
@@ -202,6 +210,13 @@ export const streamBookPreview = async (req, res) => {
       return res
         .status(403)
         .json({ success: false, message: "You do not have access to this book." });
+    }
+
+    if (book.filePublicId) {
+      const signedUrl = cloudinary.utils.private_download_url(book.filePublicId, "raw", {
+        expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+      });
+      return res.redirect(302, signedUrl);
     }
 
     const fileResponse = await axios.get(book.fileUrl, {

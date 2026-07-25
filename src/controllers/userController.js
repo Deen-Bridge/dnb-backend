@@ -3,7 +3,7 @@ import cloudinary from "../utils/cloudinary.js";
 import Course from "../models/Course.js";
 import Book from "../models/Book.js";
 import logger from "../config/logger.js";
-import { createFollowNotification, createUnfollowNotification } from "./notificationController.js";
+import { validateMagicBytes } from "../utils/fileValidation.js";
 
 // Update user profile (including avatar upload to Cloudinary)
 export const updateUser = async (req, res) => {
@@ -13,6 +13,11 @@ export const updateUser = async (req, res) => {
 
     // If avatar file is uploaded, upload to Cloudinary with timeout
     if (req.file) {
+      const isValid = await validateMagicBytes(req.file.buffer, ["image/jpeg", "image/png", "image/webp"]);
+      if (!isValid) {
+        return res.status(400).json({ success: false, message: "Invalid file content. Magic bytes do not match expected image types." });
+      }
+
       try {
         const result = await Promise.race([
           new Promise((resolve, reject) => {

@@ -7,6 +7,7 @@ import Session from "../models/Session.js";
 import sendMail from "../../services/emails/sendMail.js";
 import { generatedOtp } from "../routes/emailRoutes.js";
 import logger from "../config/logger.js";
+import { enqueue } from "../jobs/queue.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 
@@ -88,10 +89,11 @@ const createSessionAndTokens = async (user, req, res) => {
   );
 
   // Set Cookie scoped to refresh path
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("refreshToken", rawRefreshToken, {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
     maxAge: refreshDurationMs,
   });
@@ -111,14 +113,6 @@ export const registerUser = catchAsync(async (req, res, next) => {
     return next(new APIError("Email already exists", 400));
   }
 
-  // Send OTP email
-  try {
-    await sendMail(generatedOtp, email);
-    logger.info(`📧 OTP sent to: ${email}`);
-  } catch (error) {
-    logger.error(`Email sending failed for: ${email}`, error);
-  }
-
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 12);
 
@@ -129,6 +123,12 @@ export const registerUser = catchAsync(async (req, res, next) => {
     password: hashedPassword,
     role: role || "student",
   });
+
+  await enqueue(
+    "sendOtpEmail",
+    { userId: user._id.toString(), otp: generatedOtp },
+    { attempts: 5, backoffMs: 1000, idempotencyKey: `otp:${user._id}:${generatedOtp}` }
+  );
 
   logger.info(`✅ User registered successfully: ${email} (ID: ${user._id})`);
 
@@ -347,10 +347,11 @@ export const refreshSession = catchAsync(async (req, res, next) => {
     { expiresIn: accessTokenTtl }
   );
 
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("refreshToken", newRawToken, {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
     maxAge: refreshDurationMs,
   });
@@ -454,10 +455,11 @@ export const logoutUser = catchAsync(async (req, res, next) => {
     );
   }
 
+  const isProd = process.env.NODE_ENV === "production";
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
   });
 

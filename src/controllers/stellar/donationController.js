@@ -13,6 +13,7 @@ import {
   DONATION_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
 import logger from "../../config/logger.js";
+import { enqueue } from "../../jobs/queue.js";
 import {
   paymentsInitialized,
   paymentsSubmitted,
@@ -193,9 +194,32 @@ export const submitDonation = async (req, res) => {
     ]);
 
     if (!verification.verified) {
+      donation.stellarTxHash = result.hash;
+      if (verification.transient) {
+        donation.status = "retrying";
+        donation.failureReason = verification.reason;
+        await donation.save({ session });
+        await enqueue(
+          "verifyPaymentOnChain",
+          { transactionId: donation._id.toString() },
+          {
+            attempts: 5,
+            backoffMs: 1000,
+            idempotencyKey: `verify:${result.hash}`,
+            session,
+          }
+        );
+        await session.commitTransaction();
+        return res.status(202).json({
+          success: true,
+          message: "Donation submitted; confirmation is in progress",
+          donationId: donation._id,
+          txHash: result.hash,
+          status: "retrying",
+        });
+      }
       donation.status = "failed";
       donation.failureReason = `On-chain verification failed: ${verification.reason}`;
-      donation.stellarTxHash = result.hash;
       await donation.save({ session });
       await session.commitTransaction();
       paymentsFailed.inc({ type: "donation", reason: "verification_failed" });
@@ -217,6 +241,16 @@ export const submitDonation = async (req, res) => {
     donation.status = "confirmed";
     donation.confirmedAt = new Date();
     await donation.save({ session });
+    await enqueue(
+      "generateReceipt",
+      { transactionId: donation._id.toString() },
+      {
+        attempts: 5,
+        backoffMs: 1000,
+        idempotencyKey: `receipt:${result.hash}`,
+        session,
+      }
+    );
     await session.commitTransaction();
     paymentsConfirmed.inc({ type: "donation" });
 
