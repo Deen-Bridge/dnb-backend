@@ -1,5 +1,6 @@
 import request from "supertest";
 import mongoose from "mongoose";
+import { MongoMemoryServer } from "mongodb-memory-server";
 import app from "../app.js";
 import {
   calculateFeeSplit,
@@ -13,14 +14,26 @@ import {
   paymentsFailed,
 } from "../src/config/metrics.js";
 
-// app.js skips connectDB() under NODE_ENV=test; routes that touch the DB need
-// a live connection, so this suite manages its own.
+let mongoServer;
+
 beforeAll(async () => {
-  await mongoose.connect(process.env.MONGO_URI);
-});
+  if (process.env.MONGO_URI && !process.env.MONGO_URI.includes("localhost")) {
+    try {
+      await mongoose.connect(process.env.MONGO_URI);
+      return;
+    } catch (_err) {
+      // Fallback to MongoMemoryServer
+    }
+  }
+  mongoServer = await MongoMemoryServer.create();
+  await mongoose.connect(mongoServer.getUri());
+}, 30000);
 
 afterAll(async () => {
   await mongoose.disconnect();
+  if (mongoServer) {
+    await mongoServer.stop();
+  }
 });
 
 // Read a labeled counter value via prom-client's public API (internals like

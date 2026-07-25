@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import compression from "compression";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import "./src/jobs/handlers.js";
 
 dotenv.config();
 
@@ -44,6 +45,8 @@ import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
+import jobsRoutes from "./src/routes/jobsRoutes.js";
+import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -160,6 +163,9 @@ app.get("/health", (req, res) => {
   });
 });
 
+// SEP-1 stellar.toml — must be outside /api rate limiter
+app.use("/.well-known", wellKnownRoutes);
+
 app.use("/api", apiLimiter);
 
 // Auth routes
@@ -181,6 +187,7 @@ app.use("/api/stellar/payment", stellarPaymentRoutes);
 app.use("/api/stellar/donation", stellarDonationRoutes);
 app.use("/api/payouts", payoutRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use("/admin/jobs", jobsRoutes);
 
 // ======================
 // ERROR HANDLING

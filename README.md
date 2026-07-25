@@ -78,8 +78,22 @@ The API runs at `http://localhost:5000`.
 | `JWT_SECRET` | Secret for signing tokens (32+ chars) |
 | `STELLAR_NETWORK` | `testnet` or `mainnet` |
 | `CLOUDINARY_*` | Cloudinary credentials for media uploads |
+| `QUEUE_DRIVER` | `mongo` (durable production default) or `inline` (tests/CI) |
+| `JOBS_ENABLED` | Start background workers; defaults to `true` |
+| `JOBS_DASHBOARD_TOKEN` | Bearer token protecting `/admin/jobs` |
+| `STELLAR_PLATFORM_PUBLIC_KEY` | Public key published in `stellar.toml` `ACCOUNTS[]` |
 
 See `.env.example` for the full list.
+
+### Background jobs
+
+Slow email and Stellar verification work uses the thin `src/jobs/queue.js`
+abstraction. The production `mongo` driver persists jobs in the mandatory
+MongoDB deployment, so work and idempotency keys survive restarts without
+making optional Redis a new requirement. The `inline` driver uses the same
+handlers in tests and CI. Jobs retry with exponential backoff and jitter,
+terminal failures are queryable at `/admin/jobs/dead`, and the token-protected
+dashboard is available at `/admin/jobs`.
 
 ### Scripts
 
@@ -94,6 +108,7 @@ See `.env.example` for the full list.
 
 | Area | Base Route |
 |------|-----------|
+| SEP-1 Metadata | `/.well-known/stellar.toml` |
 | Auth & Users | `/api/auth`, `/api/users` |
 | Courses & Books | `/api/courses`, `/api/books` |
 | Spaces & Reels | `/api/spaces`, `/api/reels` |

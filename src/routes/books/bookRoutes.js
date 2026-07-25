@@ -77,6 +77,7 @@ router.get(
 // delete a book - invalidates book caches
 router.delete(
   "/:id",
+  protect,
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.BOOK}*`]),
   deleteBook
 );
