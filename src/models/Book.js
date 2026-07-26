@@ -63,6 +63,8 @@ const bookSchema = new mongoose.Schema({
   },
 });
 
+bookSchema.index({ title: "text", description: "text", category: "text" }, { weights: { title: 5 } });
+
 const Book = mongoose.model("Book", bookSchema);
 
 export default Book;

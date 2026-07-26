@@ -55,4 +55,5 @@ const courseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+courseSchema.index({ title: "text", description: "text", category: "text" }, { weights: { title: 5 } });
 export default mongoose.model("Course", courseSchema);

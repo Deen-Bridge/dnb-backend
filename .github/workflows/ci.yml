@@ -38,6 +38,9 @@ jobs:
           MONGO_URI: mongodb://localhost:27017/deenbridge_test
           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars
           STELLAR_NETWORK: testnet
+          CLOUDINARY_CLOUD_NAME: ci_test_cloud
+          CLOUDINARY_API_KEY: ci_test_key
+          CLOUDINARY_API_SECRET: ci_test_secret_that_should_not_leak
 
   build:
     name: Syntax and Boot Check
@@ -88,3 +91,6 @@ jobs:
           MONGO_URI: mongodb://localhost:27017/deenbridge_boot
           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars
           STELLAR_NETWORK: testnet
+          CLOUDINARY_CLOUD_NAME: ci_test_cloud
+          CLOUDINARY_API_KEY: ci_test_key
+          CLOUDINARY_API_SECRET: ci_test_secret_that_should_not_leak

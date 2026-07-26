@@ -23,7 +23,7 @@ export const updateUser = async (req, res) => {
     if (req.file) {
       const isValid = await validateMagicBytes(req.file.buffer, ["image/jpeg", "image/png", "image/webp"]);
       if (!isValid) {
-        return res.status(400).json({ success: false, message: "Invalid file content. Magic bytes do not match expected image types." });
+        return res.status(400).json({ success: false, message: "Invalid file content. Magic bytes do not match expected image types.", data: null });
       }
 
       try {
