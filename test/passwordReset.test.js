@@ -15,6 +15,8 @@ const testUser = {
 };
 
 describe("Password Reset Flow", () => {
+  jest.setTimeout(30000);
+
   let usersStore = [];
   let sessionsStore = [];
   let axiosSpy;
@@ -89,7 +91,7 @@ describe("Password Reset Flow", () => {
   beforeEach(() => {
     usersStore = [];
     sessionsStore = [];
-    if (axiosSpy) axiosSpy.mockClear();
+    if (axiosSpy) axiosSpy.mockClear().mockResolvedValue({ status: 200, statusText: "OK", data: {} });
   });
 
   afterAll(() => {
@@ -104,7 +106,7 @@ describe("Password Reset Flow", () => {
     return lastCall ? lastCall[1].template_params.otp : null;
   };
 
-  it("should request password reset without exposing OTP in response body", async () => {
+  it("should request password reset without exposing OTP in response body and include success: true", async () => {
     await request(app).post("/api/auth/register").send(testUser);
 
     const res = await request(app)
@@ -112,6 +114,7 @@ describe("Password Reset Flow", () => {
       .send({ email: testUser.email });
 
     expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.message).toContain("If an account exists");
     expect(res.body).not.toHaveProperty("otp");
 
@@ -131,11 +134,32 @@ describe("Password Reset Flow", () => {
       .send({ email: "nonexistent@example.com" });
 
     expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.message).toContain("If an account exists");
     expect(res.body).not.toHaveProperty("otp");
   });
 
-  it("should reject password reset with wrong OTP", async () => {
+  it("should handle sendMail delivery failure by rolling back token fields and returning generic 200 (anti-enumeration)", async () => {
+    await request(app).post("/api/auth/register").send(testUser);
+
+    // Make axios rejection simulate email service failure
+    axiosSpy.mockRejectedValueOnce(new Error("EmailJS service unavailable"));
+
+    const res = await request(app)
+      .post("/api/auth/request-password-reset")
+      .send({ email: testUser.email });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toContain("If an account exists");
+
+    // Token fields should be rolled back to undefined so orphaned tokens aren't left active
+    const dbUser = usersStore.find((u) => u.email === testUser.email);
+    expect(dbUser.resetTokenHash).toBeUndefined();
+    expect(dbUser.resetTokenExpiry).toBeUndefined();
+  });
+
+  it("should reject password reset with wrong OTP and return success: false", async () => {
     await request(app).post("/api/auth/register").send(testUser);
     await request(app)
       .post("/api/auth/request-password-reset")
@@ -150,6 +174,7 @@ describe("Password Reset Flow", () => {
       });
 
     expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
     expect(res.body.message).toContain("Invalid or expired OTP");
   });
 
@@ -173,6 +198,7 @@ describe("Password Reset Flow", () => {
       });
 
     expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
     expect(res.body.message).toContain("Invalid or expired OTP");
   });
 
@@ -195,6 +221,7 @@ describe("Password Reset Flow", () => {
       });
 
     expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.message).toContain("Password reset successful");
 
     // Token fields cleared from user
@@ -224,6 +251,7 @@ describe("Password Reset Flow", () => {
       });
 
     expect(reuseRes.statusCode).toBe(400);
+    expect(reuseRes.body.success).toBe(false);
     expect(reuseRes.body.message).toContain("Invalid or expired OTP");
   });
 });

@@ -218,7 +218,7 @@ export const requestPasswordReset = async (req, res) => {
     logger.info("🔑 Password reset requested for:", email);
 
     if (!email || typeof email !== "string") {
-      return res.status(400).json({ message: "Invalid email address" });
+      return res.status(400).json({ success: false, message: "Invalid email address" });
     }
 
     const user = await User.findOne({ email });
@@ -226,6 +226,7 @@ export const requestPasswordReset = async (req, res) => {
     if (!user) {
       // Don't reveal if user exists or not for security
       return res.status(200).json({
+        success: true,
         message:
           "If an account exists with this email, you will receive a password reset code.",
       });
@@ -240,16 +241,24 @@ export const requestPasswordReset = async (req, res) => {
     user.resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
     await user.save();
 
-    // Send OTP via email
-    await sendMail(otp, email);
+    // Send OTP via email with error handling to preserve anti-enumeration and clear orphaned tokens
+    try {
+      await sendMail(otp, email);
+    } catch (mailErr) {
+      logger.error("❌ Password reset email delivery error:", mailErr.message);
+      user.resetTokenHash = undefined;
+      user.resetTokenExpiry = undefined;
+      await user.save();
+    }
 
     res.status(200).json({
+      success: true,
       message:
         "If an account exists with this email, you will receive a password reset code.",
     });
   } catch (err) {
     logger.error("❌ Password reset request error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -261,13 +270,13 @@ export const resetPassword = async (req, res) => {
     logger.info("🔐 Password reset attempt for:", email);
 
     if (!email || !otp || !newPassword) {
-      return res.status(400).json({ message: "Email, OTP, and new password are required" });
+      return res.status(400).json({ success: false, message: "Email, OTP, and new password are required" });
     }
 
     const user = await User.findOne({ email }).select("+password");
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
     }
 
     // Verify OTP presence and expiration
@@ -276,12 +285,12 @@ export const resetPassword = async (req, res) => {
       !user.resetTokenExpiry ||
       new Date(user.resetTokenExpiry) < new Date()
     ) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
     }
 
     const isValidOtp = await verifyOtp(otp.toString(), user.resetTokenHash);
     if (!isValidOtp) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
     }
 
     // Hash new password using cost factor 12 (aligned with registerUser)
@@ -295,12 +304,13 @@ export const resetPassword = async (req, res) => {
 
     logger.info("✅ Password reset successful for:", email);
     res.status(200).json({
+      success: true,
       message:
         "Password reset successful. You can now login with your new password.",
     });
   } catch (err) {
     logger.error("❌ Password reset error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

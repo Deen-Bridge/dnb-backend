@@ -15,7 +15,7 @@ export const generateOtp = () => {
  * @returns {Promise<string>} Hashed OTP string
  */
 export const hashOtp = async (otp) => {
-  return await bcrypt.hash(otp, 10);
+  return await bcrypt.hash(otp, 12);
 };
 
 /**
