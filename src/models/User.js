@@ -51,6 +51,12 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    resetTokenHash: {
+      type: String,
+    },
+    resetTokenExpiry: {
+      type: Date,
+    },
     // Follow system
     following: [
       {
