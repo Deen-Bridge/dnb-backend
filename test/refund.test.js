@@ -31,6 +31,7 @@ const generateToken = (userId, role = "student") => {
 
 describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
   let buyer, educator, otherUser, adminUser;
+  let buyerWallet;
   let buyerToken, educatorToken, otherToken, adminToken;
   let confirmedTx;
   let course;
@@ -68,7 +69,15 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     jest.spyOn(server, "operations").mockImplementation(() => ({
       forTransaction: () => ({
         call: async () => ({
-          records: [],
+          records: [
+            {
+              type: "payment",
+              to: buyerWallet,
+              amount: "50",
+              asset_code: "USDC",
+              asset_issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+            },
+          ],
         }),
       }),
     }));
@@ -88,7 +97,7 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     await Transaction.deleteMany({});
     await Refund.deleteMany({});
 
-    const buyerWallet = StellarSdk.Keypair.random().publicKey();
+    buyerWallet = StellarSdk.Keypair.random().publicKey();
     const educatorWallet = StellarSdk.Keypair.random().publicKey();
     const otherWallet = StellarSdk.Keypair.random().publicKey();
 
