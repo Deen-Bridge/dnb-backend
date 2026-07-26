@@ -25,6 +25,23 @@ const courseSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    sections: [
+      {
+        title: { type: String, trim: true },
+        order: { type: Number, default: 0 },
+        lessons: [
+          {
+            _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
+            title: { type: String, trim: true, required: true },
+            order: { type: Number, default: 0 },
+            videoUrl: { type: String },
+            durationSeconds: { type: Number, default: 0 },
+            isPreview: { type: Boolean, default: false },
+            resources: [{ type: String }],
+          },
+        ],
+      },
+    ],
     reviews: [
       {
         user: {

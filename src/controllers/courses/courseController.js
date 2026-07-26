@@ -11,7 +11,7 @@ import { createNewCourseNotification } from "../notificationController.js";
  * Backend receives URLs instead of file buffers
  */
 export const createCourse = catchAsync(async (req, res, next) => {
-  const { title, description, category, price, thumbnail, video } = req.body;
+  const { title, description, category, price, thumbnail, video, sections } = req.body;
 
   logger.info(`Creating course: ${title} by user: ${req.user._id}`);
 
@@ -31,6 +31,7 @@ export const createCourse = catchAsync(async (req, res, next) => {
     createdBy: req.user._id,
     thumbnail: thumbnail || null, // URL from frontend
     video: video || null, // URL from frontend
+    ...(Array.isArray(sections) && sections.length > 0 ? { sections } : {}),
   });
 
   logger.info(`✅ Course created successfully: ${course._id} - ${title}`);
@@ -164,7 +165,7 @@ export const enrollInCourse = async (req, res) => {
 
 // 📝 Edit/Update a course
 export const updateCourse = catchAsync(async (req, res, next) => {
-  const { title, description, category, price, thumbnail, video } = req.body;
+  const { title, description, category, price, thumbnail, video, sections } = req.body;
   const courseId = req.params.id;
 
   logger.info(`Updating course: ${courseId}`);
@@ -191,6 +192,7 @@ export const updateCourse = catchAsync(async (req, res, next) => {
   // Update media URLs if provided
   if (thumbnail) course.thumbnail = thumbnail;
   if (video) course.video = video;
+  if (Array.isArray(sections)) course.sections = sections;
 
   await course.save();
 
