@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { getSupportedCodes } from "../config/assets.js";
 
 const bookSchema = new mongoose.Schema({
   title: {
@@ -14,6 +15,12 @@ const bookSchema = new mongoose.Schema({
   price: {
     type: Number,
     default: 0,
+  },
+  // Asset the price is denominated in; existing rows default to USDC.
+  currency: {
+    type: String,
+    default: "USDC",
+    enum: getSupportedCodes(),
   },
   readCount: {
     type: Number,

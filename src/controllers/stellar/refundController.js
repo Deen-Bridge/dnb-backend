@@ -8,8 +8,9 @@ import Refund from "../../models/Refund.js";
 import {
   buildReversePaymentTransaction,
   submitTransaction,
-  verifyTransaction,
+  verifyPaymentOperations,
 } from "../../services/stellar/stellarService.js";
+import { isAssetSupported, getSupportedCodes } from "../../config/assets.js";
 import logger from "../../config/logger.js";
 
 const REFUND_WINDOW_DAYS = parseInt(process.env.REFUND_WINDOW_DAYS || "14", 10);
@@ -31,7 +32,6 @@ export const requestRefund = async (req, res) => {
       });
     }
 
-    // Find original transaction
     const transaction = await Transaction.findById(transactionId);
     if (!transaction) {
       return res.status(404).json({
@@ -40,7 +40,6 @@ export const requestRefund = async (req, res) => {
       });
     }
 
-    // Guard: Only the original buyer
     if (transaction.buyer.toString() !== buyerId.toString()) {
       return res.status(403).json({
         success: false,
@@ -48,7 +47,6 @@ export const requestRefund = async (req, res) => {
       });
     }
 
-    // Guard: Only confirmed transactions
     if (transaction.status !== "confirmed") {
       return res.status(400).json({
         success: false,
@@ -56,7 +54,6 @@ export const requestRefund = async (req, res) => {
       });
     }
 
-    // Guard: Within configurable refund window
     const confirmedTime = new Date(
       transaction.confirmedAt || transaction.updatedAt
     ).getTime();
@@ -68,7 +65,6 @@ export const requestRefund = async (req, res) => {
       });
     }
 
-    // Guard: Idempotency - check for existing open/active refund request
     const existingRefund = await Refund.findOne({
       originalTransaction: transaction._id,
       status: { $in: ["requested", "approved", "submitted", "confirmed", "disputed"] },
@@ -82,7 +78,6 @@ export const requestRefund = async (req, res) => {
       });
     }
 
-    // Create refund request
     const refund = await Refund.create({
       originalTransaction: transaction._id,
       buyer: transaction.buyer,
@@ -96,7 +91,6 @@ export const requestRefund = async (req, res) => {
       expiresAt: new Date(Date.now() + windowMs),
     });
 
-    // Cross-link on transaction
     transaction.refund = refund._id;
     await transaction.save();
 
@@ -133,7 +127,6 @@ export const buildRefundXdr = async (req, res) => {
       });
     }
 
-    // Guard: Only the educator
     if (refund.educator.toString() !== educatorId.toString()) {
       return res.status(403).json({
         success: false,
@@ -141,7 +134,6 @@ export const buildRefundXdr = async (req, res) => {
       });
     }
 
-    // Guard: Status must be requested
     if (refund.status !== "requested") {
       return res.status(400).json({
         success: false,
@@ -149,7 +141,17 @@ export const buildRefundXdr = async (req, res) => {
       });
     }
 
-    // Fetch buyer & educator wallet info
+    // Validate the refund's currency before resolving an asset from it, so
+    // an unsupported/unknown currency returns a clean 400 instead of a 500
+    // from buildReversePaymentTransaction's resolveAsset call.
+    const refundAssetCode = refund.currency || "USDC";
+    if (!isAssetSupported(refundAssetCode)) {
+      return res.status(400).json({
+        success: false,
+        message: `Refund currency ${refundAssetCode} is not supported. Supported: ${getSupportedCodes().join(", ")}`,
+      });
+    }
+
     const buyer = await User.findById(refund.buyer);
     const educator = await User.findById(refund.educator);
 
@@ -165,12 +167,15 @@ export const buildRefundXdr = async (req, res) => {
 
     const originalTxHash = refund.originalTransaction?.stellarTxHash || "";
 
-    // Build reverse payment transaction (educator -> buyer)
+    // Build reverse payment transaction (educator -> buyer), in the same
+    // asset the original payment was made in, so an EURC/XLM purchase is
+    // refunded in EURC/XLM rather than always defaulting to USDC.
     const result = await buildReversePaymentTransaction({
       sourcePublicKey: educatorWallet,
       destinationPublicKey: buyerWallet,
       amount: refund.amount,
       originalTxHash,
+      assetCode: refundAssetCode,
     });
 
     refund.status = "approved";
@@ -219,7 +224,6 @@ export const submitRefund = async (req, res) => {
       });
     }
 
-    // Guard: Only the educator
     if (refund.educator.toString() !== educatorId.toString()) {
       return res.status(403).json({
         success: false,
@@ -227,11 +231,25 @@ export const submitRefund = async (req, res) => {
       });
     }
 
-    // Guard: Enforce transition order (must be approved first)
     if (refund.status !== "approved") {
       return res.status(400).json({
         success: false,
         message: `Cannot submit refund in '${refund.status}' status. Must be 'approved' first.`,
+      });
+    }
+
+    // Fetch the buyer once up front: we need their wallet as the expected
+    // destination for on-chain verification below, and we reuse the same
+    // buyer document for access revocation later instead of looking it up
+    // a second time.
+    const buyer = await User.findById(refund.buyer);
+    const buyerWallet = buyer?.stellarWallet?.publicKey;
+    if (!buyerWallet) {
+      refund.status = "failed";
+      await refund.save();
+      return res.status(400).json({
+        success: false,
+        message: "Missing buyer wallet information; cannot verify refund payment",
       });
     }
 
@@ -248,32 +266,37 @@ export const submitRefund = async (req, res) => {
       });
     }
 
-    // On-Chain Truth Verification via Horizon
-    const verification = await verifyTransaction(submissionResult.hash);
-    if (!verification.exists || !verification.successful) {
+    // On-Chain Truth Verification via Horizon: validate the actual reverse
+    // payment operation (destination, amount, and asset), not just that a
+    // successful transaction with this hash exists on Horizon.
+    const verification = await verifyPaymentOperations(
+      submissionResult.hash,
+      [{ destination: buyerWallet, amount: refund.amount }],
+      refund.currency || "USDC"
+    );
+    if (!verification.verified) {
       refund.status = "failed";
       await refund.save();
       return res.status(400).json({
         success: false,
-        message: "Reverse payment transaction could not be verified on Horizon",
+        message: `Reverse payment could not be verified on Horizon: ${verification.reason || "payment mismatch"}`,
       });
     }
 
     // Access Revocation — sequential writes (no session/transaction required;
     // the Stellar on-chain verification above is the source of truth)
     try {
-      const buyer = await User.findById(refund.buyer);
-
       if (refund.itemType === "course") {
-        // Remove course from buyer's purchased list
+        // Remove course from buyer's purchased list. purchasedCourses
+        // entries are subdocuments ({ courseId, purchaseDate }), so match
+        // on the courseId field rather than the subdocument itself.
         if (buyer) {
           buyer.purchasedCourses = (buyer.purchasedCourses || []).filter(
-            (cId) => cId.toString() !== refund.itemId.toString()
+            (entry) => entry.courseId?.toString() !== refund.itemId.toString()
           );
           await buyer.save();
         }
 
-        // Remove buyer from Course.enrolledUsers
         const course = await Course.findById(refund.itemId);
         if (course) {
           course.enrolledUsers = (course.enrolledUsers || []).filter(
@@ -282,16 +305,15 @@ export const submitRefund = async (req, res) => {
           await course.save();
         }
       } else if (refund.itemType === "book") {
-        // Remove book from buyer's purchased list
+        // Same subdocument shape as above: match on bookId, not the entry.
         if (buyer) {
           buyer.purchasedBooks = (buyer.purchasedBooks || []).filter(
-            (bId) => bId.toString() !== refund.itemId.toString()
+            (entry) => entry.bookId?.toString() !== refund.itemId.toString()
           );
           await buyer.save();
         }
       }
 
-      // Update refund & transaction status
       refund.status = "confirmed";
       refund.refundTxHash = submissionResult.hash;
       refund.refundLedger = submissionResult.ledger;
