@@ -50,6 +50,20 @@ const courseSchema = new mongoose.Schema(
       required: true,
     },
     enrolledUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    sections: [
+      {
+        title: String,
+        order: Number,
+        lessons: [
+          {
+            title: String,
+            order: Number,
+            videoUrl: String,
+            durationSeconds: Number,
+          },
+        ],
+      },
+    ],
   },
 
   { timestamps: true }

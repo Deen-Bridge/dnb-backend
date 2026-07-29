@@ -16,6 +16,7 @@
 //
 // The function schedules the write via Promise microtask and catches all
 // errors internally, so a DB write failure NEVER propagates to the caller.
+import mongoose from "mongoose";
 import AuditLog from "../../models/AuditLog.js";
 import logger from "../../config/logger.js";
 
@@ -107,6 +108,12 @@ export function recordAudit({
   // Schedule asynchronously — do not block caller
   Promise.resolve()
     .then(async () => {
+      // If DB is not connected and AuditLog.create is not mocked (e.g. unit tests without DB),
+      // skip write to prevent 10s Mongoose buffer timeouts.
+      if (mongoose.connection.readyState !== 1 && !AuditLog.create.mock) {
+        return;
+      }
+
       const actorIp        = req?.ip ?? null;
       const actorUserAgent = req?.headers?.["user-agent"] ?? null;
       const requestId      = req?.id ?? null;

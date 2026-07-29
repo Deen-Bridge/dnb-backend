@@ -740,43 +740,6 @@ export const submitPayment = async (req, res) => {
       itemId: transaction.itemId,
       session,
     });
-    await enqueue(
-      "generateReceipt",
-      { transactionId: transaction._id.toString() },
-      {
-        attempts: 5,
-        backoffMs: 1000,
-        idempotencyKey: `receipt:${result.hash}`,
-        session,
-      }
-    );
-    const buyer = await User.findById(buyerId).session(session);
-
-    if (transaction.itemType === "book") {
-      buyer.purchasedBooks.push({
-        bookId: transaction.itemId,
-        purchaseDate: new Date(),
-      });
-      if (buyer.stat) {
-        buyer.stat.booksRead = (buyer.stat.booksRead || 0) + 1;
-      }
-    } else {
-      buyer.purchasedCourses.push({
-        courseId: transaction.itemId,
-        purchaseDate: new Date(),
-      });
-      if (buyer.stat) {
-        buyer.stat.coursesEnrolled = (buyer.stat.coursesEnrolled || 0) + 1;
-      }
-
-      await Course.findByIdAndUpdate(
-        transaction.itemId,
-        { $addToSet: { enrolledUsers: buyerId } },
-        { session }
-      );
-    }
-
-    await buyer.save({ session });
     try {
       await enqueue(
         "generateReceipt",
