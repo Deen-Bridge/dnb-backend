@@ -14,7 +14,6 @@ const generateToken = (userId) => {
 };
 
 describe("Reviews & Ratings API (Course and Book)", () => {
-  let mongoServer;
   let author, enrolledUser, purchaserUser, randomUser, adminUser;
   let authorToken, enrolledToken, purchaserToken, randomToken, adminToken;
   let course, book;

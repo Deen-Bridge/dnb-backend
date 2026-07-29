@@ -196,7 +196,7 @@ export const updateReviewHandler = (Model, itemType) =>
 
 export const deleteReviewHandler = (Model, itemType) =>
   catchAsync(async (req, res, next) => {
-    const targetReviewId = req.params.reviewId || req.query.reviewId || req.body.reviewId;
+    const targetReviewId = req.params.reviewId || req.query.reviewId || req.body?.reviewId;
 
     const item = await Model.findById(req.params.id);
     if (!item) {
