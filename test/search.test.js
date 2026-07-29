@@ -1,6 +1,5 @@
 import request from "supertest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
 import app from "../app.js";
 import Course from "../src/models/Course.js";
 import Book from "../src/models/Book.js";
@@ -8,11 +7,8 @@ import User from "../src/models/User.js";
 import Space from "../src/models/Space.js";
 import Reel from "../src/models/Reel.js";
 
-let mongoServer;
-
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await mongoose.connect(`${process.env.MONGO_URI}_search`);
 }, 60000);
 
 beforeEach(async () => {
@@ -51,14 +47,15 @@ beforeEach(async () => {
   await Reel.syncIndexes();
 });
 
-
-
 afterAll(async () => {
-  await mongoose.disconnect();
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.connection.close();
+  }
   if (mongoServer) {
     await mongoServer.stop();
   }
 });
+
 
 describe("Full-text search API", () => {
   it("should return relevance ordered results for 'React'", async () => {
@@ -84,6 +81,13 @@ describe("Full-text search API", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.results.courses.length).toBe(1);
     expect(res.body.results.courses[0].title).toBe("Cooking 101");
+  });
+
+  it("rejects invalid minRating values", async () => {
+    const res = await request(app).get("/api/search?minRating=5.5");
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
   });
 
   it("should filter by category", async () => {

@@ -45,7 +45,13 @@ const bookSchema = new mongoose.Schema({
         required: true 
       },
       comment: { type: String, required: true },
-      rating: { type: Number, required: true, min: 1, max: 5 },
+      rating: {
+          type: Number,
+          required: true,
+          min: 1,
+          max: 5,
+          validate: { validator: Number.isInteger, message: "Rating must be an integer" },
+        },
       createdAt: { type: Date, default: Date.now }
     }
   ],

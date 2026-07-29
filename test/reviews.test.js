@@ -1,14 +1,13 @@
 import request from "supertest";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
-import { MongoMemoryServer } from "mongodb-memory-server";
 import app from "../app.js";
 import Course from "../src/models/Course.js";
 import Book from "../src/models/Book.js";
 import User from "../src/models/User.js";
 import { computeReviewStats } from "../src/utils/reviewStats.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const generateToken = (userId) => {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "1h" });
@@ -21,20 +20,14 @@ describe("Reviews & Ratings API (Course and Book)", () => {
   let course, book;
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
-  }, 120000);
-
+    await mongoose.connect(`${process.env.MONGO_URI}_reviews`);
+  }, 60000);
 
   afterAll(async () => {
     if (mongoose.connection.readyState !== 0) {
       await mongoose.connection.close();
     }
-    if (mongoServer) {
-      await mongoServer.stop();
-    }
   });
-
 
   beforeEach(async () => {
     await Course.deleteMany({});
@@ -161,6 +154,8 @@ describe("Reviews & Ratings API (Course and Book)", () => {
 
       expect(resEnrolled.statusCode).toBe(201);
       expect(resEnrolled.body.success).toBe(true);
+      expect(resEnrolled.body.message).toBe("Review added");
+      expect(resEnrolled.body.data.reviews).toHaveLength(1);
 
       const resPurchaser = await request(app)
         .post(`/api/courses/${course._id}/reviews`)
@@ -169,6 +164,8 @@ describe("Reviews & Ratings API (Course and Book)", () => {
 
       expect(resPurchaser.statusCode).toBe(201);
       expect(resPurchaser.body.success).toBe(true);
+      expect(resPurchaser.body.message).toBe("Review added");
+      expect(resPurchaser.body.data.reviews).toHaveLength(2);
 
       const resAuthor = await request(app)
         .post(`/api/courses/${course._id}/reviews`)
@@ -177,6 +174,22 @@ describe("Reviews & Ratings API (Course and Book)", () => {
 
       expect(resAuthor.statusCode).toBe(201);
       expect(resAuthor.body.success).toBe(true);
+      expect(resAuthor.body.message).toBe("Review added");
+      expect(resAuthor.body.data.reviews).toHaveLength(3);
+    });
+
+    it("rejects fractional and non-numeric ratings", async () => {
+      const fractional = await request(app)
+        .post(`/api/courses/${course._id}/reviews`)
+        .set("Authorization", `Bearer ${enrolledToken}`)
+        .send({ rating: 4.5, comment: "Fractional rating" });
+      const nonNumeric = await request(app)
+        .post(`/api/courses/${course._id}/reviews`)
+        .set("Authorization", `Bearer ${enrolledToken}`)
+        .send({ rating: "great", comment: "Non-numeric rating" });
+
+      expect(fractional.statusCode).toBe(400);
+      expect(nonNumeric.statusCode).toBe(400);
     });
 
     it("enforces one review per user rule (400 on duplicate)", async () => {
@@ -301,8 +314,9 @@ describe("Reviews & Ratings API (Course and Book)", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.review.comment).toBe("Updated comment: Superb!");
-      expect(res.body.rating).toBe(5);
+      expect(res.body.message).toBe("Review updated successfully");
+      expect(res.body.data.review.comment).toBe("Updated comment: Superb!");
+      expect(res.body.data.rating).toBe(5);
     });
 
     it("rejects delete attempt by non-owner non-admin user", async () => {
@@ -323,6 +337,7 @@ describe("Reviews & Ratings API (Course and Book)", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
+      expect(res.body.message).toBe("Review deleted successfully");
 
       const dbCourse = await Course.findById(course._id);
       expect(dbCourse.reviews.length).toBe(0);
@@ -353,23 +368,24 @@ describe("Reviews & Ratings API (Course and Book)", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.summary).toBeDefined();
-      expect(res.body.summary.numReviews).toBe(3);
-      expect(res.body.summary.rating).toBe(3.7); // (5+2+4)/3 = 3.666 -> 3.7
-      expect(res.body.pagination).toEqual({
+      expect(res.body.message).toBe("Reviews retrieved successfully");
+      expect(res.body.data.summary).toBeDefined();
+      expect(res.body.data.summary.numReviews).toBe(3);
+      expect(res.body.data.summary.rating).toBe(3.7); // (5+2+4)/3 = 3.666 -> 3.7
+      expect(res.body.data.pagination).toEqual({
         total: 3,
         page: 1,
         limit: 2,
         pages: 2,
       });
-      expect(res.body.reviews.length).toBe(2);
+      expect(res.body.data.reviews.length).toBe(2);
     });
 
     it("populates only reviewer name and avatar (no sensitive fields)", async () => {
       const res = await request(app).get(`/api/courses/${course._id}/reviews`);
 
       expect(res.statusCode).toBe(200);
-      const firstReviewUser = res.body.reviews[0].user;
+      const firstReviewUser = res.body.data.reviews[0].user;
       expect(firstReviewUser.name).toBeDefined();
       expect(firstReviewUser.avatar).toBeDefined();
       expect(firstReviewUser.email).toBeUndefined();
@@ -380,9 +396,9 @@ describe("Reviews & Ratings API (Course and Book)", () => {
       const res = await request(app).get(`/api/courses/${course._id}/reviews?sort=rating`);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.reviews[0].rating).toBe(5);
-      expect(res.body.reviews[1].rating).toBe(4);
-      expect(res.body.reviews[2].rating).toBe(2);
+      expect(res.body.data.reviews[0].rating).toBe(5);
+      expect(res.body.data.reviews[1].rating).toBe(4);
+      expect(res.body.data.reviews[2].rating).toBe(2);
     });
   });
 });

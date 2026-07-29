@@ -98,37 +98,37 @@ router.post(
 router.put(
   "/:id/reviews",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   updateBookReview
 );
 router.patch(
   "/:id/reviews",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   updateBookReview
 );
 router.put(
   "/:id/reviews/:reviewId",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   updateBookReview
 );
 router.patch(
   "/:id/reviews/:reviewId",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   updateBookReview
 );
 router.delete(
   "/:id/reviews",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   deleteBookReview
 );
 router.delete(
   "/:id/reviews/:reviewId",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   deleteBookReview
 );
 

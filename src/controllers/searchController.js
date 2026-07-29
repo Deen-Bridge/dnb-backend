@@ -16,7 +16,10 @@ export const searchAll = async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     logger.error("Search error:", err);
-    res.status(500).json({ success: false, error: "Server error" });
+    res.status(err.statusCode || 500).json({
+      success: false,
+      error: err.statusCode ? err.message : "Server error",
+    });
   }
 };
 

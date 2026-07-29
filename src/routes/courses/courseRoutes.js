@@ -84,37 +84,37 @@ router.post(
 router.put(
   "/:id/reviews",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   updateCourseReview
 );
 router.patch(
   "/:id/reviews",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   updateCourseReview
 );
 router.put(
   "/:id/reviews/:reviewId",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   updateCourseReview
 );
 router.patch(
   "/:id/reviews/:reviewId",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   updateCourseReview
 );
 router.delete(
   "/:id/reviews",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   deleteCourseReview
 );
 router.delete(
   "/:id/reviews/:reviewId",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   deleteCourseReview
 );
 router.put(

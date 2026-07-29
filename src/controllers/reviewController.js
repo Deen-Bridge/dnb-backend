@@ -1,5 +1,7 @@
 import Course from "../models/Course.js";
 import Book from "../models/Book.js";
+import User from "../models/User.js";
+import mongoose from "mongoose";
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 import { recomputeAndSaveStats } from "../utils/reviewStats.js";
 import { verifyItemPurchase } from "../utils/reviewAuth.js";
@@ -14,7 +16,7 @@ export const createReviewHandler = (Model, itemType) =>
       return next(new APIError("Comment is required", 400));
     }
     const numericRating = Number(rating);
-    if (isNaN(numericRating) || numericRating < 1 || numericRating > 5) {
+    if (!Number.isInteger(numericRating) || numericRating < 1 || numericRating > 5) {
       return next(new APIError("Rating must be a number between 1 and 5", 400));
     }
 
@@ -52,10 +54,12 @@ export const createReviewHandler = (Model, itemType) =>
     res.status(201).json({
       success: true,
       message: "Review added",
-      reviews: item.reviews,
-      rating: item.rating,
-      numReviews: item.numReviews,
-      ratingBreakdown: item.ratingBreakdown,
+      data: {
+        reviews: item.reviews,
+        rating: item.rating,
+        numReviews: item.numReviews,
+        ratingBreakdown: item.ratingBreakdown,
+      },
     });
   });
 
@@ -65,44 +69,74 @@ export const getReviewsHandler = (Model, itemType) =>
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
 
-    const item = await Model.findById(req.params.id).populate({
-      path: "reviews.user",
-      select: "name avatar",
-    });
-
-    if (!item) {
+    if (!mongoose.isValidObjectId(req.params.id)) {
       return next(new APIError(`${itemType === "course" ? "Course" : "Book"} not found`, 404));
     }
 
-    let reviewsList = [...item.reviews];
+    const startIndex = (pageNum - 1) * limitNum;
+    const reviewSort = sort === "rating"
+      ? { "reviews.rating": -1, "reviews.createdAt": -1 }
+      : { "reviews.createdAt": -1 };
+    const [result] = await Model.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(req.params.id) } },
+      {
+        $facet: {
+          metadata: [{
+            $project: {
+              rating: 1,
+              numReviews: 1,
+              ratingBreakdown: 1,
+              total: { $size: { $ifNull: ["$reviews", []] } },
+            },
+          }],
+          reviews: [
+            { $unwind: "$reviews" },
+            { $sort: reviewSort },
+            { $skip: startIndex },
+            { $limit: limitNum },
+            {
+              $lookup: {
+                from: User.collection.name,
+                let: { reviewerId: "$reviews.user" },
+                pipeline: [
+                  { $match: { $expr: { $eq: ["$_id", "$$reviewerId"] } } },
+                  { $project: { name: 1, avatar: 1 } },
+                ],
+                as: "reviewer",
+              },
+            },
+            { $set: { "reviews.user": { $arrayElemAt: ["$reviewer", 0] } } },
+            { $project: { _id: 0, reviews: 1 } },
+          ],
+        },
+      },
+    ]);
 
-    if (sort === "rating") {
-      reviewsList.sort((a, b) => b.rating - a.rating);
-    } else if (sort === "helpful") {
-      reviewsList.sort((a, b) => b.rating - a.rating || new Date(b.createdAt) - new Date(a.createdAt));
-    } else {
-      // default: recent
-      reviewsList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const metadata = result?.metadata?.[0];
+    if (!metadata) {
+      return next(new APIError(`${itemType === "course" ? "Course" : "Book"} not found`, 404));
     }
 
-    const total = reviewsList.length;
-    const startIndex = (pageNum - 1) * limitNum;
-    const paginatedReviews = reviewsList.slice(startIndex, startIndex + limitNum);
+    const total = metadata.total;
+    const paginatedReviews = result.reviews.map(({ reviews }) => reviews);
 
     res.status(200).json({
       success: true,
-      summary: {
-        rating: item.rating || 0,
-        numReviews: item.numReviews || 0,
-        ratingBreakdown: item.ratingBreakdown || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      message: "Reviews retrieved successfully",
+      data: {
+        summary: {
+          rating: metadata.rating || 0,
+          numReviews: metadata.numReviews || 0,
+          ratingBreakdown: metadata.ratingBreakdown || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        },
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          pages: Math.ceil(total / limitNum) || 1,
+        },
+        reviews: paginatedReviews,
       },
-      pagination: {
-        total,
-        page: pageNum,
-        limit: limitNum,
-        pages: Math.ceil(total / limitNum) || 1,
-      },
-      reviews: paginatedReviews,
     });
   });
 
@@ -140,7 +174,7 @@ export const updateReviewHandler = (Model, itemType) =>
 
     if (rating !== undefined) {
       const numericRating = Number(rating);
-      if (isNaN(numericRating) || numericRating < 1 || numericRating > 5) {
+      if (!Number.isInteger(numericRating) || numericRating < 1 || numericRating > 5) {
         return next(new APIError("Rating must be a number between 1 and 5", 400));
       }
       review.rating = numericRating;
@@ -151,10 +185,12 @@ export const updateReviewHandler = (Model, itemType) =>
     res.status(200).json({
       success: true,
       message: "Review updated successfully",
-      review,
-      rating: item.rating,
-      numReviews: item.numReviews,
-      ratingBreakdown: item.ratingBreakdown,
+      data: {
+        review,
+        rating: item.rating,
+        numReviews: item.numReviews,
+        ratingBreakdown: item.ratingBreakdown,
+      },
     });
   });
 
@@ -196,9 +232,11 @@ export const deleteReviewHandler = (Model, itemType) =>
     res.status(200).json({
       success: true,
       message: "Review deleted successfully",
-      rating: item.rating,
-      numReviews: item.numReviews,
-      ratingBreakdown: item.ratingBreakdown,
+      data: {
+        rating: item.rating,
+        numReviews: item.numReviews,
+        ratingBreakdown: item.ratingBreakdown,
+      },
     });
   });
 
