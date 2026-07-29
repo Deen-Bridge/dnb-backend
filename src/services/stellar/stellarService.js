@@ -345,6 +345,34 @@ export const getAccountBalance = async (publicKey) => {
   }
 };
 
+/**
+ * Build an unsigned changeTrust transaction so a wallet without a USDC
+ * trustline can add one before (or alongside) an anchor deposit.
+ */
+export const buildChangeTrustTransaction = async ({ publicKey, asset = USDC }) => {
+  try {
+    const account = await timedHorizonCall("loadAccount", () =>
+      server.loadAccount(publicKey)
+    );
+
+    const transaction = new StellarSdk.TransactionBuilder(account, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase,
+    })
+      .addOperation(StellarSdk.Operation.changeTrust({ asset }))
+      .setTimeout(300)
+      .build();
+
+    return {
+      xdr: transaction.toXDR(),
+      hash: transaction.hash().toString("hex"),
+      networkPassphrase,
+    };
+  } catch (error) {
+    logger.error("Error building change trust transaction:", error);
+// SEP-29: an account opts into requiring a memo on incoming payments by
+// setting a manageData entry with key "config.memo_required" (value is
+// conventionally "1", base64-encoded by Horizon like all data_attr values).
 export const MEMO_REQUIRED_DATA_KEY = "config.memo_required";
 
 export const isMemoRequired = (account) => {
