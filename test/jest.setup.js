@@ -15,3 +15,7 @@ if (fs.existsSync(envPath)) {
 
 // Force NODE_ENV to test to ensure we don't accidentally connect to production
 process.env.NODE_ENV = "test";
+process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test_jwt_secret_must_be_at_least_32_chars_long_for_tests";
+process.env.PORT = process.env.PORT || "5000";
+

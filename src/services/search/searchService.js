@@ -98,10 +98,10 @@ export const searchCollections = async ({ q, type = "all", page = 1, limit = 10,
   const tasks = [];
 
   if (type === "all" || type === "courses") {
-    tasks.push(searchModel(Course, {}, ["category", "price"], { title: 1, description: 1, price: 1, thumbnail: 1, category: 1 }, "courses"));
+    tasks.push(searchModel(Course, {}, ["category", "price", "rating"], { title: 1, description: 1, price: 1, thumbnail: 1, category: 1, rating: 1, numReviews: 1 }, "courses"));
   }
   if (type === "all" || type === "books") {
-    tasks.push(searchModel(Book, {}, ["category", "price", "rating"], { title: 1, description: 1, category: 1, price: 1, image: 1, author: 1 }, "books"));
+    tasks.push(searchModel(Book, {}, ["category", "price", "rating"], { title: 1, description: 1, category: 1, price: 1, image: 1, author: 1, rating: 1, numReviews: 1 }, "books"));
   }
   if (type === "all" || type === "spaces") {
     tasks.push(searchModel(Space, {}, ["category", "price"], { title: 1, description: 1, price: 1, status: 1, eventDate: 1, duration: 1, host: 1, category: 1 }, "spaces"));

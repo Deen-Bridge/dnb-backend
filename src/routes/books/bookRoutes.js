@@ -8,6 +8,9 @@ import {
   getBook,
   fetchRecommendedBooks,
   addBookReview,
+  getBookReviews,
+  updateBookReview,
+  deleteBookReview,
   streamBookPreview,
 } from "../../controllers/books/bookController.js";
 import {
@@ -59,6 +62,9 @@ router.post("/:bookId/bookmark", protect, toggleBookBookmark);
 router.get("/:bookId/bookmark/check", protect, checkIfBookBookmarked);
 router.delete("/:bookId/bookmark", protect, removeBookBookmark);
 
+// Review listing route
+router.get("/:id/reviews", getBookReviews);
+
 // get books created by the author - cached for 15 minutes
 router.get(
   "/by-author/:authorId",
@@ -89,5 +95,42 @@ router.post(
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
   addBookReview
 );
+router.put(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  updateBookReview
+);
+router.patch(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  updateBookReview
+);
+router.put(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  updateBookReview
+);
+router.patch(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  updateBookReview
+);
+router.delete(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  deleteBookReview
+);
+router.delete(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
+  deleteBookReview
+);
 
 export default router;
+
