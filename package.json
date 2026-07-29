@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "seed": "node src/scripts/seedDatabase.js",
     "test-redis": "node test-redis.js",
-    "payouts:audit": "node src/scripts/auditPayouts.js"
+    "payouts:audit": "node src/scripts/auditPayouts.js",
+    "worker:ingest": "node src/workers/runIngestionWorker.js"
   },
   "keywords": [],
   "author": "zeemscript",

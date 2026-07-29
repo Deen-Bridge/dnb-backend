@@ -18,6 +18,7 @@ import {
   escalateDispute,
   arbitrateDispute,
 } from "../../controllers/stellar/refundController.js";
+import { reconciliationStatus } from "../../controllers/stellar/reconciliationController.js";
 
 const router = express.Router();
 
@@ -45,6 +46,13 @@ router.patch(
   "/refunds/:refundId/arbitrate",
   authorizeRoles("admin", "arbiter"),
   arbitrateDispute
+);
+
+// Admin reconciliation status
+router.get(
+  "/reconciliation/status",
+  authorizeRoles("admin", "arbiter"),
+  reconciliationStatus
 );
 
 export default router;
