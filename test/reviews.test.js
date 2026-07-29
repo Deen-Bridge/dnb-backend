@@ -27,11 +27,14 @@ describe("Reviews & Ratings API (Course and Book)", () => {
 
 
   afterAll(async () => {
-    await mongoose.disconnect();
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.connection.close();
+    }
     if (mongoServer) {
       await mongoServer.stop();
     }
   });
+
 
   beforeEach(async () => {
     await Course.deleteMany({});

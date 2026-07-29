@@ -44,9 +44,12 @@ describe("Media Upload Hardening", () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await mongoServer.stop();
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
     jest.restoreAllMocks();
   });
+
 
   it("should reject oversized files (Multer limits)", async () => {
     const largeBuffer = Buffer.alloc(55 * 1024 * 1024); // 55MB (limit is 50MB)
