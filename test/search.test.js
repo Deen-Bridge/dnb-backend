@@ -13,7 +13,9 @@ let mongoServer;
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
-  
+}, 60000);
+
+beforeEach(async () => {
   // Clean db
   await Course.deleteMany({});
   await Book.deleteMany({});
@@ -47,7 +49,8 @@ beforeAll(async () => {
   await User.syncIndexes();
   await Space.syncIndexes();
   await Reel.syncIndexes();
-}, 60000);
+});
+
 
 
 afterAll(async () => {
