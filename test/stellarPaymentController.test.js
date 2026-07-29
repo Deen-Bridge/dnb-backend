@@ -320,9 +320,7 @@ describe("Stellar payment controller", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(verifyPaymentOperations).toHaveBeenCalledWith("hash-confirmed", [
-      { destination: creatorWallet, amount: "25" },
-    ]);
+    expect(verifyPaymentOperations).toHaveBeenCalledWith("hash-confirmed", [{ destination: creatorWallet, amount: "25" }], "USDC");
     expect(recordSaleEarnings).toHaveBeenCalledWith(tx, { session });
     expect(buyer.purchasedCourses).toHaveLength(1);
     expect(buyer.purchasedCourses[0].courseId).toBe(itemId);

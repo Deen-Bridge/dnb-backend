@@ -10,6 +10,7 @@ import logger from "../config/logger.js";
 import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
+import { generateOtp, hashOtp, verifyOtp } from "../utils/otp.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 
@@ -264,31 +265,40 @@ export const requestPasswordReset = async (req, res) => {
 
   try {
     logger.info("🔑 Password reset requested for:", email);
+
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ success: false, message: "Invalid email address" });
+    }
+
     const user = await User.findOne({ email });
 
     if (!user) {
       // Don't reveal if user exists or not for security
       return res.status(200).json({
+        success: true,
         message:
           "If an account exists with this email, you will receive a password reset code.",
       });
     }
 
     // Generate a 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateOtp();
 
-    // In production, you should:
-    // 1. Store the OTP in database with expiration time
-    // 2. Send email with OTP using your email service
-    // For now, we'll use the existing sendMail function
+    // Store OTP hash and expiry in database (15 minutes)
+    const hashedOtp = await hashOtp(otp);
+    user.resetTokenHash = hashedOtp;
+    user.resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
+    await user.save();
 
-    // Store OTP temporarily (you should add resetToken and resetTokenExpiry to User model)
-    // user.resetToken = await bcrypt.hash(otp, 10);
-    // user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
-    // await user.save();
-
-    // Send OTP via email
-    sendMail(otp, email);
+    // Send OTP via email with error handling to preserve anti-enumeration and clear orphaned tokens
+    try {
+      await sendMail(otp, email);
+    } catch (mailErr) {
+      logger.error("❌ Password reset email delivery error:", mailErr.message);
+      user.resetTokenHash = undefined;
+      user.resetTokenExpiry = undefined;
+      await user.save();
+    }
 
     recordAudit({
       action:     AUDIT_ACTIONS.AUTH_PASSWORD_RESET_REQUEST,
@@ -301,12 +311,13 @@ export const requestPasswordReset = async (req, res) => {
     });
 
     res.status(200).json({
-      message: "Password reset code sent to your email",
-      otp: otp, // Remove this in production! Only for development
+      success: true,
+      message:
+        "If an account exists with this email, you will receive a password reset code.",
     });
   } catch (err) {
     logger.error("❌ Password reset request error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -316,25 +327,38 @@ export const resetPassword = async (req, res) => {
 
   try {
     logger.info("🔐 Password reset attempt for:", email);
-    const user = await User.findOne({ email });
 
-    if (!user) {
-      return res.status(400).json({ message: "Invalid request" })
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ success: false, message: "Email, OTP, and new password are required" });
     }
 
-    // In production, verify OTP from database
-    // const isValidOtp = await bcrypt.compare(otp, user.resetToken);
-    // if (!isValidOtp || user.resetTokenExpiry < Date.now()) {
-    //   return res.status(400).json({ message: "Invalid or expired OTP" });
-    // }
+    const user = await User.findOne({ email }).select("+password");
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    // Verify OTP presence and expiration
+    if (
+      !user.resetTokenHash ||
+      !user.resetTokenExpiry ||
+      new Date(user.resetTokenExpiry) < new Date()
+    ) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    const isValidOtp = await verifyOtp(otp.toString(), user.resetTokenHash);
+    if (!isValidOtp) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    // Hash new password using cost factor 12 (aligned with registerUser)
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
     user.password = hashedPassword;
 
-    // Clear reset token fields
-    // user.resetToken = undefined;
-    // user.resetTokenExpiry = undefined;
+    // Clear reset token fields (single use)
+    user.resetTokenHash = undefined;
+    user.resetTokenExpiry = undefined;
     await user.save();
 
     logger.info("✅ Password reset successful for:", email);
@@ -350,12 +374,13 @@ export const resetPassword = async (req, res) => {
     });
 
     res.status(200).json({
+      success: true,
       message:
         "Password reset successful. You can now login with your new password.",
     });
   } catch (err) {
     logger.error("❌ Password reset error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

@@ -18,7 +18,6 @@ export const connectWallet = async (req, res) => {
     const userId = req.user._id;
     const { publicKey } = req.body;
 
-    // Validate public key format
     if (!publicKey || !isValidPublicKey(publicKey)) {
       recordAudit({
         action:     AUDIT_ACTIONS.WALLET_CONNECT_FAILURE,
@@ -35,7 +34,6 @@ export const connectWallet = async (req, res) => {
       });
     }
 
-    // Check if wallet is already connected to another user
     const existingUser = await User.findOne({
       "stellarWallet.publicKey": publicKey,
       _id: { $ne: userId },
@@ -57,10 +55,11 @@ export const connectWallet = async (req, res) => {
       });
     }
 
-    // Verify account exists on Stellar network and get balance info
+    // Verify account exists on Stellar network and get balance/trustline info
+    // (accountInfo now includes per-asset balances/trustlines from the
+    // registry, e.g. { balances: { USDC, EURC }, trustlines: { USDC, EURC } })
     const accountInfo = await getAccountBalance(publicKey);
 
-    // Update user with wallet info
     const user = await User.findByIdAndUpdate(
       userId,
       {
@@ -149,6 +148,9 @@ export const disconnectWallet = async (req, res) => {
 /**
  * Get wallet balance for any public key
  * GET /api/stellar/wallet/balance/:publicKey
+ * Response now includes balances/trustlines per registry asset (USDC,
+ * EURC, XLM, ...) alongside the back-compat usdcBalance/hasTrustline
+ * fields, so the UI can prompt e.g. "add a EURC trustline" when needed.
  */
 export const getWalletBalance = async (req, res) => {
   try {
@@ -192,7 +194,7 @@ export const getMyWallet = async (req, res) => {
       });
     }
 
-    // Get live balance from Stellar network
+    // Get live balance/trustlines from Stellar network (per-asset)
     const balance = await getAccountBalance(user.stellarWallet.publicKey);
 
     res.status(200).json({

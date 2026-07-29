@@ -31,6 +31,7 @@ const generateToken = (userId, role = "student") => {
 
 describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
   let buyer, educator, otherUser, adminUser;
+  let buyerWallet;
   let buyerToken, educatorToken, otherToken, adminToken;
   let confirmedTx;
   let course;
@@ -68,7 +69,15 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     jest.spyOn(server, "operations").mockImplementation(() => ({
       forTransaction: () => ({
         call: async () => ({
-          records: [],
+          records: [
+            {
+              type: "payment",
+              to: buyerWallet,
+              amount: "50",
+              asset_code: "USDC",
+              asset_issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+            },
+          ],
         }),
       }),
     }));
@@ -88,7 +97,7 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     await Transaction.deleteMany({});
     await Refund.deleteMany({});
 
-    const buyerWallet = StellarSdk.Keypair.random().publicKey();
+    buyerWallet = StellarSdk.Keypair.random().publicKey();
     const educatorWallet = StellarSdk.Keypair.random().publicKey();
     const otherWallet = StellarSdk.Keypair.random().publicKey();
 
@@ -140,7 +149,7 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
       enrolledUsers: [buyer._id],
     });
 
-    buyer.purchasedCourses = [course._id];
+    buyer.purchasedCourses = [{ courseId: course._id, purchaseDate: new Date() }];
     await buyer.save();
 
     // Create confirmed purchase transaction
@@ -291,7 +300,7 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
       const updatedCourse = await Course.findById(course._id);
       const updatedTx = await Transaction.findById(confirmedTx._id);
 
-      expect(updatedBuyer.purchasedCourses.map((c) => c.toString())).not.toContain(course._id.toString());
+      expect(updatedBuyer.purchasedCourses.map((c) => c.courseId.toString())).not.toContain(course._id.toString());
       expect(updatedCourse.enrolledUsers.map((u) => u.toString())).not.toContain(buyer._id.toString());
       expect(updatedCourse.enrolledUsers.length).toBe(0);
       expect(updatedTx.status).toBe("refunded");

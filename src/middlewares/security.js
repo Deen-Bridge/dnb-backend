@@ -28,6 +28,7 @@ export const apiLimiter = rateLimit({
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === "test",
   handler: (req, res) => {
     logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
@@ -45,6 +46,7 @@ export const authLimiter = rateLimit({
   max: 5, // Limit each IP to 5 login requests per windowMs
   message: "Too many login attempts, please try again after 15 minutes.",
   skipSuccessfulRequests: true,
+  skip: () => process.env.NODE_ENV === "test",
   handler: (req, res) => {
     logger.warn(`Auth rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
@@ -63,6 +65,7 @@ export const refreshLimiter = rateLimit({
   message: "Too many refresh attempts, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === "test",
   handler: (req, res) => {
     logger.warn(`Refresh rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
