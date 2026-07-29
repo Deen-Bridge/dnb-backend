@@ -22,6 +22,7 @@ import {
 } from "../../services/stellar/stellarService.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { recordSaleEarnings } from "../../services/payoutService.js";
+import { grantItemAccess } from "../../services/stellar/reconciliationService.js";
 import { enqueue } from "../../jobs/queue.js";
 import logger from "../../config/logger.js";
 import {
@@ -649,35 +650,13 @@ export const submitPayment = async (req, res) => {
     // Record earnings for educator balance & ledger (idempotent per stellarTxHash)
     await recordSaleEarnings(transaction, { session });
 
-    // Grant access to the purchased item
-    const buyer = await User.findById(buyerId).session(session);
-
-    if (transaction.itemType === "book") {
-      buyer.purchasedBooks.push({
-        bookId: transaction.itemId,
-        purchaseDate: new Date(),
-      });
-      if (buyer.stat) {
-        buyer.stat.booksRead = (buyer.stat.booksRead || 0) + 1;
-      }
-    } else {
-      buyer.purchasedCourses.push({
-        courseId: transaction.itemId,
-        purchaseDate: new Date(),
-      });
-      if (buyer.stat) {
-        buyer.stat.coursesEnrolled = (buyer.stat.coursesEnrolled || 0) + 1;
-      }
-
-      // Also add to course's enrolledUsers
-      await Course.findByIdAndUpdate(
-        transaction.itemId,
-        { $addToSet: { enrolledUsers: buyerId } },
-        { session }
-      );
-    }
-
-    await buyer.save({ session });
+    // Grant access to the purchased item (shared with ingestion worker)
+    await grantItemAccess({
+      buyerId,
+      itemType: transaction.itemType,
+      itemId: transaction.itemId,
+      session,
+    });
     await enqueue(
       "generateReceipt",
       { transactionId: transaction._id.toString() },
