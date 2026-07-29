@@ -6,6 +6,8 @@ import logger from "../config/logger.js";
 import { validateMagicBytes } from "../utils/fileValidation.js";
 import { createFollowNotification, createUnfollowNotification } from "./notificationController.js";
 
+const PUBLIC_FIELDS = "name avatar bio role interests gender age country language";
+
 // Update user profile (including avatar upload to Cloudinary)
 export const updateUser = async (req, res) => {
   try {
@@ -94,6 +96,14 @@ export const updateUser = async (req, res) => {
     });
   } catch (error) {
     logger.error("Profile update error:", error);
+
+    if (error.code === 11000 || error.message?.includes("E11000")) {
+      return res.status(409).json({
+        success: false,
+        message: "A user with this email already exists",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to update profile. Please try again.",
@@ -105,7 +115,14 @@ export const updateUser = async (req, res) => {
 // Get user by ID
 export const getUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const isSelf = req.user._id.toString() === req.params.id;
+    const query = User.findById(req.params.id);
+
+    if (!isSelf) {
+      query.select(PUBLIC_FIELDS);
+    }
+
+    const user = await query;
     if (!user) {
       return res.status(404).json({
         success: false,

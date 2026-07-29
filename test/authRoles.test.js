@@ -12,7 +12,7 @@ import { protect, authorize, restrictTo } from "../src/middlewares/authMiddlewar
 import { registerUser } from "../src/controllers/authController.js";
 import { deleteBook } from "../src/controllers/books/bookController.js";
 import { deleteSpace, updateSpace } from "../src/controllers/spaceController.js";
-import { updateUser, deleteUser } from "../src/controllers/userController.js";
+import { updateUser, deleteUser, getUser } from "../src/controllers/userController.js";
 import { updateCourse } from "../src/controllers/courses/courseController.js";
 
 describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
@@ -281,6 +281,100 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
 
       const resDelete = await request(app).delete(`/users/${authorUser._id}`);
       expect(resDelete.status).toBe(403);
+    });
+
+    it("allows self-update and self-delete", async () => {
+      const app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        req.user = studentUser;
+        next();
+      });
+      app.put("/users/:id", updateUser);
+      app.delete("/users/:id", deleteUser);
+
+      const resUpdate = await request(app).put(`/users/${studentUser._id}`).send({ name: "Updated Self" });
+      expect(resUpdate.status).toBe(200);
+      expect(resUpdate.body.user.name).toBe("Updated Self");
+
+      const resDelete = await request(app).delete(`/users/${studentUser._id}`);
+      expect(resDelete.status).toBe(200);
+
+      const deletedUser = await User.findById(studentUser._id);
+      expect(deletedUser).toBeNull();
+    });
+
+    it("allows admin to update or delete any user", async () => {
+      const app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        req.user = adminUser;
+        next();
+      });
+      app.put("/users/:id", updateUser);
+      app.delete("/users/:id", deleteUser);
+
+      const resUpdate = await request(app).put(`/users/${studentUser._id}`).send({ name: "Admin Updated" });
+      expect(resUpdate.status).toBe(200);
+
+      const resDelete = await request(app).delete(`/users/${authorUser._id}`);
+      expect(resDelete.status).toBe(200);
+    });
+
+    it("rejects duplicate email update with 409", async () => {
+      const app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        req.user = studentUser;
+        next();
+      });
+      app.put("/users/:id", updateUser);
+
+      const res = await request(app)
+        .put(`/users/${studentUser._id}`)
+        .send({ email: authorUser.email });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe("A user with this email already exists");
+    });
+
+    it("returns only public fields for non-self getUser", async () => {
+      const app = express();
+      app.use((req, _res, next) => {
+        req.user = studentUser;
+        next();
+      });
+      app.get("/users/:id", getUser);
+
+      const res = await request(app).get(`/users/${authorUser._id}`);
+      expect(res.status).toBe(200);
+
+      const body = res.body.user;
+      expect(body.name).toBeDefined();
+      expect(body.role).toBeDefined();
+      expect(body.email).toBeUndefined();
+      expect(body.stellarWallet).toBeUndefined();
+      expect(body.following).toBeUndefined();
+      expect(body.followers).toBeUndefined();
+      expect(body.purchasedBooks).toBeUndefined();
+      expect(body.purchasedCourses).toBeUndefined();
+    });
+
+    it("returns full user document for self getUser", async () => {
+      const app = express();
+      app.use((req, _res, next) => {
+        req.user = studentUser;
+        next();
+      });
+      app.get("/users/:id", getUser);
+
+      const res = await request(app).get(`/users/${studentUser._id}`);
+      expect(res.status).toBe(200);
+
+      const body = res.body.user;
+      expect(body.name).toBeDefined();
+      expect(body.email).toBeDefined();
+      expect(body.following).toBeDefined();
+      expect(body.followers).toBeDefined();
     });
   });
 });
