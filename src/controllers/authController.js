@@ -8,6 +8,8 @@ import sendMail from "../../services/emails/sendMail.js";
 import { generatedOtp } from "../routes/emailRoutes.js";
 import logger from "../config/logger.js";
 import { enqueue } from "../jobs/queue.js";
+import { recordAudit } from "../services/audit/auditService.js";
+import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 import { generateOtp, hashOtp, verifyOtp } from "../utils/otp.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
@@ -111,6 +113,15 @@ export const registerUser = catchAsync(async (req, res, next) => {
   const existing = await User.findOne({ email });
   if (existing) {
     logger.warn(`❌ Registration failed - Email already exists: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "email_already_exists" },
+    });
     return next(new APIError("Email already exists", 400));
   }
 
@@ -136,6 +147,16 @@ export const registerUser = catchAsync(async (req, res, next) => {
   );
 
   logger.info(`✅ User registered successfully: ${email} (ID: ${user._id})`);
+
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_REGISTER_SUCCESS,
+    actor:      user._id,
+    req,
+    targetType: "User",
+    targetId:   user._id.toString(),
+    status:     "success",
+    metadata:   { email, assignedRole, name },
+  });
 
   // Generate session and tokens
   const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
@@ -169,6 +190,15 @@ export const loginUser = catchAsync(async (req, res, next) => {
   const user = await User.findOne({ email }).select("+password");
   if (!user) {
     logger.warn(`❌ Login failed - User not found: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_LOGIN_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "user_not_found" },
+    });
     return next(new APIError("Invalid credentials", 401));
   }
 
@@ -176,6 +206,15 @@ export const loginUser = catchAsync(async (req, res, next) => {
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
     logger.warn(`❌ Login failed - Incorrect password: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_LOGIN_FAILURE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "failure",
+      metadata:   { email, reason: "invalid_password" },
+    });
     return next(new APIError("Invalid credentials", 401));
   }
 
@@ -187,6 +226,16 @@ export const loginUser = catchAsync(async (req, res, next) => {
   const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
 
   logger.info(`✅ Login successful: ${email} (ID: ${user._id})`);
+
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_LOGIN_SUCCESS,
+    actor:      user._id,
+    req,
+    targetType: "User",
+    targetId:   user._id.toString(),
+    status:     "success",
+    metadata:   { email, role: user.role },
+  });
 
   res.status(200).json({
     success: true,
@@ -251,6 +300,16 @@ export const requestPasswordReset = async (req, res) => {
       await user.save();
     }
 
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_PASSWORD_RESET_REQUEST,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "success",
+      metadata:   { email },
+    });
+
     res.status(200).json({
       success: true,
       message:
@@ -303,6 +362,17 @@ export const resetPassword = async (req, res) => {
     await user.save();
 
     logger.info("✅ Password reset successful for:", email);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_PASSWORD_RESET_COMPLETE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "success",
+      metadata:   { email },
+    });
+
     res.status(200).json({
       success: true,
       message:
@@ -483,6 +553,16 @@ export const logoutUser = catchAsync(async (req, res, next) => {
       { $set: { revokedAt: new Date() } }
     );
   }
+
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_LOGOUT,
+    actor:      req.user?._id ?? null,
+    req,
+    targetType: "User",
+    targetId:   req.user?._id?.toString() ?? null,
+    status:     "success",
+    metadata:   null,
+  });
 
   const isProd = process.env.NODE_ENV === "production";
   res.clearCookie("refreshToken", {

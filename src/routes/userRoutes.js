@@ -48,7 +48,7 @@ router.put(
   "/update/:id",
   protect,
   (req, res, next) => {
-    if (req.user._id.toString() !== req.params.id) {
+    if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
       return res.status(403).json({ success: false, message: "Not authorized to update this profile", data: null });
     }
     next();
@@ -70,6 +70,12 @@ router.get(
 router.delete(
   "/:id",
   protect,
+  (req, res, next) => {
+    if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
+      return res.status(403).json({ success: false, message: "Not authorized to delete this user", data: null });
+    }
+    next();
+  },
   invalidateCacheMiddleware([`${CACHE_KEYS.USER}*`]),
   deleteUser
 );

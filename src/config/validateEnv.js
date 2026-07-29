@@ -47,6 +47,8 @@ const optionalEnvVars = [
   "ORG_TWITTER",
   "ORG_GITHUB",
   "SIGNING_KEY",
+  "INGESTION_WORKER_ENABLED",
+  "INGESTION_POLL_INTERVAL_MS",
 ];
 
 export const validateEnv = () => {
