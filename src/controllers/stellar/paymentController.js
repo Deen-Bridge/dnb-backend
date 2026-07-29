@@ -31,6 +31,8 @@ import {
   paymentsConfirmed,
   paymentsFailed,
 } from "../../config/metrics.js";
+import { recordAudit } from "../../services/audit/auditService.js";
+import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
 
 /**
  * Resolve the item, its creator, and the settlement destination wallet for a
@@ -473,6 +475,23 @@ export const initializePayment = async (req, res) => {
       `Payment initialized: ${transaction._id} for ${itemType} ${itemId}`
     );
 
+    recordAudit({
+      action:     AUDIT_ACTIONS.PAYMENT_INITIALIZE,
+      actor:      buyerId,
+      req,
+      targetType: "Transaction",
+      targetId:   transaction._id.toString(),
+      status:     "success",
+      metadata:   {
+        transactionId:  transaction._id.toString(),
+        itemType,
+        itemId,
+        itemTitle:      item.title,
+        amount:         item.price.toString(),
+        settlementMode,
+      },
+    });
+
     res.status(200).json({
       success: true,
       transactionId: transaction._id,
@@ -632,6 +651,20 @@ export const submitPayment = async (req, res) => {
         `Transaction ${transactionId} verification failed: ${verification.reason}`
       );
 
+      recordAudit({
+        action:     AUDIT_ACTIONS.PAYMENT_SUBMIT_FAILED,
+        actor:      buyerId,
+        req,
+        targetType: "Transaction",
+        targetId:   transactionId,
+        status:     "failure",
+        metadata:   {
+          transactionId,
+          stellarTxHash: result.hash,
+          failureReason:  `On-chain verification failed: ${verification.reason}`,
+        },
+      });
+
       return res.status(400).json({
         success: false,
         message: "Payment could not be verified on the Stellar network",
@@ -672,6 +705,24 @@ export const submitPayment = async (req, res) => {
     logger.info(
       `Payment successful: ${transactionId}, Stellar TX: ${result.hash}`
     );
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.PAYMENT_SUBMIT_CONFIRMED,
+      actor:      buyerId,
+      req,
+      targetType: "Transaction",
+      targetId:   transactionId,
+      status:     "success",
+      metadata:   {
+        transactionId,
+        stellarTxHash:  result.hash,
+        stellarLedger:  result.ledger,
+        amount:         transaction.amount,
+        itemType:       transaction.itemType,
+        itemId:         transaction.itemId.toString(),
+        settlementMode: transaction.settlement,
+      },
+    });
 
     res.status(200).json({
       success: true,
@@ -834,6 +885,22 @@ export const cancelTransaction = async (req, res) => {
     }
 
     logger.info(`Transaction ${transactionId} cancelled by user ${userId}`);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.PAYMENT_CANCEL,
+      actor:      userId,
+      req,
+      targetType: "Transaction",
+      targetId:   transactionId,
+      status:     "success",
+      metadata:   {
+        transactionId,
+        itemType:  transaction.itemType,
+        itemId:    transaction.itemId?.toString(),
+        amount:    transaction.amount,
+        failureReason: "Cancelled by user",
+      },
+    });
 
     res.status(200).json({
       success: true,
