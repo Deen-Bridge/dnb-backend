@@ -6,6 +6,8 @@ import {
   NETWORK,
 } from "../../services/stellar/stellarService.js";
 import logger from "../../config/logger.js";
+import { recordAudit } from "../../services/audit/auditService.js";
+import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
 
 /**
  * Connect Stellar wallet to user profile
@@ -18,6 +20,15 @@ export const connectWallet = async (req, res) => {
 
     // Validate public key format
     if (!publicKey || !isValidPublicKey(publicKey)) {
+      recordAudit({
+        action:     AUDIT_ACTIONS.WALLET_CONNECT_FAILURE,
+        actor:      userId,
+        req,
+        targetType: "Wallet",
+        targetId:   publicKey ?? null,
+        status:     "failure",
+        metadata:   { reason: "invalid_public_key" },
+      });
       return res.status(400).json({
         success: false,
         message: "Invalid Stellar public key",
@@ -31,6 +42,15 @@ export const connectWallet = async (req, res) => {
     });
 
     if (existingUser) {
+      recordAudit({
+        action:     AUDIT_ACTIONS.WALLET_REASSIGN_ATTEMPT,
+        actor:      userId,
+        req,
+        targetType: "Wallet",
+        targetId:   publicKey,
+        status:     "failure",
+        metadata:   { publicKey, reason: "wallet_already_claimed", conflictUserId: existingUser._id.toString() },
+      });
       return res.status(400).json({
         success: false,
         message: "This wallet is already connected to another account",
@@ -54,6 +74,16 @@ export const connectWallet = async (req, res) => {
     ).select("-password");
 
     logger.info(`Wallet connected for user ${userId}: ${publicKey}`);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.WALLET_CONNECT_SUCCESS,
+      actor:      userId,
+      req,
+      targetType: "Wallet",
+      targetId:   publicKey,
+      status:     "success",
+      metadata:   { publicKey, network: NETWORK },
+    });
 
     res.status(200).json({
       success: true,
@@ -83,11 +113,25 @@ export const disconnectWallet = async (req, res) => {
   try {
     const userId = req.user._id;
 
+    // Capture the wallet key before unsetting it (for the audit row)
+    const currentUser = await User.findById(userId).select("stellarWallet");
+    const previousPublicKey = currentUser?.stellarWallet?.publicKey ?? null;
+
     await User.findByIdAndUpdate(userId, {
       $unset: { stellarWallet: 1 },
     });
 
     logger.info(`Wallet disconnected for user ${userId}`);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.WALLET_DISCONNECT,
+      actor:      userId,
+      req,
+      targetType: "Wallet",
+      targetId:   previousPublicKey,
+      status:     "success",
+      metadata:   { previousPublicKey },
+    });
 
     res.status(200).json({
       success: true,
