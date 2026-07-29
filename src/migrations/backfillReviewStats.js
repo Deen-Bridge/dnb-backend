@@ -13,7 +13,7 @@ const statsDiffer = (document, stats) =>
 
 const backfillModel = async (Model) => {
   let updated = 0;
-  const cursor = Model.find({ "reviews.0": { $exists: true } }).cursor();
+  const cursor = Model.find().cursor();
 
   for await (const document of cursor) {
     const stats = computeReviewStats(document.reviews);

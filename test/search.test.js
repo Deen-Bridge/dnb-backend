@@ -23,14 +23,14 @@ beforeEach(async () => {
   const userId2 = new mongoose.Types.ObjectId();
 
   await Course.create([
-    { title: "React Fundamentals", description: "Learn React from scratch.", category: "Programming", price: 100, createdBy: userId1 },
-    { title: "Advanced Node.js", description: "Deep dive into Node and V8.", category: "Programming", price: 150, createdBy: userId1 },
-    { title: "Cooking 101", description: "Learn how to cook basic meals.", category: "Cooking", price: 0, createdBy: userId2 }
+    { title: "React Fundamentals", description: "Learn React from scratch.", category: "Programming", price: 100, rating: 4, numReviews: 2, createdBy: userId1 },
+    { title: "Advanced Node.js", description: "Deep dive into Node and V8.", category: "Programming", price: 150, rating: 3, numReviews: 1, createdBy: userId1 },
+    { title: "Cooking 101", description: "Learn how to cook basic meals.", category: "Cooking", price: 0, rating: 0, numReviews: 0, createdBy: userId2 }
   ]);
 
   await Book.create([
-    { title: "React Design Patterns", description: "Advanced patterns in React.", category: "Programming", price: 50, author: userId1, image: "url", fileUrl: "url" },
-    { title: "Node.js Design Patterns", description: "Node best practices.", category: "Programming", price: 60, author: userId1, image: "url", fileUrl: "url" }
+    { title: "React Design Patterns", description: "Advanced patterns in React.", category: "Programming", price: 50, rating: 5, numReviews: 4, author: userId1, image: "url", fileUrl: "url" },
+    { title: "Node.js Design Patterns", description: "Node best practices.", category: "Programming", price: 60, rating: 2, numReviews: 1, author: userId1, image: "url", fileUrl: "url" }
   ]);
 
   await User.create([
@@ -84,7 +84,24 @@ describe("Full-text search API", () => {
     const res = await request(app).get("/api/search?minRating=5.5");
 
     expect(res.statusCode).toBe(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body).toEqual({
+      success: false,
+      message: "minRating must be a whole number between 0 and 5",
+      data: null,
+    });
+  });
+
+  it("filters courses and books by a valid whole-star minRating", async () => {
+    const res = await request(app).get("/api/search?minRating=4");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.results.courses).toHaveLength(1);
+    expect(res.body.results.books).toHaveLength(1);
+    for (const item of [...res.body.results.courses, ...res.body.results.books]) {
+      expect(item.rating).toBeGreaterThanOrEqual(4);
+      expect(item.rating).toBeDefined();
+      expect(item.numReviews).toBeDefined();
+    }
   });
 
   it("should filter by category", async () => {

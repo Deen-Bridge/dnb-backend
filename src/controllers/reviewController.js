@@ -6,6 +6,17 @@ import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 import { recomputeAndSaveStats } from "../utils/reviewStats.js";
 import { verifyItemPurchase } from "../utils/reviewAuth.js";
 
+const recomputeReviewStats = async (item) => {
+  try {
+    await recomputeAndSaveStats(item);
+  } catch (error) {
+    if (error instanceof mongoose.Error.VersionError) {
+      throw new APIError("Review was modified by another request. Please try again.", 409);
+    }
+    throw error;
+  }
+};
+
 /**
  * Factory to create review handler for Course or Book.
  */
@@ -49,7 +60,7 @@ export const createReviewHandler = (Model, itemType) =>
     };
 
     item.reviews.push(review);
-    await recomputeAndSaveStats(item);
+    await recomputeReviewStats(item);
 
     res.status(201).json({
       success: true,
@@ -180,7 +191,7 @@ export const updateReviewHandler = (Model, itemType) =>
       review.rating = numericRating;
     }
 
-    await recomputeAndSaveStats(item);
+    await recomputeReviewStats(item);
 
     res.status(200).json({
       success: true,
@@ -227,7 +238,7 @@ export const deleteReviewHandler = (Model, itemType) =>
     }
 
     item.reviews.splice(reviewIndex, 1);
-    await recomputeAndSaveStats(item);
+    await recomputeReviewStats(item);
 
     res.status(200).json({
       success: true,

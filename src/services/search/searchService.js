@@ -66,8 +66,8 @@ export const searchCollections = async ({ q, type = "all", page = 1, limit = 10,
   const normalizedFilters = { ...filters };
   if (filters.minRating !== undefined) {
     const minRating = Number(filters.minRating);
-    if (filters.minRating === "" || !Number.isFinite(minRating) || minRating < 0 || minRating > 5) {
-throw new APIError("minRating must be a finite number between 0 and 5", 400);
+    if (filters.minRating === "" || !Number.isFinite(minRating) || !Number.isInteger(minRating) || minRating < 0 || minRating > 5) {
+      throw new APIError("minRating must be a whole number between 0 and 5", 400);
     }
     normalizedFilters.minRating = minRating;
   }

@@ -6,7 +6,7 @@ export const searchAll = async (req, res) => {
     const { q, type = "all", page = 1, limit = 10, sort, minPrice, maxPrice, free, category, minRating, interest } = req.query;
     
     if (q && q.trim().length > 100) {
-      return res.status(400).json({ success: false, error: "Query string is too long." });
+      return res.status(400).json({ success: false, message: "Query string is too long.", data: null });
     }
 
     const filters = { minPrice, maxPrice, free, category, minRating, interest };
@@ -18,7 +18,8 @@ export const searchAll = async (req, res) => {
     logger.error("Search error:", err);
     res.status(err.statusCode || 500).json({
       success: false,
-      error: err.statusCode ? err.message : "Server error",
+      message: err.statusCode ? err.message : "Server error",
+      data: null,
     });
   }
 };
