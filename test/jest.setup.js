@@ -19,3 +19,7 @@ process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test_jwt_secret_must_be_at_least_32_chars_long_for_tests";
 process.env.PORT = process.env.PORT || "5000";
 
+if (typeof jest !== "undefined") {
+  jest.setTimeout(60000);
+}
+

@@ -47,7 +47,8 @@ beforeAll(async () => {
   await User.syncIndexes();
   await Space.syncIndexes();
   await Reel.syncIndexes();
-});
+}, 60000);
+
 
 afterAll(async () => {
   await mongoose.disconnect();
