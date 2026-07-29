@@ -15,6 +15,10 @@ import {
   checkIfBookmarked,
   removeBookmark,
 } from "../../controllers/courses/bookmarkController.js";
+import {
+  getCourseProgress,
+  updateCourseProgress,
+} from "../../controllers/analytics/analyticsController.js";
 import { protect } from "../../middlewares/authMiddleware.js";
 import {
   cacheMiddleware,
@@ -48,6 +52,8 @@ router.get("/bookmarks", protect, getBookmarkedCourses);
 router.post("/:courseId/bookmark", protect, toggleCourseBookmark);
 router.get("/:courseId/bookmark/check", protect, checkIfBookmarked);
 router.delete("/:courseId/bookmark", protect, removeBookmark);
+router.get("/:id/progress", protect, getCourseProgress);
+router.post("/:id/progress", protect, updateCourseProgress);
 
 // Dynamic routes - cached for 15 minutes
 router.get(
