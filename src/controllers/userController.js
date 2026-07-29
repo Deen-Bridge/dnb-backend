@@ -4,6 +4,7 @@ import Course from "../models/Course.js";
 import Book from "../models/Book.js";
 import logger from "../config/logger.js";
 import { validateMagicBytes } from "../utils/fileValidation.js";
+import CourseProgress from "../models/CourseProgress.js";
 import { createFollowNotification, createUnfollowNotification } from "./notificationController.js";
 
 const PUBLIC_FIELDS = "name avatar bio role interests gender age country language";
@@ -544,6 +545,39 @@ export const getRecommendations = async (req, res) => {
       message: "Failed to fetch recommendations. Please try again.",
       error: error.message,
     });
+  }
+};
+
+export const getLearningDashboard = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { status = "in-progress" } = req.query;
+
+    const progressRecords = await CourseProgress.find({ user: userId })
+      .sort({ updatedAt: -1 })
+      .populate("course", "title thumbnail createdBy")
+      .lean();
+
+    const courses = progressRecords
+      .filter((record) => {
+        if (status === "completed") return record.percentComplete >= 100;
+        return record.percentComplete < 100;
+      })
+      .map((record) => ({
+        _id: record.course?._id,
+        title: record.course?.title || "Course",
+        thumbnail: record.course?.thumbnail || null,
+        percentComplete: record.percentComplete || 0,
+        lastLesson: record.lastLesson,
+        lastPositionSeconds: record.lastPositionSeconds || 0,
+        completedAt: record.completedAt,
+        updatedAt: record.updatedAt,
+      }));
+
+    res.status(200).json({ success: true, courses });
+  } catch (error) {
+    logger.error("Get learning dashboard error:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch learning dashboard" });
   }
 };
 

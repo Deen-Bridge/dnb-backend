@@ -47,6 +47,7 @@ import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
+import analyticsRoutes from "./src/routes/analytics/analyticsRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -187,6 +188,7 @@ app.use("/api/stellar/payment", stellarPaymentRoutes);
 app.use("/api/stellar/donation", stellarDonationRoutes);
 app.use("/api/payouts", payoutRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use("/api/analytics", analyticsRoutes);
 app.use("/admin/jobs", jobsRoutes);
 
 // ======================

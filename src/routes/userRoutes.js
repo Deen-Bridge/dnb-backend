@@ -14,6 +14,7 @@ import {
   checkIfFollowing,
   getRecommendations,
   getUserStats,
+  getLearningDashboard,
 } from "../controllers/userController.js";
 import { searchAll } from "../controllers/searchController.js";
 import {
@@ -131,5 +132,6 @@ router.get(
   cacheMiddleware(CACHE_TTL.USERS, userStatsCacheKey),
   getUserStats
 );
+router.get("/me/learning", protect, getLearningDashboard);
 
 export default router;
