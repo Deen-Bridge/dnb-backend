@@ -2,6 +2,12 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 import logger from "../../config/logger.js";
 import { observeHorizonDuration } from "../../config/metrics.js";
+import {
+  getAssetConfig,
+  getRegistry,
+  getDefaultAssetCode,
+  getSupportedCodes,
+} from "../../config/assets.js";
 
 import { client } from "./horizonClient.js";
 
@@ -11,12 +17,32 @@ const networkPassphrase =
     ? StellarSdk.Networks.PUBLIC
     : StellarSdk.Networks.TESTNET;
 
-const USDC_ISSUER =
-  NETWORK === "mainnet"
-    ? "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
-    : "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
-
+// Back-compat: USDC / USDC_ISSUER are now derived from the registry
+// instead of being hardcoded, but keep the same exported shape so
+// existing callers (and the path-payment flow, out of scope for #60)
+// keep working unchanged.
+const USDC_CONFIG = getAssetConfig("USDC", NETWORK);
+const USDC_ISSUER = USDC_CONFIG.issuer;
 const USDC = new StellarSdk.Asset("USDC", USDC_ISSUER);
+
+const DEFAULT_ASSET_CODE = getDefaultAssetCode(NETWORK);
+
+/**
+ * Resolve a StellarSdk.Asset instance from a registry asset code.
+ * Native assets (issuer === null, e.g. XLM) use Asset.native().
+ * Throws a clear error if the code isn't supported on this network.
+ */
+export const resolveAsset = (assetCode = DEFAULT_ASSET_CODE) => {
+  const config = getAssetConfig(assetCode, NETWORK);
+  if (!config) {
+    throw new Error(
+      `Unsupported asset code: ${assetCode}. Supported: ${getSupportedCodes(NETWORK).join(", ")}`
+    );
+  }
+  return config.issuer
+    ? new StellarSdk.Asset(config.code, config.issuer)
+    : StellarSdk.Asset.native();
+};
 
 const DONATION_WALLET_PUBLIC_KEY = process.env.DONATION_WALLET_PUBLIC_KEY || "";
 
@@ -49,11 +75,6 @@ async function timedHorizonCall(operation, fn) {
   }
 }
 
-/**
- * Convert a decimal amount (string or number) to stroops (BigInt, 7 decimals)
- * @param {string|number} amount - The amount to convert
- * @returns {BigInt} - Amount in stroops
- */
 export const toStroops = (amount) => {
   const [whole, frac = ""] = amount.toString().split(".");
   return (
@@ -62,11 +83,6 @@ export const toStroops = (amount) => {
   );
 };
 
-/**
- * Convert stroops (BigInt) back to a decimal amount string
- * @param {BigInt} stroops - Amount in stroops
- * @returns {string} - Decimal amount string
- */
 export const fromStroops = (stroops) => {
   const whole = stroops / STROOPS_PER_UNIT;
   const frac = (stroops % STROOPS_PER_UNIT)
@@ -86,6 +102,10 @@ const applySlippageStroops = (stroops, bps) => {
   return stroops + (stroops * BigInt(bps)) / 10000n;
 };
 
+// NOTE: findPaymentPaths / buildPathPaymentTransaction stay USDC-settled
+// on purpose. Issue #60 (this refactor) covers settling natively in any
+// registry asset; path-payment settlement into a chosen non-USDC asset is
+// issue #27's scope, to avoid duplicating that work.
 export const findPaymentPaths = async (sendAsset, destAmount) => {
   try {
     const records = await timedHorizonCall("strictReceivePaths", () =>
@@ -219,13 +239,22 @@ export const calculateFeeSplit = (
   };
 };
 
-export const buildSep7Uri = ({ destination, amount, memo }) => {
+export const buildSep7Uri = ({ destination, amount, memo, assetCode = DEFAULT_ASSET_CODE }) => {
+  const config = getAssetConfig(assetCode, NETWORK);
+  if (!config) {
+    throw new Error(`Unsupported asset code: ${assetCode}`);
+  }
+
   const params = new URLSearchParams({
     destination,
     amount: amount.toString(),
-    asset_code: "USDC",
-    asset_issuer: USDC_ISSUER,
   });
+
+  // Native XLM has no asset_code/asset_issuer in SEP-7 (omission means XLM).
+  if (config.issuer) {
+    params.set("asset_code", config.code);
+    params.set("asset_issuer", config.issuer);
+  }
 
   if (memo) {
     params.set("memo", memo);
@@ -244,16 +273,35 @@ export const isValidPublicKey = (publicKey) => {
   }
 };
 
+/**
+ * Summarize an account's XLM balance plus per-asset balances/trustlines
+ * for every issued asset in the registry (native XLM is handled
+ * separately since it never needs a trustline).
+ */
 const parseAccountSummary = (account) => {
-  const usdcBalance = account.balances?.find(
-    (b) => b.asset_code === "USDC" && b.asset_issuer === USDC_ISSUER
-  );
+  const registry = getRegistry(NETWORK);
+  const balances = {};
+  const trustlines = {};
+
+  for (const [code, cfg] of Object.entries(registry)) {
+    if (!cfg.issuer) continue; // native asset, no trustline concept
+    const found = account.balances?.find(
+      (b) => b.asset_code === cfg.code && b.asset_issuer === cfg.issuer
+    );
+    balances[code] = found?.balance || "0";
+    trustlines[code] = !!found;
+  }
+
   const xlmBalance = account.balances?.find((b) => b.asset_type === "native");
 
   return {
     xlmBalance: xlmBalance?.balance || "0",
-    usdcBalance: usdcBalance?.balance || "0",
-    hasTrustline: !!usdcBalance,
+    balances,
+    trustlines,
+    // Back-compat fields: existing callers expect a single USDC balance
+    // and a single hasTrustline flag.
+    usdcBalance: balances.USDC || "0",
+    hasTrustline: !!trustlines.USDC,
     subentryCount: account.subentry_count ?? 0,
   };
 };
@@ -270,14 +318,26 @@ export const getAccountBalance = async (publicKey) => {
       xlmBalance: summary.xlmBalance,
       usdcBalance: summary.usdcBalance,
       hasTrustline: summary.hasTrustline,
+      balances: summary.balances,
+      trustlines: summary.trustlines,
     };
   } catch (error) {
     if (error.response?.status === 404) {
+      const registry = getRegistry(NETWORK);
+      const balances = {};
+      const trustlines = {};
+      for (const [code, cfg] of Object.entries(registry)) {
+        if (!cfg.issuer) continue;
+        balances[code] = "0";
+        trustlines[code] = false;
+      }
       return {
         exists: false,
         xlmBalance: "0",
         usdcBalance: "0",
         hasTrustline: false,
+        balances,
+        trustlines,
       };
     }
     logger.error("Error fetching account balance:", error);
@@ -285,9 +345,6 @@ export const getAccountBalance = async (publicKey) => {
   }
 };
 
-// SEP-29: an account opts into requiring a memo on incoming payments by
-// setting a manageData entry with key "config.memo_required" (value is
-// conventionally "1", base64-encoded by Horizon like all data_attr values).
 export const MEMO_REQUIRED_DATA_KEY = "config.memo_required";
 
 export const isMemoRequired = (account) => {
@@ -310,8 +367,6 @@ export const PREFLIGHT_REASON_CODES = Object.freeze({
   DESTINATION_MEMO_REQUIRED: "destination_memo_required",
 });
 
-// Stellar protocol base reserve is 0.5 XLM per ledger entry (2 base entries
-// per account, plus one more per subentry: trustlines, offers, signers, data).
 const BASE_RESERVE_STROOPS = 5000000n;
 
 const loadAccountOrNull = async (publicKey) => {
@@ -328,10 +383,9 @@ const loadAccountOrNull = async (publicKey) => {
 };
 
 /**
- * Validate a prospective USDC payment before an unsigned XDR is built, so the
+ * Validate a prospective payment before an unsigned XDR is built, so the
  * wallet is never asked to sign something that will bounce on submission.
- * Only account-not-found is treated as a structured reason; other Horizon
- * errors (network, rate limit) propagate to the caller.
+ * assetCode defaults to the registry default (USDC) for back-compat.
  */
 export const preflightPayment = async ({
   sourcePublicKey,
@@ -339,9 +393,19 @@ export const preflightPayment = async ({
   amount,
   memo,
   operationCount = 1,
+  assetCode = DEFAULT_ASSET_CODE,
 }) => {
   const reasons = [];
   const warnings = [];
+  const assetConfig = getAssetConfig(assetCode, NETWORK);
+
+  if (!assetConfig) {
+    reasons.push({
+      code: "unsupported_asset",
+      message: `Asset ${assetCode} is not supported. Supported: ${getSupportedCodes(NETWORK).join(", ")}`,
+    });
+    return { ok: false, reasons, warnings };
+  }
 
   const [sourceAccount, destinationAccount] = await Promise.all([
     loadAccountOrNull(sourcePublicKey),
@@ -356,12 +420,16 @@ export const preflightPayment = async ({
   } else {
     const summary = parseAccountSummary(sourceAccount);
     const requiredStroops = toStroops(amount);
-    const availableStroops = toStroops(summary.usdcBalance);
+    // Native XLM balance being spent is checked against xlmBalance; issued
+    // assets (USDC, EURC, ...) are checked against their own balance.
+    const availableStroops = assetConfig.issuer
+      ? toStroops(summary.balances[assetCode] || "0")
+      : toStroops(summary.xlmBalance);
 
     if (availableStroops < requiredStroops) {
       reasons.push({
         code: PREFLIGHT_REASON_CODES.SOURCE_INSUFFICIENT_BALANCE,
-        message: "Your wallet does not hold enough USDC to complete this payment.",
+        message: `Your wallet does not hold enough ${assetCode} to complete this payment.`,
       });
     }
 
@@ -386,12 +454,14 @@ export const preflightPayment = async ({
     });
   } else {
     const summary = parseAccountSummary(destinationAccount);
+    const hasRequiredTrustline = assetConfig.issuer
+      ? !!summary.trustlines[assetCode]
+      : true; // native XLM never needs a trustline
 
-    if (!summary.hasTrustline) {
+    if (!hasRequiredTrustline) {
       reasons.push({
         code: PREFLIGHT_REASON_CODES.DESTINATION_NO_TRUSTLINE,
-        message:
-          "Recipient needs to add a USDC trustline to their wallet before they can receive this payment.",
+        message: `Recipient needs to add a ${assetCode} trustline to their wallet before they can receive this payment.`,
       });
     }
 
@@ -417,8 +487,10 @@ export const buildPaymentTransaction = async ({
   amount,
   memo,
   applyPlatformFee = false,
+  assetCode = DEFAULT_ASSET_CODE,
 }) => {
   try {
+    const asset = resolveAsset(assetCode);
     const sourceAccount = await timedHorizonCall("loadAccount", () =>
       client.execute(server => server.loadAccount(sourcePublicKey))
     );
@@ -435,14 +507,14 @@ export const buildPaymentTransaction = async ({
         .addOperation(
           StellarSdk.Operation.payment({
             destination: destinationPublicKey,
-            asset: USDC,
+            asset,
             amount: feeSplit.creatorAmount,
           })
         )
         .addOperation(
           StellarSdk.Operation.payment({
             destination: feeSplit.platformWallet,
-            asset: USDC,
+            asset,
             amount: feeSplit.platformAmount,
           })
         );
@@ -450,7 +522,7 @@ export const buildPaymentTransaction = async ({
       builder.addOperation(
         StellarSdk.Operation.payment({
           destination: destinationPublicKey,
-          asset: USDC,
+          asset,
           amount: amount.toString(),
         })
       );
@@ -466,6 +538,7 @@ export const buildPaymentTransaction = async ({
       hash: transaction.hash().toString("hex"),
       networkPassphrase,
       feeSplit,
+      assetCode,
     };
   } catch (error) {
     logger.error("Error building payment transaction:", error);
@@ -478,8 +551,10 @@ export const buildReversePaymentTransaction = async ({
   destinationPublicKey,
   amount,
   originalTxHash,
+  assetCode = DEFAULT_ASSET_CODE,
 }) => {
   try {
+    const asset = resolveAsset(assetCode);
     const sourceAccount = await timedHorizonCall("loadAccount", () =>
       server.loadAccount(sourcePublicKey)
     );
@@ -492,7 +567,7 @@ export const buildReversePaymentTransaction = async ({
     builder.addOperation(
       StellarSdk.Operation.payment({
         destination: destinationPublicKey,
-        asset: USDC,
+        asset,
         amount: amount.toString(),
       })
     );
@@ -524,7 +599,6 @@ export const submitTransaction = async (signedXdr) => {
       networkPassphrase
     );
 
-    // Using mode: 'submit' and passing a verifyFn to safely handle timeouts
     const verifyFn = async () => {
       const ver = await verifyTransaction(transaction.hash().toString("hex"));
       if (ver.exists) {
@@ -547,7 +621,7 @@ export const submitTransaction = async (signedXdr) => {
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       if (codes.operations?.includes("op_underfunded")) {
-        throw new Error("Insufficient USDC balance");
+        throw new Error("Insufficient balance");
       }
       if (
         codes.operations?.some(
@@ -560,7 +634,7 @@ export const submitTransaction = async (signedXdr) => {
       }
       if (codes.operations?.includes("op_no_trust")) {
         throw new Error(
-          "Recipient does not have a USDC trustline. They need to add USDC to their wallet first."
+          "Recipient does not have a trustline for this asset. They need to add it to their wallet first."
         );
       }
       if (codes.operations?.includes("op_no_destination")) {
@@ -597,9 +671,14 @@ export const verifyTransaction = async (txHash) => {
   }
 };
 
-export const verifyPaymentOperations = async (txHash, expectedPayments) => {
+/**
+ * Verify that expected payments landed on-chain in the given asset.
+ * assetCode defaults to the registry default (USDC) for back-compat.
+ */
+export const verifyPaymentOperations = async (txHash, expectedPayments, assetCode = DEFAULT_ASSET_CODE) => {
   try {
     const verification = await verifyTransaction(txHash);
+    const assetConfig = getAssetConfig(assetCode, NETWORK);
 
     if (!verification.exists) {
       return { verified: false, transient: true, reason: "Transaction not found on network" };
@@ -608,16 +687,23 @@ export const verifyPaymentOperations = async (txHash, expectedPayments) => {
       return { verified: false, reason: "Transaction was not successful" };
     }
 
+    const matchesAsset = (op, codeField, issuerField, typeField) => {
+      if (!assetConfig.issuer) {
+        return op[typeField] === "native";
+      }
+      return op[codeField] === assetConfig.code && op[issuerField] === assetConfig.issuer;
+    };
+
     const paymentOps = verification.operations.filter((op) => {
       if (op.type === "payment") {
-        return (
-          op.asset_code === "USDC" && op.asset_issuer === USDC_ISSUER
-        );
+        return matchesAsset(op, "asset_code", "asset_issuer", "asset_type");
       }
       if (op.type === "path_payment_strict_receive") {
-        return (
-          op.destination_asset_code === "USDC" &&
-          op.destination_asset_issuer === USDC_ISSUER
+        return matchesAsset(
+          op,
+          "destination_asset_code",
+          "destination_asset_issuer",
+          "destination_asset_type"
         );
       }
       return false;
@@ -636,7 +722,7 @@ export const verifyPaymentOperations = async (txHash, expectedPayments) => {
       if (!match) {
         return {
           verified: false,
-          reason: `Missing expected USDC payment of ${expected.amount} to ${expected.destination}`,
+          reason: `Missing expected ${assetCode} payment of ${expected.amount} to ${expected.destination}`,
         };
       }
     }
@@ -648,14 +734,20 @@ export const verifyPaymentOperations = async (txHash, expectedPayments) => {
   }
 };
 
-export const hasUsdcTrustline = async (publicKey) => {
+export const hasTrustline = async (publicKey, assetCode = DEFAULT_ASSET_CODE) => {
+  const config = getAssetConfig(assetCode, NETWORK);
+  if (!config) return false;
+  if (!config.issuer) return true; // native XLM never needs a trustline
   try {
     const balance = await getAccountBalance(publicKey);
-    return balance.hasTrustline;
-  } catch (error) {
+    return !!balance.trustlines[assetCode];
+  } catch {
     return false;
   }
 };
+
+// Thin back-compat wrapper: existing callers use hasUsdcTrustline directly.
+export const hasUsdcTrustline = async (publicKey) => hasTrustline(publicKey, "USDC");
 
 export const getExplorerUrl = (txHash) => {
   const baseUrl =
@@ -673,7 +765,6 @@ export const getAccountExplorerUrl = (publicKey) => {
   return baseUrl + publicKey;
 };
 
-// Export client.endpoints[0].server as a fallback for other modules not yet refactored (e.g. payoutService)
 export const server = client.endpoints[0].server;
 
 export {
@@ -684,4 +775,5 @@ export {
   DONATION_WALLET_PUBLIC_KEY,
   PLATFORM_FEE_PERCENT,
   PLATFORM_WALLET_PUBLIC_KEY,
+  DEFAULT_ASSET_CODE,
 };

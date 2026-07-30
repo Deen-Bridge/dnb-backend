@@ -82,10 +82,10 @@ describe("Stellar service payment flow", () => {
   });
 
   it.each([
-    ["op_underfunded", "Insufficient USDC balance"],
+    ["op_underfunded", "Insufficient balance"],
     [
       "op_no_trust",
-      "Recipient does not have a USDC trustline. They need to add USDC to their wallet first.",
+      "Recipient does not have a trustline for this asset. They need to add it to their wallet first.",
     ],
     ["op_no_destination", "Destination account does not exist"],
   ])("maps %s to a clear submit error", async (operationCode, message) => {
@@ -191,12 +191,7 @@ describe("Stellar service payment flow", () => {
       ],
     });
 
-    await expect(getAccountBalance("GACCOUNT")).resolves.toEqual({
-      exists: true,
-      xlmBalance: "3.25",
-      usdcBalance: "44.5",
-      hasTrustline: true,
-    });
+    await expect(getAccountBalance("GACCOUNT")).resolves.toEqual({ exists: true, xlmBalance: "3.25", usdcBalance: "44.5", hasTrustline: true, balances: { USDC: "44.5", EURC: "0" }, trustlines: { USDC: true, EURC: false } });
     await expect(hasUsdcTrustline("GACCOUNT")).resolves.toBe(true);
   });
 
@@ -205,12 +200,7 @@ describe("Stellar service payment flow", () => {
     notFound.response = { status: 404 };
     jest.spyOn(server, "loadAccount").mockRejectedValue(notFound);
 
-    await expect(getAccountBalance("GMISSING")).resolves.toEqual({
-      exists: false,
-      xlmBalance: "0",
-      usdcBalance: "0",
-      hasTrustline: false,
-    });
+    await expect(getAccountBalance("GMISSING")).resolves.toEqual({ exists: false, xlmBalance: "0", usdcBalance: "0", hasTrustline: false, balances: { USDC: "0", EURC: "0" }, trustlines: { USDC: false, EURC: false } });
     await expect(hasUsdcTrustline("GMISSING")).resolves.toBe(false);
   });
 
