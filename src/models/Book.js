@@ -19,6 +19,24 @@ const bookSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  rating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5,
+  },
+  numReviews: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  ratingBreakdown: {
+    1: { type: Number, default: 0 },
+    2: { type: Number, default: 0 },
+    3: { type: Number, default: 0 },
+    4: { type: Number, default: 0 },
+    5: { type: Number, default: 0 },
+  },
   reviews: [
     {
       user: { 
@@ -27,7 +45,13 @@ const bookSchema = new mongoose.Schema({
         required: true 
       },
       comment: { type: String, required: true },
-      rating: { type: Number, required: true, min: 1, max: 5 },
+      rating: {
+          type: Number,
+          required: true,
+          min: 1,
+          max: 5,
+          validate: { validator: Number.isInteger, message: "Rating must be an integer" },
+        },
       createdAt: { type: Date, default: Date.now }
     }
   ],
@@ -57,7 +81,9 @@ const bookSchema = new mongoose.Schema({
 });
 
 bookSchema.index({ title: "text", description: "text", category: "text" }, { weights: { title: 5 } });
+bookSchema.index({ rating: -1 });
 
 const Book = mongoose.model("Book", bookSchema);
 
 export default Book;
+

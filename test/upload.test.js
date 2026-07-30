@@ -25,8 +25,11 @@ describe("Upload Routes", () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await mongoServer.stop();
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
   });
+
 
   describe("POST /api/uploads/signature", () => {
     it("should reject unauthenticated requests", async () => {
