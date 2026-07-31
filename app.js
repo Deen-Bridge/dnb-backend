@@ -6,7 +6,12 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import "./src/jobs/handlers.js";
 
-dotenv.config();
+// Load env vars, except in tests where test/jest.setup.js has already loaded
+// (and stripped) secrets — re-loading .env here would leak SMTP/REDIS creds
+// back into the test process and cause real network calls.
+if (process.env.NODE_ENV !== "test") {
+  dotenv.config();
+}
 
 import connectDB from "./src/config/db.js";
 import validateEnv from "./src/config/validateEnv.js";

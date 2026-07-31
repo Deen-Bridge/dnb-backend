@@ -30,7 +30,7 @@ describe("Course progress endpoints", () => {
       name: "Owner",
       email: "owner@example.com",
       password: "password123",
-      role: "tutor",
+      role: "mentor",
     });
     learner = await User.create({
       name: "Learner",

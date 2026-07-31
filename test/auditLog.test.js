@@ -10,6 +10,7 @@ import mongoose from "mongoose";
 import app from "../app.js";
 import AuditLog, { AUDIT_ACTIONS } from "../src/models/AuditLog.js";
 import User from "../src/models/User.js";
+import PendingUser from "../src/models/PendingUser.js";
 import Session from "../src/models/Session.js";
 import { redactMetadata } from "../src/services/audit/auditService.js";
 import jwt from "jsonwebtoken";
@@ -126,6 +127,13 @@ beforeAll(() => {
   jest.spyOn(User, "deleteMany").mockImplementation(async () => {
     usersStore = [];
     return { acknowledged: true };
+  });
+
+  // ── PendingUser mocks (registration stores a pending user awaiting email verification)
+  jest.spyOn(PendingUser, "findOneAndUpdate").mockImplementation(async (query, update) => {
+    const doc = makeUser(update);
+    usersStore.push(doc);
+    return doc;
   });
 
   // ── Session mocks ───────────────────────────────────────────────────────

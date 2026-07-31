@@ -154,7 +154,7 @@ export const registerUser = catchAsync(async (req, res, next) => {
   const verificationToken = crypto.randomBytes(32).toString("hex");
 
   // Store pending user (auto-deletes after 24h via TTL index)
-  await PendingUser.findOneAndUpdate(
+  const pendingUser = await PendingUser.findOneAndUpdate(
     { email },
     {
       name,
@@ -170,16 +170,13 @@ export const registerUser = catchAsync(async (req, res, next) => {
 
   recordAudit({
     action:     AUDIT_ACTIONS.AUTH_REGISTER_SUCCESS,
-    actor:      user._id,
+    actor:      pendingUser._id,
     req,
     targetType: "User",
-    targetId:   user._id.toString(),
+    targetId:   pendingUser._id.toString(),
     status:     "success",
     metadata:   { email, assignedRole, name },
   });
-
-  // Generate session and tokens
-  const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
 
   res.status(201).json({
     success: true,
