@@ -115,6 +115,14 @@ dashboard is available at `/admin/jobs`.
 | Stellar Wallet | `/api/stellar/wallet/*` |
 | Stellar Payments | `/api/stellar/payment/*` |
 
+### Machine-readable spec
+
+The full OpenAPI 3.1 contract for every mounted route lives in [`openapi.yaml`](openapi.yaml).
+Open it in any OpenAPI viewer (Swagger Editor, Redoc, Stoplight) or point a client generator
+at it. It documents auth requirements, path and query parameters, request bodies, response
+schemas and status codes, reusable schemas for the core models, the standard error shape, and
+the endpoints whose response envelope is still non-standard.
+
 ## 🌊 Contributing & Drips Wave
 
 This repository participates in the **[Stellar Drips Wave](https://www.drips.network/wave/stellar)** bounty program — contributors earn Points (and real rewards) for resolving this repo's issues during a Wave, with complexity tiers set in the Drips Wave app.

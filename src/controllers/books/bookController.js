@@ -11,7 +11,7 @@ export const createBook = async (req, res) => {
   logger.info("Creating book with data:", req.body);
   logger.info("Files received:", req.files);
   try {
-    const { title, category, price, readCount, rating, description } = req.body;
+    const { title, category, price, readCount, description } = req.body;
 
     if (!req.files || !req.files.thumbnail || !req.files.file)
       return res
@@ -68,7 +68,6 @@ export const createBook = async (req, res) => {
       price,
       description,
       readCount,
-      rating,
       image: thumbnailUpload.secure_url,
       fileUrl: fileUpload.secure_url,
       filePublicId: fileUpload.public_id,
@@ -148,42 +147,12 @@ export const deleteBook = async (req, res) => {
 
 // review books
 
-export const addBookReview = async (req, res) => {
-  const { rating, comment } = req.body;
-  const book = await Book.findById(req.params.id);
-
-  if (!book) {
-    return res.status(404).json({ success: false, message: "Book not found" });
-  }
-
-  // Optional: Prevent duplicate reviews by the same user
-  const alreadyReviewed = book.reviews.find(
-    (r) => r.user.toString() === req.user._id.toString()
-  );
-  if (alreadyReviewed) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Book already reviewed by this user" });
-  }
-
-  const review = {
-    user: req.user._id,
-    comment,
-    rating: Number(rating),
-  };
-
-  book.reviews.push(review);
-
-  // Optionally update average rating and review count
-  book.rating =
-    book.reviews.reduce((acc, item) => item.rating + acc, 0) /
-    book.reviews.length;
-
-  await book.save();
-  res
-    .status(201)
-    .json({ success: true, message: "Review added", reviews: book.reviews });
-};
+export {
+  addBookReview,
+  getBookReviews,
+  updateBookReview,
+  deleteBookReview,
+} from "../reviewController.js";
 
 // recommended books for user based on their profile interest
 export const fetchRecommendedBooks = async (req, res) => {

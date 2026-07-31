@@ -7,6 +7,9 @@ import {
   getCoursesByUser,
   updateCourse,
   addCourseReview,
+  getCourseReviews,
+  updateCourseReview,
+  deleteCourseReview,
   fetchRecommendedCourses,
 } from "../../controllers/courses/courseController.js";
 import {
@@ -55,6 +58,9 @@ router.delete("/:courseId/bookmark", protect, removeBookmark);
 router.get("/:id/progress", protect, getCourseProgress);
 router.post("/:id/progress", protect, updateCourseProgress);
 
+// Review listing route
+router.get("/:id/reviews", getCourseReviews);
+
 // Dynamic routes - cached for 15 minutes
 router.get(
   "/:id",
@@ -82,6 +88,42 @@ router.post(
   addCourseReview
 );
 router.put(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  updateCourseReview
+);
+router.patch(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  updateCourseReview
+);
+router.put(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  updateCourseReview
+);
+router.patch(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  updateCourseReview
+);
+router.delete(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  deleteCourseReview
+);
+router.delete(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  deleteCourseReview
+);
+router.put(
   "/:id",
   protect,
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
@@ -89,3 +131,4 @@ router.put(
 );
 
 export default router;
+

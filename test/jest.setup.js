@@ -15,3 +15,13 @@ if (fs.existsSync(envPath)) {
 
 // Force NODE_ENV to test to ensure we don't accidentally connect to production
 process.env.NODE_ENV = "test";
+for (const variable of ["MONGO_URI", "JWT_SECRET", "PORT"]) {
+  if (!process.env[variable]) {
+    throw new Error(`${variable} must be set when running tests`);
+  }
+}
+
+if (typeof jest !== "undefined") {
+  jest.setTimeout(60000);
+}
+
