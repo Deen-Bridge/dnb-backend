@@ -41,14 +41,25 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["student", "tutor"],
+      enum: ["student", "mentor", "admin"],
       default: "student",
     },
     isActive: {
       type: Boolean,
       default: true,
     },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+
     lastLogin: {
+      type: Date,
+    },
+    resetTokenHash: {
+      type: String,
+    },
+    resetTokenExpiry: {
       type: Date,
     },
     // Follow system
@@ -133,6 +144,11 @@ const userSchema = new mongoose.Schema(
     },
   },
   { timestamps: true }
+);
+
+userSchema.index(
+  { name: "text", bio: "text", interests: "text" },
+  { language_override: "lang", default_language: "none" }
 );
 
 export default mongoose.model("User", userSchema);

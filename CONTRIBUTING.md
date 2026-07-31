@@ -4,28 +4,32 @@ Thank you for your interest in contributing to Deen Bridge! We welcome contribut
 
 ## Drips Wave Program
 
-This repository participates in the **Stellar Drips Wave** bounty program. Contributors can earn rewards by completing issues tagged with Wave labels.
+This repository participates in the **Stellar Drips Wave** bounty program. Contributors can earn rewards by resolving issues during Wave cycles. Everyone is welcome to contribute — no religious background or knowledge is required; our issues are regular engineering tasks.
 
 ### How It Works
 
-1. **Find an Issue**: Look for issues with `wave:X` labels (where X is the point value)
-2. **Claim the Issue**: Comment on the issue to express interest
-3. **Submit a PR**: Complete the work and submit a pull request
-4. **Earn Points**: Once merged, you earn points that translate to rewards
+1. **Find an Issue**: During an active Wave, browse this repo's issues in the [Drips Wave app](https://www.drips.network/wave)
+2. **Apply**: Apply to work on the issue through the Drips Wave app; the maintainer reviews applications and assigns one contributor
+3. **Submit a PR**: Complete the work and open a pull request (base branch `dev`) before the Wave ends
+4. **Earn Points**: Once the issue is marked resolved during the Wave, you earn its Points, which convert to rewards from the Wave pool
 
-### Point Labels
+### Complexity & Points
 
-| Label | Points | Typical Scope |
-|-------|--------|---------------|
-| `wave:1` | 1 point | Documentation, typos, small fixes |
-| `wave:2` | 2 points | Bug fixes, minor features, API improvements |
-| `wave:3` | 3 points | New features, significant improvements |
-| `wave:4` | 4 points | Complex features, architectural changes |
+Points are assigned per issue by the maintainer in the Drips Wave dashboard using Drips' three complexity tiers:
+
+| Complexity | Points | Typical Scope                              |
+|------------|--------|--------------------------------------------|
+| Trivial    | 100    | Typos, small bug fixes, minor copy changes |
+| Medium     | 150    | Standard features or involved bug fixes    |
+| High       | 200    | Complex features, refactors, integrations  |
+
+Issues carry `complexity:trivial`, `complexity:medium`, or `complexity:high` labels that mirror these tiers.
 
 ### Wave Rules
 
-- One contributor per issue (first come, first served)
+- One contributor per issue — apply through the Drips Wave app; the maintainer reviews all applications and selects who is assigned
 - PRs must be linked to the issue
+- **PRs must target the `dev` branch** (not `main`)
 - Code must pass all tests
 - Follow the coding standards below
 
@@ -60,11 +64,21 @@ cp .env.example .env
 npm run dev
 ```
 
+## Branching Strategy
+
+| Branch | Purpose                                                        |
+|--------|----------------------------------------------------------------|
+| `main` | Stable, production-ready code — releases only                  |
+| `dev`  | Active development — **all pull requests must target `dev`**   |
+
+Maintainers periodically merge `dev` into `main` for releases. Pull requests opened against `main` will be asked to retarget `dev`.
+
 ### Making Changes
 
-1. Create a branch from `main`:
+1. Create a branch from the latest `dev`:
    ```bash
-   git checkout -b feature/your-feature-name
+   git fetch upstream
+   git checkout -b feature/your-feature-name upstream/dev
    ```
 
 2. Make your changes following our coding standards
@@ -79,7 +93,7 @@ npm run dev
    git commit -m "feat: add transaction retry logic"
    ```
 
-5. Push and create a PR:
+5. Push and create a PR **with `dev` as the base branch**:
    ```bash
    git push origin feature/your-feature-name
    ```
@@ -122,11 +136,12 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Pull Request Guidelines
 
-1. **Title**: Use conventional commit format
-2. **Description**: Explain what and why
-3. **Link Issue**: Reference the issue number (`Closes #123`)
-4. **Testing**: Describe how you tested
-5. **API Changes**: Document any endpoint changes
+1. **Base Branch**: open the PR against `dev`, never `main`
+2. **Title**: Use conventional commit format
+3. **Description**: Explain what and why
+4. **Link Issue**: Reference the issue number (`Closes #123`)
+5. **Testing**: Describe how you tested
+6. **API Changes**: Document any endpoint changes
 
 ## Issue Guidelines
 
@@ -170,7 +185,7 @@ When working on Stellar-related features:
 - Be respectful and inclusive
 - Welcome newcomers
 - Focus on constructive feedback
-- Follow Islamic principles of brotherhood
+- Contributors of all backgrounds and faiths are welcome
 
 ## Questions?
 

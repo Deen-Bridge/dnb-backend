@@ -11,8 +11,18 @@ import {
 
 const router = express.Router();
 
-// SSE endpoint for real-time notifications
-router.get("/sse", protect, sseNotifications);
+// Accept token from query param (EventSource can't set custom headers)
+const sseAuth = async (req, res, next) => {
+  const token = req.query.token;
+  if (!token) {
+    return res.status(401).json({ success: false, message: "No token, authorization denied" });
+  }
+  req.headers.authorization = `Bearer ${token}`;
+  protect(req, res, next);
+};
+
+// SSE endpoint for real-time notifications (uses query-param auth)
+router.get("/sse", sseAuth, sseNotifications);
 
 // Get user notifications
 router.get("/", protect, getUserNotifications);

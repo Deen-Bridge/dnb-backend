@@ -17,6 +17,7 @@ jspm_packages/
 
 # Environment variables
 .env
+.env.test
 
 # Build output
 dist/
@@ -25,3 +26,11 @@ build/
 # IDE files
 .vscode/
 .DS_Store
+
+# Spec & Agent temporary docs
+Tasks.md
+Memory.md
+Handoff.md
+PRD.md
+Architecture.md
+scratch/

@@ -1,5 +1,6 @@
 // models/Transaction.js
 import mongoose from "mongoose";
+import { getSupportedCodes } from "../config/assets.js";
 
 const transactionSchema = new mongoose.Schema(
   {
@@ -13,7 +14,13 @@ const transactionSchema = new mongoose.Schema(
     stellarLedger: {
       type: Number,
     },
-
+    // Transaction kind: item purchase or sadaqah donation
+    type: {
+      type: String,
+      enum: ["purchase", "donation"],
+      default: "purchase",
+      index: true,
+    },
     // Parties involved
     buyer: {
       type: mongoose.Schema.Types.ObjectId,
@@ -28,59 +35,98 @@ const transactionSchema = new mongoose.Schema(
     creator: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
       index: true,
     },
     creatorWallet: {
       type: String,
       required: true,
     },
-
-    // Item being purchased
+    // Item being purchased (not applicable to donations)
     itemType: {
       type: String,
       enum: ["book", "course"],
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
     },
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
       refPath: "itemTypeModel",
     },
     itemTypeModel: {
       type: String,
       enum: ["Book", "Course"],
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
     },
     itemTitle: {
       type: String,
-      required: true,
+      required: function () {
+        return this.type !== "donation";
+      },
     },
-
     // Payment details
     amount: {
       type: String, // Store as string to preserve precision
       required: true,
     },
+    // Widened from a USDC-only enum to the full asset registry; existing
+    // rows with no currency set default to "USDC" so nothing breaks.
     currency: {
       type: String,
       default: "USDC",
-      enum: ["USDC"],
+      enum: getSupportedCodes(),
     },
+    // Issuer for the settled currency (null for native XLM). Separate from
+    // sendAsset below, which is the asset the *buyer* sent in a path payment.
+    assetIssuer: {
+      type: String,
+      default: null,
+    },
+    sendAsset: {
+      code: { type: String },
+      issuer: { type: String },
+    },
+    sendMax: { type: String },
     network: {
       type: String,
       enum: ["testnet", "mainnet"],
       required: true,
     },
-
+    // Platform fee split (only set when a fee was applied at build time)
+    platformFee: {
+      feePercent: Number,
+      platformWallet: String,
+      platformAmount: String, // Stored as string to preserve precision
+      creatorAmount: String,
+    },
+    // Settlement mode: direct payment to creator or platform collect for payouts
+    settlement: {
+      type: String,
+      enum: ["direct", "platform_collect"],
+      default: "direct",
+      index: true,
+    },
     // Status tracking
     status: {
       type: String,
-      enum: ["pending", "submitted", "confirmed", "failed", "expired"],
+      enum: ["pending", "submitted", "retrying", "confirmed", "failed", "expired", "refunded", "disputed"],
       default: "pending",
       index: true,
     },
-
+    // Refund linkage
+    refund: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Refund",
+      default: null,
+    },
     // Error handling
     failureReason: {
       type: String,
@@ -89,7 +135,6 @@ const transactionSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-
     // Timestamps
     submittedAt: Date,
     confirmedAt: Date,
@@ -100,11 +145,10 @@ const transactionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 // Indexes for efficient queries
 transactionSchema.index({ buyer: 1, status: 1 });
 transactionSchema.index({ creator: 1, status: 1 });
 transactionSchema.index({ itemType: 1, itemId: 1 });
+transactionSchema.index({ type: 1, status: 1, createdAt: -1 }); // Donation stats
 transactionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL for expired pending
-
 export default mongoose.model("Transaction", transactionSchema);

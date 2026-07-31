@@ -1,6 +1,8 @@
 import app from "./app.js";
 import logger from "./src/config/logger.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
+import { startJobs, stopJobs } from "./src/jobs/queue.js";
+import "./src/jobs/handlers.js";
 
 const PORT = process.env.PORT || 5000;
 
@@ -18,12 +20,33 @@ const server = app.listen(PORT, () => {
   logger.info(`Process ID: ${process.pid}`);
 });
 
+startJobs().catch((err) => logger.error(err, "Background job startup failed"));
+
+// Start payment ingestion worker if enabled
+let stopIngestionWorker;
+if (process.env.INGESTION_WORKER_ENABLED === "true") {
+  import("./src/workers/paymentIngestionWorker.js").then(
+    ({ startIngestionWorker, stopIngestionWorker: stopFn }) => {
+      stopIngestionWorker = stopFn;
+      startIngestionWorker().catch((err) =>
+        logger.error(err, "Ingestion worker startup failed")
+      );
+    }
+  );
+}
+
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
 
   server.close(async () => {
     logger.info("HTTP server closed");
+
+    await stopJobs();
+
+    if (stopIngestionWorker) {
+      await stopIngestionWorker();
+    }
 
     // Close Redis connection
     await closeRedis();
