@@ -4,6 +4,7 @@ import request from "supertest";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import User from "../src/models/User.js";
+import PendingUser from "../src/models/PendingUser.js";
 import Book from "../src/models/Book.js";
 import Space from "../src/models/Space.js";
 import Course from "../src/models/Course.js";
@@ -32,14 +33,15 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
 
   beforeEach(async () => {
     await User.deleteMany({});
+    await PendingUser.deleteMany({});
     await Book.deleteMany({});
     await Space.deleteMany({});
     await Course.deleteMany({});
   });
 
   describe("User Model Role Enum Validation", () => {
-    it("accepts valid canonical roles: student, tutor, mentor, admin, arbiter", async () => {
-      const validRoles = ["student", "tutor", "mentor", "admin", "arbiter"];
+    it("accepts valid canonical roles: student, mentor, admin", async () => {
+      const validRoles = ["student", "mentor", "admin"];
       for (const role of validRoles) {
         const u = await User.create({
           name: `User ${role}`,
@@ -89,7 +91,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
           req.user = { role: "student" };
           next();
         },
-        restrictTo("mentor", "tutor", "admin"),
+        restrictTo("mentor", "admin"),
         (_req, res) => res.status(200).json({ success: true })
       );
 
@@ -101,7 +103,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
   });
 
   describe("Registration Anti-Privilege Escalation", () => {
-    it("prevents self-assignment of admin or arbiter roles during registration", async () => {
+    it("prevents self-assignment of admin during registration", async () => {
       const app = express();
       app.use(express.json());
       app.post("/register", registerUser);
@@ -115,23 +117,40 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       });
 
       expect(resAdmin.status).toBe(201);
-      const createdAdminUser = await User.findOne({ email: "self_admin@example.com" });
+      const createdAdminUser = await PendingUser.findOne({ email: "self_admin@example.com" });
       expect(createdAdminUser.role).toBe("student");
 
-      // Attempt to register as arbiter
+      // Attempt to register with a non-existent privileged role
       const resArbiter = await request(app).post("/register").send({
         name: "Self Arbiter",
         email: "self_arbiter@example.com",
         password: "password123",
-        role: "arbiter",
+        role: "moderator",
       });
 
       expect(resArbiter.status).toBe(201);
-      const createdArbiterUser = await User.findOne({ email: "self_arbiter@example.com" });
+      const createdArbiterUser = await PendingUser.findOne({ email: "self_arbiter@example.com" });
       expect(createdArbiterUser.role).toBe("student");
     });
 
-    it("allows tutor or mentor roles during registration", async () => {
+    it("allows mentor role during registration", async () => {
+      const app = express();
+      app.use(express.json());
+      app.post("/register", registerUser);
+
+      const resMentor = await request(app).post("/register").send({
+        name: "Self Mentor",
+        email: "self_mentor@example.com",
+        password: "password123",
+        role: "mentor",
+      });
+
+      expect(resMentor.status).toBe(201);
+      const createdMentorUser = await PendingUser.findOne({ email: "self_mentor@example.com" });
+      expect(createdMentorUser.role).toBe("mentor");
+    });
+
+    it("downgrades tutor registration attempts to student", async () => {
       const app = express();
       app.use(express.json());
       app.post("/register", registerUser);
@@ -144,8 +163,8 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       });
 
       expect(resTutor.status).toBe(201);
-      const createdTutorUser = await User.findOne({ email: "self_tutor@example.com" });
-      expect(createdTutorUser.role).toBe("tutor");
+      const createdTutorUser = await PendingUser.findOne({ email: "self_tutor@example.com" });
+      expect(createdTutorUser.role).toBe("student");
     });
   });
 
@@ -164,7 +183,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
         name: "Author",
         email: "author_auth@example.com",
         password: "password123",
-        role: "tutor",
+        role: "mentor",
       });
 
       adminUser = await User.create({

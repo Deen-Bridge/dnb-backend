@@ -89,17 +89,17 @@ export const createBook = async (req, res) => {
 
 // get all books in the store
 export const getBooks = async (req, res) => {
-  const books = await Book.find().populate("author").populate("reviews.user"); // populate all author fields
-  res.json(books);
+  const books = await Book.find().populate("author", "name avatar bio").populate("reviews.user", "name avatar");
+  res.json({ success: true, books });
 };
 
 // get a particular book
 export const getBook = async (req, res) => {
   const book = await Book.findById(req.params.id)
-    .populate("author")
-    .populate("reviews.user"); // populate all author fields
-  if (!book) return res.status(404).json({ error: "Book not found" });
-  res.json(book);
+    .populate("author", "name avatar bio")
+    .populate("reviews.user", "name avatar");
+  if (!book) return res.status(404).json({ success: false, message: "Book not found" });
+  res.json({ success: true, book });
 };
 
 // get books created by the author
@@ -111,7 +111,7 @@ export const getBooksByAuthor = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing author id" });
     }
-    const books = await Book.find({ author: authorId }).populate("author");
+    const books = await Book.find({ author: authorId }).populate("author", "name avatar bio");
     if (!books || books.length === 0) {
       return res
         .status(200)

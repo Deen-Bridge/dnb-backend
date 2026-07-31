@@ -53,5 +53,20 @@ export const authorizeRoles = (...roles) => {
   };
 };
 
+export const requireVerified = (req, res, next) => {
+  if (!req.user) {
+    return res
+      .status(401)
+      .json({ success: false, message: "Not authenticated" });
+  }
+  if (!req.user.isVerified) {
+    return res.status(403).json({
+      success: false,
+      message: "Please verify your email before accessing this resource.",
+    });
+  }
+  next();
+};
+
 export const restrictTo = (...roles) => authorizeRoles(...roles);
 export const authorize = (...roles) => authorizeRoles(...roles);

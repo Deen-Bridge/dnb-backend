@@ -63,7 +63,7 @@ export const getCourses = async (_req, res) => {
 // 📘 Get a single course
 export const getCourseById = async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id).populate("createdBy");
+    const course = await Course.findById(req.params.id).populate("createdBy", "name avatar bio");
     if (!course)
       return res
         .status(404)
@@ -99,7 +99,7 @@ export const getCoursesByUser = async (req, res) => {
     }
 
     logger.info("✅ Finding courses...");
-    const courses = await Course.find({ createdBy }).populate("createdBy");
+    const courses = await Course.find({ createdBy }).populate("createdBy", "name avatar bio");
 
     if (!courses || courses.length === 0) {
       return res

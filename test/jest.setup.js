@@ -15,6 +15,18 @@ if (fs.existsSync(envPath)) {
 
 // Force NODE_ENV to test to ensure we don't accidentally connect to production
 process.env.NODE_ENV = "test";
+
+// Prevent tests from sending real emails or connecting to external services
+for (const variable of [
+  "SMTP_USER",
+  "SMTP_PASS",
+  "SMTP_HOST",
+  "REDIS_URL",
+  "ADMIN_EMAILS",
+]) {
+  delete process.env[variable];
+}
+
 for (const variable of ["MONGO_URI", "JWT_SECRET", "PORT"]) {
   if (!process.env[variable]) {
     throw new Error(`${variable} must be set when running tests`);

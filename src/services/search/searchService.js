@@ -137,7 +137,7 @@ export const searchEducators = async ({ q, interest, page = 1, limit = 10 }) => 
   const skip = (validPage - 1) * validLimit;
   const parsedLimit = validLimit;
   
-  let query = { role: "tutor" };
+  let query = { role: "mentor" };
   if (q) {
     if (q.length < 3) {
        const safeQ = escapeRegex(q);

@@ -15,7 +15,8 @@ import { registry, metricsMiddleware, observeHttpDuration } from "./src/config/m
 
 import {
   helmetMiddleware,
-  apiLimiter,
+  standardLimiter,
+  generousLimiter,
   authLimiter,
   mongoSanitizeMiddleware,
   hppMiddleware,
@@ -45,6 +46,7 @@ import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
+import notificationRoutes from "./src/routes/notificationRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
 import auditRoutes from "./src/routes/admin/auditRoutes.js";
@@ -167,27 +169,30 @@ app.get("/health", (req, res) => {
 // SEP-1 stellar.toml — must be outside /api rate limiter
 app.use("/.well-known", wellKnownRoutes);
 
-app.use("/api", apiLimiter);
-
-// Auth routes
+// Auth routes — strict
 app.use("/api/auth", authLimiter, authRoutes);
 
-// Other API routes
-app.use("/api/courses", courseRoutes);
-app.use("/api/reels", reelsRoute);
-app.use("/api/books", bookRoutes);
-app.use("/api/books", recommendedBooksRoutes);
-app.use("/api/spaces", spacesRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/email", emailRoutes);
-app.use("/api/purchase", purchaseRoutes);
-app.use("/api/search", searchRoutes);
-app.use("/api/calls", callRoutes);
-app.use("/api/stellar/wallet", stellarWalletRoutes);
-app.use("/api/stellar/payment", stellarPaymentRoutes);
-app.use("/api/stellar/donation", stellarDonationRoutes);
-app.use("/api/payouts", payoutRoutes);
-app.use("/api/uploads", uploadRoutes);
+// Mutation routes — standard limiter
+app.use("/api/email", standardLimiter, emailRoutes);
+app.use("/api/purchase", standardLimiter, purchaseRoutes);
+app.use("/api/uploads", standardLimiter, uploadRoutes);
+app.use("/api/payouts", standardLimiter, payoutRoutes);
+
+// Read-heavy & content routes — generous limiter
+app.use("/api/courses", generousLimiter, courseRoutes);
+app.use("/api/reels", generousLimiter, reelsRoute);
+app.use("/api/books", generousLimiter, bookRoutes);
+app.use("/api/books", generousLimiter, recommendedBooksRoutes);
+app.use("/api/spaces", generousLimiter, spacesRoutes);
+app.use("/api/users", generousLimiter, userRoutes);
+app.use("/api/search", generousLimiter, searchRoutes);
+app.use("/api/calls", generousLimiter, callRoutes);
+app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
+app.use("/api/stellar/payment", generousLimiter, stellarPaymentRoutes);
+app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
+app.use("/api/notifications", generousLimiter, notificationRoutes);
+
+// Admin — no rate limit
 app.use("/admin/jobs", jobsRoutes);
 app.use("/api/admin/audit", auditRoutes);
 

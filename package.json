@@ -4,8 +4,8 @@
   "main": "app.js",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --forceExit",
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start": "node --import dotenv/config server.js",
+    "dev": "nodemon --import dotenv/config server.js",
     "seed": "node src/scripts/seedDatabase.js",
     "migrate:review-stats": "node src/migrations/backfillReviewStats.js",
     "test-redis": "node test-redis.js",
@@ -17,7 +17,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@emailjs/browser": "^4.4.1",
     "@stellar/stellar-sdk": "^16.0.1",
     "axios": "^1.9.0",
     "bcrypt": "^5.1.1",
@@ -40,6 +39,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.2",
     "multer-storage-cloudinary": "^4.0.0",
+    "nodemailer": "^9.0.3",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.1.3",

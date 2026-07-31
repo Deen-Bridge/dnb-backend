@@ -1,6 +1,6 @@
 import express from "express";
 import logger from "../config/logger.js";
-import sendMail from "../../services/emails/sendMail.js";
+import { sendOtpEmail } from "../../services/emails/sendMail.js";
 const router = express.Router();
 export const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -14,7 +14,7 @@ router.post("/", async (req, res) => {
   if (!email) return res.status(400).json({ message: "Email is required" });
 
   try {
-    await sendMail(generatedOtp, email);
+    await sendOtpEmail(generatedOtp, email);
 
     res.json({ success: true, otp: generatedOtp, message: "OTP sent" });
   } catch (error) {

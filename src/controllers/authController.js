@@ -3,8 +3,9 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import User from "../models/User.js";
+import PendingUser from "../models/PendingUser.js";
 import Session from "../models/Session.js";
-import sendMail from "../../services/emails/sendMail.js";
+import { sendOtpEmail, sendVerificationEmail } from "../../services/emails/sendMail.js";
 import { generatedOtp } from "../routes/emailRoutes.js";
 import logger from "../config/logger.js";
 import { enqueue } from "../jobs/queue.js";
@@ -128,25 +129,44 @@ export const registerUser = catchAsync(async (req, res, next) => {
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 12);
 
-  // Prevent self-assignment of privileged roles (admin, arbiter)
-  const allowedSelfRegistrationRoles = ["student", "tutor", "mentor"];
-  const assignedRole = allowedSelfRegistrationRoles.includes(role) ? role : "student";
+  // Users can only self-register as student or mentor. Privileged roles
+  // (admin) can never be self-assigned — they are granted only to accounts
+  // whose email is on the ADMIN_EMAILS whitelist.
+  const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
 
-  // Create user
-  const user = await User.create({
-    name,
-    email,
-    password: hashedPassword,
-    role: assignedRole,
-  });
+  const allowedSelfRegistrationRoles = ["student", "mentor"];
+  let assignedRole = allowedSelfRegistrationRoles.includes(role) ? role : "student";
 
-  await enqueue(
-    "sendOtpEmail",
-    { userId: user._id.toString(), otp: generatedOtp },
-    { attempts: 5, backoffMs: 1000, idempotencyKey: `otp:${user._id}:${generatedOtp}` }
+  if (ADMIN_EMAILS.includes(email.toLowerCase())) {
+    assignedRole = "admin";
+    logger.info(`👑 Whitelisted admin account registering: ${email}`);
+  } else if (!allowedSelfRegistrationRoles.includes(role)) {
+    logger.warn(
+      `⛔ Blocked invalid role attempt: ${email} tried to register as "${role}"`
+    );
+    assignedRole = "student";
+  }
+
+  // Generate verification token
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+
+  // Store pending user (auto-deletes after 24h via TTL index)
+  await PendingUser.findOneAndUpdate(
+    { email },
+    {
+      name,
+      email,
+      password: hashedPassword,
+      role: assignedRole,
+      verificationToken,
+    },
+    { upsert: true, new: true },
   );
 
-  logger.info(`✅ User registered successfully: ${email} (ID: ${user._id})`);
+  await sendVerificationEmail(email, verificationToken);
 
   recordAudit({
     action:     AUDIT_ACTIONS.AUTH_REGISTER_SUCCESS,
@@ -163,16 +183,94 @@ export const registerUser = catchAsync(async (req, res, next) => {
 
   res.status(201).json({
     success: true,
-    message: "User created successfully",
+    message:
+      "Please check your email to verify your account. The link expires in 24 hours.",
+  });
+});
+
+export const verifyEmail = catchAsync(async (req, res, next) => {
+  const { token } = req.params;
+
+  if (!token) {
+    return next(new APIError("Verification token is required", 400));
+  }
+
+  // Find the pending user by token
+  const pending = await PendingUser.findOne({ verificationToken: token });
+
+  if (!pending) {
+    return next(new APIError("Invalid or expired verification token. Please register again.", 400));
+  }
+
+  // Check for duplicate (e.g., if another registration happened in the meantime)
+  const existing = await User.findOne({ email: pending.email });
+  if (existing) {
+    await PendingUser.deleteOne({ _id: pending._id });
+    return next(new APIError("This email is already registered. Please log in.", 400));
+  }
+
+  // Create the real user
+  const user = await User.create({
+    name: pending.name,
+    email: pending.email,
+    password: pending.password,
+    role: pending.role,
+    isVerified: true,
+  });
+
+  // Remove the pending record
+  await PendingUser.deleteOne({ _id: pending._id });
+
+  // Generate session and tokens so user is logged in immediately
+  const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
+
+  logger.info(`✅ Email verified & user created: ${user.email} (ID: ${user._id})`);
+
+  res.status(200).json({
+    success: true,
+    message: "Email verified successfully. Welcome to DeenBridge!",
     accessToken,
     refreshToken,
-    token: accessToken, // legacy token field
+    token: accessToken,
     user: {
       id: user._id,
       name: user.name,
       role: user.role,
       email: user.email,
+      isVerified: true,
     },
+  });
+});
+
+export const resendVerification = catchAsync(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return next(new APIError("Email is required", 400));
+  }
+
+  const pending = await PendingUser.findOne({ email });
+
+  if (!pending) {
+    // Check if user is already fully registered
+    const user = await User.findOne({ email });
+    if (user) {
+      return next(new APIError("This email is already verified. Please log in.", 400));
+    }
+    return next(new APIError("No pending registration found with this email. Please register first.", 404));
+  }
+
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+  pending.verificationToken = verificationToken;
+  await pending.save();
+
+  await sendVerificationEmail(email, verificationToken);
+
+  logger.info(`📧 Verification email resent to: ${email}`);
+
+  res.status(200).json({
+    success: true,
+    message: "Verification email sent. Please check your inbox.",
   });
 });
 
@@ -218,6 +316,18 @@ export const loginUser = catchAsync(async (req, res, next) => {
     return next(new APIError("Invalid credentials", 401));
   }
 
+  // Auto-promote whitelisted admin emails (self-healing for existing accounts)
+  const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (ADMIN_EMAILS.includes(user.email.toLowerCase()) && user.role !== "admin") {
+    user.role = "admin";
+    await user.save({ validateBeforeSave: false });
+    logger.info(`👑 Promoted ${user.email} to admin (whitelisted account)`);
+  }
+
   // Update last login
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
@@ -255,6 +365,7 @@ export const loginUser = catchAsync(async (req, res, next) => {
       language: user.language,
       interests: user.interests,
       bio: user.bio,
+      isVerified: user.isVerified,
     },
   });
 });
@@ -292,7 +403,7 @@ export const requestPasswordReset = async (req, res) => {
 
     // Send OTP via email with error handling to preserve anti-enumeration and clear orphaned tokens
     try {
-      await sendMail(otp, email);
+      await sendOtpEmail(otp, email);
     } catch (mailErr) {
       logger.error("❌ Password reset email delivery error:", mailErr.message);
       user.resetTokenHash = undefined;
@@ -472,6 +583,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
       language: session.user.language,
       interests: session.user.interests,
       bio: session.user.bio,
+      isVerified: session.user.isVerified,
     },
   });
 });

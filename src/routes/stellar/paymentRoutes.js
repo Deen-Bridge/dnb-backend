@@ -44,14 +44,14 @@ router.post("/refunds/:refundId/reject", rejectRefund);
 router.post("/refunds/:refundId/dispute", escalateDispute);
 router.patch(
   "/refunds/:refundId/arbitrate",
-  authorizeRoles("admin", "arbiter"),
+  authorizeRoles("admin"),
   arbitrateDispute
 );
 
 // Admin reconciliation status
 router.get(
   "/reconciliation/status",
-  authorizeRoles("admin", "arbiter"),
+  authorizeRoles("admin"),
   reconciliationStatus
 );
 
