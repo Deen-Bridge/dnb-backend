@@ -72,7 +72,7 @@ router.get(
 router.post(
   "/",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createCourse
 );
 router.post(

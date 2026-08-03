@@ -42,7 +42,7 @@ router.post(
     { name: "thumbnail", maxCount: 1 },
     { name: "file", maxCount: 1 },
   ]),
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createBook
 );
 
@@ -84,7 +84,7 @@ router.get(
 router.delete(
   "/:id",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.BOOK}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   deleteBook
 );
 

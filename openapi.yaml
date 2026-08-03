@@ -46,6 +46,8 @@ tags:
     description: Book library, preview streaming, reviews and bookmarks
   - name: Spaces
     description: Live and upcoming spaces, waitlists
+  - name: Educators
+    description: Content-derived educator directory with contribution counts
   - name: Reels
     description: Short video feed, reactions, comments, shares and views
   - name: Search
@@ -1127,6 +1129,35 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/educators:
+    get:
+      tags: [Educators]
+      summary: List educators derived from published content
+      description: |
+        There is no standalone "educators" collection. The directory is built
+        from real content: course creators, book authors and space hosts are
+        aggregated by user, deduped by _id, and each person gets per-type
+        contribution counts plus a total. Results are sorted by total (then
+        name). `meta` holds the full-roster totals used for header stats.
+      security: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          description: Filter roster to contributors of a given content type.
+          schema:
+            type: string
+            enum: [all, courses, books, spaces]
+            default: all
+        - name: search
+          in: query
+          required: false
+          description: Case-insensitive match against name or bio.
+          schema:
+            type: string
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
   /api/spaces:
     get:
       tags: [Spaces]
