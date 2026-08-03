@@ -55,6 +55,7 @@ import notificationRoutes from "./src/routes/notificationRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
 import auditRoutes from "./src/routes/admin/auditRoutes.js";
+import educatorRoutes from "./src/routes/educatorRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -192,6 +193,7 @@ app.use("/api/spaces", generousLimiter, spacesRoutes);
 app.use("/api/users", generousLimiter, userRoutes);
 app.use("/api/search", generousLimiter, searchRoutes);
 app.use("/api/calls", generousLimiter, callRoutes);
+app.use("/api/educators", generousLimiter, educatorRoutes);
 app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
 app.use("/api/stellar/payment", generousLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);

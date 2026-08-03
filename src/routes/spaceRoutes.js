@@ -51,7 +51,7 @@ router.post(
   "/",
   protect,
   upload.fields([{ name: "thumbnail", maxCount: 1 }]),
-  invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createSpace
 );
 
@@ -75,7 +75,7 @@ router.put(
 router.delete(
   "/:id",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`, `${CACHE_KEYS.SPACE}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`, `${CACHE_KEYS.SPACE}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   deleteSpace
 );
 
