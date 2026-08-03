@@ -25,6 +25,8 @@ const getTransporter = () => {
     host,
     port,
     secure: port === 465,
+    family: 4,
+    connectionTimeout: 20000,
     auth: { user, pass },
   });
 
