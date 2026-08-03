@@ -1,4 +1,3 @@
-import nodemailer from "nodemailer";
 import logger from "../../src/config/logger.js";
 
 const NODE_ENV = () => process.env.NODE_ENV || "development";
@@ -6,32 +5,10 @@ const FRONTEND_URL = () => process.env.FRONTEND_URL || "http://localhost:3000";
 const ASSET_URL = () =>
   process.env.EMAIL_ASSET_URL || `${FRONTEND_URL()}/images`;
 
-const getTransporter = () => {
-  const host = process.env.SMTP_HOST || "smtp.gmail.com";
-  const port = parseInt(process.env.SMTP_PORT, 10) || 587;
-  const user = process.env.SMTP_USER || "";
-  const pass = process.env.SMTP_PASS || "";
-  // Gmail rejects sends where "From" isn't the authenticated account
-  // (553 Sender address rejected). Default to the SMTP user so a wrong or
-  // missing SMTP_FROM can't silently break every email.
-  const from = process.env.SMTP_FROM || user || "noreply@deenbridge.com";
+const RESEND_API_URL = () =>
+  process.env.RESEND_API_URL || "https://api.resend.com/emails";
 
-  if (!user || !pass) {
-    logger.warn("SMTP_USER/SMTP_PASS not set — emails will be logged");
-    return { transporter: null, from };
-  }
-
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    family: 4,
-    connectionTimeout: 20000,
-    auth: { user, pass },
-  });
-
-  return { transporter, from };
-};
+const getFrom = () => process.env.EMAIL_FROM || "onboarding@resend.dev";
 
 const emailShell = ({ content, preheader }) => `
 <!DOCTYPE html>
@@ -100,17 +77,32 @@ const primaryButton = (href, label) => `
 `;
 
 const sendMail = async ({ to, subject, html }) => {
-  const { transporter, from } = getTransporter();
+  const apiKey = process.env.RESEND_API_KEY || "";
+  const from = getFrom();
 
-  if (!transporter) {
+  if (!apiKey) {
+    logger.warn("RESEND_API_KEY not set — emails will be logged");
     logger.info(`[EMAIL LOG] To: ${to} | Subject: ${subject} | Body: ${html}`);
     return;
   }
 
   try {
-    const info = await transporter.sendMail({ from, to, subject, html });
-    logger.info(`Email sent to ${to}: ${info.messageId}`);
-    return info;
+    const response = await fetch(RESEND_API_URL(), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ from, to, subject, html }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        `Resend API ${response.status}: ${JSON.stringify(payload)}`
+      );
+    }
+    logger.info(`Email sent to ${to}: ${payload.id}`);
+    return payload;
   } catch (error) {
     logger.error("Failed to send email:", error.message);
     if (NODE_ENV() === "development") {

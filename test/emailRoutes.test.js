@@ -3,7 +3,7 @@ import request from "supertest";
 import app from "../app.js";
 import logger from "../src/config/logger.js";
 
-// SMTP creds are stripped by test/jest.setup.js, so sendMail logs the email
+// RESEND_API_KEY is stripped by test/jest.setup.js, so sendMail logs the email
 // body via [EMAIL LOG] instead of delivering. That lets us inspect the code.
 
 const extractOtpFromLog = (logCalls) => {

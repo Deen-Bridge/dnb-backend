@@ -23,6 +23,8 @@ for (const variable of [
   "SMTP_HOST",
   "REDIS_URL",
   "ADMIN_EMAILS",
+  "RESEND_API_KEY",
+  "RESEND_API_URL",
 ]) {
   delete process.env[variable];
 }

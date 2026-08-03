@@ -39,7 +39,6 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.2",
     "multer-storage-cloudinary": "^4.0.0",
-    "nodemailer": "^9.0.3",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.1.3",
