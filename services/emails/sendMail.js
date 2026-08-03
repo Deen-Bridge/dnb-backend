@@ -11,7 +11,10 @@ const getTransporter = () => {
   const port = parseInt(process.env.SMTP_PORT, 10) || 587;
   const user = process.env.SMTP_USER || "";
   const pass = process.env.SMTP_PASS || "";
-  const from = process.env.SMTP_FROM || "noreply@deenbridge.com";
+  // Gmail rejects sends where "From" isn't the authenticated account
+  // (553 Sender address rejected). Default to the SMTP user so a wrong or
+  // missing SMTP_FROM can't silently break every email.
+  const from = process.env.SMTP_FROM || user || "noreply@deenbridge.com";
 
   if (!user || !pass) {
     logger.warn("SMTP_USER/SMTP_PASS not set — emails will be logged");

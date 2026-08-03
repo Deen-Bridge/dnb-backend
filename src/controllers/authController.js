@@ -6,7 +6,6 @@ import User from "../models/User.js";
 import PendingUser from "../models/PendingUser.js";
 import Session from "../models/Session.js";
 import { sendOtpEmail, sendVerificationEmail } from "../../services/emails/sendMail.js";
-import { generatedOtp } from "../routes/emailRoutes.js";
 import logger from "../config/logger.js";
 import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
