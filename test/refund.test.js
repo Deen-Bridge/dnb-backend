@@ -105,7 +105,7 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     buyer = await User.create({
       name: "Buyer Student",
       email: "buyer@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       role: "student",
       stellarWallet: { publicKey: buyerWallet },
       purchasedCourses: [],
@@ -114,7 +114,7 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     educator = await User.create({
       name: "Educator Tutor",
       email: "tutor@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       role: "tutor",
       stellarWallet: { publicKey: educatorWallet },
     });
@@ -122,7 +122,7 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     otherUser = await User.create({
       name: "Other User",
       email: "other@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       role: "student",
       stellarWallet: { publicKey: otherWallet },
     });
@@ -130,7 +130,7 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     adminUser = await User.create({
       name: "Admin Arbiter",
       email: "admin@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       role: "admin",
     });
 

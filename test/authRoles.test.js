@@ -46,7 +46,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
         const u = await User.create({
           name: `User ${role}`,
           email: `${role}@example.com`,
-          password: "password123",
+          password: "Qx7#vLmp92Zt",
           role,
         });
         expect(u.role).toBe(role);
@@ -58,7 +58,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
         User.create({
           name: "Hacker User",
           email: "hacker@example.com",
-          password: "password123",
+          password: "Qx7#vLmp92Zt",
           role: "superadmin_hacker",
         })
       ).rejects.toThrow();
@@ -112,7 +112,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       const resAdmin = await request(app).post("/register").send({
         name: "Self Admin",
         email: "self_admin@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         role: "admin",
       });
 
@@ -124,7 +124,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       const resArbiter = await request(app).post("/register").send({
         name: "Self Arbiter",
         email: "self_arbiter@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         role: "moderator",
       });
 
@@ -141,7 +141,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       const resMentor = await request(app).post("/register").send({
         name: "Self Mentor",
         email: "self_mentor@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         role: "mentor",
       });
 
@@ -158,7 +158,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       const resTutor = await request(app).post("/register").send({
         name: "Self Tutor",
         email: "self_tutor@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         role: "tutor",
       });
 
@@ -175,21 +175,21 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       studentUser = await User.create({
         name: "Student",
         email: "student_auth@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         role: "student",
       });
 
       authorUser = await User.create({
         name: "Author",
         email: "author_auth@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         role: "mentor",
       });
 
       adminUser = await User.create({
         name: "Admin",
         email: "admin_auth@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         role: "admin",
       });
 

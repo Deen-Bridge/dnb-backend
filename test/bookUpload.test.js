@@ -37,7 +37,7 @@ describe("Media Upload Hardening", () => {
       return "https://example.com/signed-url";
     });
 
-    const authRes = await request(app).post("/api/auth/register").send({ name: "Uploader", email: "uploader@example.com", password: "password", role: "student" });
+    const authRes = await request(app).post("/api/auth/register").send({ name: "Uploader", email: "uploader@example.com", password: "Qx7#vLmp92Zt", role: "student" });
     token = authRes.body.accessToken;
     testUser = authRes.body.user;
   });
@@ -113,7 +113,7 @@ describe("Media Upload Hardening", () => {
       filePublicId: "paid_public_id"
     });
 
-    const authRes = await request(app).post("/api/auth/register").send({ name: "Poor", email: "poor@example.com", password: "password", role: "student" });
+    const authRes = await request(app).post("/api/auth/register").send({ name: "Poor", email: "poor@example.com", password: "Qx7#vLmp92Zt", role: "student" });
     
     const res = await request(app)
       .get(`/api/books/${book._id}/preview`)

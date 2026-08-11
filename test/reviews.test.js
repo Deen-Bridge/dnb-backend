@@ -37,7 +37,7 @@ describe("Reviews & Ratings API (Course and Book)", () => {
     author = await User.create({
       name: "Author User",
       email: "author@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       avatar: "https://example.com/avatar_author.png",
       role: "tutor",
     });
@@ -46,7 +46,7 @@ describe("Reviews & Ratings API (Course and Book)", () => {
     enrolledUser = await User.create({
       name: "Enrolled Student",
       email: "enrolled@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       avatar: "https://example.com/avatar_enrolled.png",
       role: "student",
     });
@@ -55,7 +55,7 @@ describe("Reviews & Ratings API (Course and Book)", () => {
     purchaserUser = await User.create({
       name: "Purchaser User",
       email: "purchaser@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       avatar: "https://example.com/avatar_purchaser.png",
       role: "student",
     });
@@ -64,7 +64,7 @@ describe("Reviews & Ratings API (Course and Book)", () => {
     randomUser = await User.create({
       name: "Random Bystander",
       email: "random@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       avatar: "https://example.com/avatar_random.png",
       role: "student",
     });
@@ -73,7 +73,7 @@ describe("Reviews & Ratings API (Course and Book)", () => {
     adminUser = await User.create({
       name: "Admin User",
       email: "admin@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       avatar: "https://example.com/avatar_admin.png",
       role: "admin",
     });
