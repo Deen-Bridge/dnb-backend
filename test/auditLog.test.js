@@ -261,7 +261,7 @@ describe("Audit row written on register", () => {
     const res = await request(app).post("/api/auth/register").send({
       name:     "Alice",
       email:    "alice@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       role:     "student",
     });
 
@@ -285,7 +285,7 @@ describe("Audit row written on register", () => {
     await request(app).post("/api/auth/register").send({
       name:     "Bob",
       email:    "bob@example.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
     });
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -293,7 +293,7 @@ describe("Audit row written on register", () => {
     const res = await request(app).post("/api/auth/register").send({
       name:     "Bob Again",
       email:    "bob@example.com",
-      password: "password456",
+      password: "Qx7#vLmp92Zt",
     });
 
     expect(res.statusCode).toBe(400);

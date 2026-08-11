@@ -11,6 +11,7 @@ import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 import { generateOtp, hashOtp, verifyOtp } from "../utils/otp.js";
+import { firstPasswordIssue } from "../utils/passwordPolicy.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 
@@ -108,6 +109,23 @@ export const registerUser = catchAsync(async (req, res, next) => {
   const { name, email, password, role } = req.body;
 
   logger.info(`📝 Registration attempt for: ${email}`);
+
+  // Enforce the password policy before anything else touches it. The client
+  // shows the same rules live, but that check is bypassable.
+  const passwordIssue = firstPasswordIssue(password, { name, email });
+  if (passwordIssue) {
+    logger.warn(`❌ Registration failed - weak password: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "weak_password" },
+    });
+    return next(new APIError(passwordIssue, 400));
+  }
 
   // Check if user already exists
   const existing = await User.findOne({ email });
@@ -437,6 +455,13 @@ export const resetPassword = async (req, res) => {
 
     if (!email || !otp || !newPassword) {
       return res.status(400).json({ success: false, message: "Email, OTP, and new password are required" });
+    }
+
+    // Same policy as registration — a reset must not be a way around it.
+    const newPasswordIssue = firstPasswordIssue(newPassword, { email });
+    if (newPasswordIssue) {
+      logger.warn(`❌ Password reset failed - weak password: ${email}`);
+      return res.status(400).json({ success: false, message: newPasswordIssue });
     }
 
     const user = await User.findOne({ email }).select("+password");

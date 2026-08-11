@@ -34,9 +34,9 @@ beforeEach(async () => {
   ]);
 
   await User.create([
-    { _id: userId1, name: "John Doe", email: "john@example.com", password: "password", role: "tutor", bio: "React expert and tutor.", interests: ["React", "JavaScript"] },
-    { _id: userId2, name: "Jane Smith", email: "jane@example.com", password: "password", role: "tutor", bio: "Cooking master.", interests: ["Cooking"] },
-    { name: "Student Bob", email: "bob@example.com", password: "password", role: "student" }
+    { _id: userId1, name: "John Doe", email: "john@example.com", password: "Qx7#vLmp92Zt", role: "tutor", bio: "React expert and tutor.", interests: ["React", "JavaScript"] },
+    { _id: userId2, name: "Jane Smith", email: "jane@example.com", password: "Qx7#vLmp92Zt", role: "tutor", bio: "Cooking master.", interests: ["Cooking"] },
+    { name: "Student Bob", email: "bob@example.com", password: "Qx7#vLmp92Zt", role: "student" }
   ]);
   
   // Wait for indexes to build

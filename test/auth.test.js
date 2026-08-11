@@ -10,7 +10,7 @@ import Session from "../src/models/Session.js";
 const testUser = {
   name: "Test Rotation User",
   email: "test_rotation@example.com",
-  password: "password123",
+  password: "Qx7#vLmp92Zt",
   role: "student",
 };
 

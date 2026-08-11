@@ -68,14 +68,14 @@ describe("Payment Reconciliation Service", () => {
     buyer = await User.create({
       name: "Buyer",
       email: "buyer@test.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       stellarWallet: { publicKey: makeKey("BUYER") },
     });
 
     author = await User.create({
       name: "Author",
       email: "author@test.com",
-      password: "password123",
+      password: "Qx7#vLmp92Zt",
       stellarWallet: { publicKey: makeKey("AUTHOR") },
     });
 

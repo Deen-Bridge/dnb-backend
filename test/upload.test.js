@@ -18,7 +18,7 @@ describe("Upload Routes", () => {
 
     const authRes = await request(app)
       .post("/api/auth/register")
-      .send({ name: "Uploader", email: "uploader@example.com", password: "password", role: "student" });
+      .send({ name: "Uploader", email: "uploader@example.com", password: "Qx7#vLmp92Zt", role: "student" });
     token = authRes.body.accessToken;
     testUserId = authRes.body.user._id || authRes.body.user.id;
   });
@@ -75,7 +75,7 @@ describe("Upload Routes", () => {
     it("should return 403 if user tries to update another user's profile", async () => {
       const otherAuthRes = await request(app)
         .post("/api/auth/register")
-        .send({ name: "Other", email: "other@example.com", password: "password", role: "student" });
+        .send({ name: "Other", email: "other@example.com", password: "Qx7#vLmp92Zt", role: "student" });
       
       const otherUserId = otherAuthRes.body.user._id || otherAuthRes.body.user.id;
 
