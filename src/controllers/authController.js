@@ -63,8 +63,25 @@ const getDeviceLabel = (userAgent) => {
   return `${browser} on ${os}`;
 };
 
+// Helper: shape the public user object returned by every auth response.
+// Kept in one place so email login, register, and Stellar login stay identical.
+export const shapeAuthUser = (user) => ({
+  id: user._id,
+  name: user.name,
+  role: user.role,
+  email: user.email,
+  avatar: user.avatar,
+  gender: user.gender,
+  age: user.age,
+  country: user.country,
+  language: user.language,
+  interests: user.interests,
+  bio: user.bio,
+  isVerified: user.isVerified,
+});
+
 // Helper: generate new session + refresh token + cookie + access token
-const createSessionAndTokens = async (user, req, res) => {
+export const createSessionAndTokens = async (user, req, res) => {
   const rawRefreshToken = crypto.randomBytes(32).toString("hex");
   const refreshTokenHash = crypto.createHash("sha256").update(rawRefreshToken).digest("hex");
   

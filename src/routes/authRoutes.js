@@ -13,6 +13,10 @@ import {
   verifyEmail,
   resendVerification,
 } from "../controllers/authController.js";
+import {
+  getStellarChallenge,
+  verifyStellarChallenge,
+} from "../controllers/stellar/sep10Controller.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import { refreshLimiter } from "../middlewares/security.js";
 
@@ -26,21 +30,10 @@ router.post("/reset-password", resetPassword);
 router.get("/verify-email/:token", verifyEmail);
 router.post("/resend-verification", resendVerification);
 
-// Stellar SEP-10 auth — not yet implemented
-router.get("/stellar/challenge", (req, res) => {
-  res.status(503).json({
-    success: false,
-    message:
-      "Sign in with Stellar is not available yet. Please use email login.",
-  });
-});
-router.post("/stellar/verify", (req, res) => {
-  res.status(503).json({
-    success: false,
-    message:
-      "Sign in with Stellar is not available yet. Please use email login.",
-  });
-});
+// Stellar SEP-10 Web Authentication ("Sign in with Stellar"). Returns 503 when
+// the feature is unconfigured (SEP10_SIGNING_SECRET/domains unset). See #25.
+router.get("/stellar/challenge", getStellarChallenge);
+router.post("/stellar/verify", verifyStellarChallenge);
 
 // Token refresh route with dedicated refresh rate limit
 router.post("/refresh", refreshLimiter, refreshSession);

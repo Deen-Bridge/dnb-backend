@@ -2,6 +2,7 @@ import {
   USDC_ISSUER,
   networkPassphrase,
 } from "./stellarService.js";
+import { getSigningPublicKey } from "./sep10Service.js";
 
 const CURRENCIES = [
   {
@@ -37,8 +38,11 @@ export function buildStellarToml() {
   }
 
   // ── SEP endpoint hooks ──
-  // Emit SIGNING_KEY only if it is a valid public key starting with G; never emit secret seeds or invalid values
-  const signingKey = process.env.SIGNING_KEY;
+  // SIGNING_KEY: prefer the live SEP-10 signing key so stellar.toml and the auth
+  // service can never drift apart; fall back to an explicit SIGNING_KEY env for
+  // setups that publish the key without enabling the endpoint. Never emit secret
+  // seeds or invalid values.
+  const signingKey = getSigningPublicKey() || process.env.SIGNING_KEY;
   const isValidPublicKey =
     typeof signingKey === "string" && /^G[A-Z2-7]{55}$/.test(signingKey.trim());
 
@@ -47,7 +51,15 @@ export function buildStellarToml() {
   } else {
     lines.push(`# SIGNING_KEY = "G..."  # Populated by SEP-10 (#25)`);
   }
-  lines.push(`# WEB_AUTH_ENDPOINT = "..."  # Populated by SEP-10 (#25)`);
+  // WEB_AUTH_ENDPOINT: emit only when explicitly set (SEP10_WEB_AUTH_ENDPOINT),
+  // so we never advertise an endpoint that isn't the SEP-10 wire format. The
+  // DeenBridge frontend uses /api/auth/stellar/{challenge,verify} directly.
+  const webAuthEndpoint = process.env.SEP10_WEB_AUTH_ENDPOINT;
+  if (webAuthEndpoint && webAuthEndpoint.trim() !== "") {
+    lines.push(`WEB_AUTH_ENDPOINT = ${quoteTomlString(webAuthEndpoint.trim())}`);
+  } else {
+    lines.push(`# WEB_AUTH_ENDPOINT = "..."  # Set SEP10_WEB_AUTH_ENDPOINT to publish (#25)`);
+  }
   lines.push(`# TRANSFER_SERVER_SEP0024 = "..."  # Populated by SEP-24 (#46)`);
   lines.push(``);
 
