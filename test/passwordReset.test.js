@@ -112,10 +112,14 @@ describe("Password Reset Flow", () => {
   });
 
   const getSentOtp = () => {
-    const emailLog = loggerInfoSpy.mock.calls
+    // Registration now also sends a verification email, so multiple [EMAIL LOG]
+    // entries exist. Pick the most recent one that actually carries an OTP span.
+    const otpLog = loggerInfoSpy.mock.calls
       .map((call) => call[0])
-      .find((msg) => typeof msg === "string" && msg.includes("[EMAIL LOG]"));
-    const match = emailLog && emailLog.match(/#166534;">(\d+)<\/span>/);
+      .filter((msg) => typeof msg === "string" && msg.includes("[EMAIL LOG]"))
+      .reverse()
+      .find((msg) => /#166534;">(\d+)<\/span>/.test(msg));
+    const match = otpLog && otpLog.match(/#166534;">(\d+)<\/span>/);
     return match ? match[1] : null;
   };
 

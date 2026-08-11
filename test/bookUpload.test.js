@@ -10,6 +10,7 @@ import Book from "../src/models/Book.js";
 import cloudinary from "../src/utils/cloudinary.js";
 
 import * as fileValidation from "../src/utils/fileValidation.js";
+import { seedUserAndLogin } from "./helpers/testAuth.js";
 
 // Need realistic magic bytes for file-type detection
 const validPdfBytes = Buffer.from("%PDF-1.4\n%EOF\n");
@@ -37,9 +38,12 @@ describe("Media Upload Hardening", () => {
       return "https://example.com/signed-url";
     });
 
-    const authRes = await request(app).post("/api/auth/register").send({ name: "Uploader", email: "uploader@example.com", password: "Qx7#vLmp92Zt", role: "student" });
-    token = authRes.body.accessToken;
-    testUser = authRes.body.user;
+    const { token: authToken, user } = await seedUserAndLogin(app, {
+      name: "Uploader",
+      email: "uploader@example.com",
+    });
+    token = authToken;
+    testUser = user;
   });
 
   afterAll(async () => {
@@ -113,11 +117,14 @@ describe("Media Upload Hardening", () => {
       filePublicId: "paid_public_id"
     });
 
-    const authRes = await request(app).post("/api/auth/register").send({ name: "Poor", email: "poor@example.com", password: "Qx7#vLmp92Zt", role: "student" });
-    
+    const { token: poorToken } = await seedUserAndLogin(app, {
+      name: "Poor",
+      email: "poor@example.com",
+    });
+
     const res = await request(app)
       .get(`/api/books/${book._id}/preview`)
-      .set("Authorization", `Bearer ${authRes.body.accessToken}`);
+      .set("Authorization", `Bearer ${poorToken}`);
 
     expect(res.status).toBe(403);
     expect(res.body.message).toMatch(/do not have access/i);

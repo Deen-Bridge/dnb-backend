@@ -5,6 +5,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 
 import app from "../app.js";
 import cloudinary from "../src/utils/cloudinary.js";
+import { seedUserAndLogin } from "./helpers/testAuth.js";
 
 describe("Upload Routes", () => {
   jest.setTimeout(30000);
@@ -16,11 +17,12 @@ describe("Upload Routes", () => {
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
 
-    const authRes = await request(app)
-      .post("/api/auth/register")
-      .send({ name: "Uploader", email: "uploader@example.com", password: "Qx7#vLmp92Zt", role: "student" });
-    token = authRes.body.accessToken;
-    testUserId = authRes.body.user._id || authRes.body.user.id;
+    const { token: authToken, user } = await seedUserAndLogin(app, {
+      name: "Uploader",
+      email: "uploader@example.com",
+    });
+    token = authToken;
+    testUserId = user._id.toString();
   });
 
   afterAll(async () => {
@@ -73,11 +75,11 @@ describe("Upload Routes", () => {
     });
 
     it("should return 403 if user tries to update another user's profile", async () => {
-      const otherAuthRes = await request(app)
-        .post("/api/auth/register")
-        .send({ name: "Other", email: "other@example.com", password: "Qx7#vLmp92Zt", role: "student" });
-      
-      const otherUserId = otherAuthRes.body.user._id || otherAuthRes.body.user.id;
+      const { user: otherUser } = await seedUserAndLogin(app, {
+        name: "Other",
+        email: "other@example.com",
+      });
+      const otherUserId = otherUser._id.toString();
 
       const res = await request(app)
         .put(`/api/users/update/${otherUserId}`)
