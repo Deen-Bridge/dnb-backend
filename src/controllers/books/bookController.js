@@ -3,13 +3,15 @@ import Book from "../../models/Book.js";
 import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
 import logger from "../../config/logger.js";
+import { validateMagicBytes } from "../../utils/fileValidation.js";
+import { createNewBookNotification } from "../notificationController.js";
 
 //cretae a book
 export const createBook = async (req, res) => {
   logger.info("Creating book with data:", req.body);
   logger.info("Files received:", req.files);
   try {
-    const { title, category, price, readCount, rating, description } = req.body;
+    const { title, category, price, readCount, description } = req.body;
 
     if (!req.files || !req.files.thumbnail || !req.files.file)
       return res
@@ -21,6 +23,13 @@ export const createBook = async (req, res) => {
         success: false,
         message: "Not authorized, user not found or missing name",
       });
+    }
+
+    const isThumbnailValid = await validateMagicBytes(req.files.thumbnail[0].buffer, ["image/jpeg", "image/png", "image/webp"]);
+    const isFileValid = await validateMagicBytes(req.files.file[0].buffer, ["application/pdf", "application/epub+zip"]);
+
+    if (!isThumbnailValid || !isFileValid) {
+      return res.status(400).json({ success: false, message: "Invalid file content detected. Magic bytes do not match expected types.", data: null });
     }
 
     // Upload thumbnail to Cloudinary
@@ -38,7 +47,7 @@ export const createBook = async (req, res) => {
     // Upload book file to Cloudinary (as raw file)
     const fileUpload = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
-        { folder: "library-books/files", resource_type: "raw" },
+        { folder: "library-books/files", resource_type: "raw", type: "authenticated" },
         (error, result) => {
           if (error) reject(error);
           else resolve(result);
@@ -59,13 +68,20 @@ export const createBook = async (req, res) => {
       price,
       description,
       readCount,
-      rating,
       image: thumbnailUpload.secure_url,
       fileUrl: fileUpload.secure_url,
+      filePublicId: fileUpload.public_id,
     });
 
-    res.status(201).json({ success: true, book });
-  } catch (err) {
+    
+    // Emit new book notification asynchronously to followers
+    createNewBookNotification(book._id, req.user._id, book.title).catch((err) =>
+      logger.error("Error creating book notification:", err)
+    );
+    
+    res.status(201).json({ success: true, message: "Book created successfully", data: book });
+    
+      } catch (err) {
     logger.error("Book creation error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
@@ -73,17 +89,17 @@ export const createBook = async (req, res) => {
 
 // get all books in the store
 export const getBooks = async (req, res) => {
-  const books = await Book.find().populate("author").populate("reviews.user"); // populate all author fields
-  res.json(books);
+  const books = await Book.find().populate("author", "name avatar bio").populate("reviews.user", "name avatar");
+  res.json({ success: true, books });
 };
 
 // get a particular book
 export const getBook = async (req, res) => {
   const book = await Book.findById(req.params.id)
-    .populate("author")
-    .populate("reviews.user"); // populate all author fields
-  if (!book) return res.status(404).json({ error: "Book not found" });
-  res.json(book);
+    .populate("author", "name avatar bio")
+    .populate("reviews.user", "name avatar");
+  if (!book) return res.status(404).json({ success: false, message: "Book not found" });
+  res.json({ success: true, book });
 };
 
 // get books created by the author
@@ -95,7 +111,7 @@ export const getBooksByAuthor = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing author id" });
     }
-    const books = await Book.find({ author: authorId }).populate("author");
+    const books = await Book.find({ author: authorId }).populate("author", "name avatar bio");
     if (!books || books.length === 0) {
       return res
         .status(200)
@@ -109,48 +125,34 @@ export const getBooksByAuthor = async (req, res) => {
 
 // delete book by id
 export const deleteBook = async (req, res) => {
-  await Book.findByIdAndDelete(req.params.id);
-  res.json({ message: "Book deleted" });
+  try {
+    const book = await Book.findById(req.params.id);
+    if (!book) {
+      return res.status(404).json({ success: false, message: "Book not found" });
+    }
+
+    if (req.user.role !== "admin" && book.author.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this book",
+      });
+    }
+
+    await Book.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: "Book deleted" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // review books
 
-export const addBookReview = async (req, res) => {
-  const { rating, comment } = req.body;
-  const book = await Book.findById(req.params.id);
-
-  if (!book) {
-    return res.status(404).json({ success: false, message: "Book not found" });
-  }
-
-  // Optional: Prevent duplicate reviews by the same user
-  const alreadyReviewed = book.reviews.find(
-    (r) => r.user.toString() === req.user._id.toString()
-  );
-  if (alreadyReviewed) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Book already reviewed by this user" });
-  }
-
-  const review = {
-    user: req.user._id,
-    comment,
-    rating: Number(rating),
-  };
-
-  book.reviews.push(review);
-
-  // Optionally update average rating and review count
-  book.rating =
-    book.reviews.reduce((acc, item) => item.rating + acc, 0) /
-    book.reviews.length;
-
-  await book.save();
-  res
-    .status(201)
-    .json({ success: true, message: "Review added", reviews: book.reviews });
-};
+export {
+  addBookReview,
+  getBookReviews,
+  updateBookReview,
+  deleteBookReview,
+} from "../reviewController.js";
 
 // recommended books for user based on their profile interest
 export const fetchRecommendedBooks = async (req, res) => {
@@ -196,6 +198,13 @@ export const streamBookPreview = async (req, res) => {
       return res
         .status(403)
         .json({ success: false, message: "You do not have access to this book." });
+    }
+
+    if (book.filePublicId) {
+      const signedUrl = cloudinary.utils.private_download_url(book.filePublicId, "raw", {
+        expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+      });
+      return res.redirect(302, signedUrl);
     }
 
     const fileResponse = await axios.get(book.fileUrl, {

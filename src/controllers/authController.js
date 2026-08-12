@@ -3,11 +3,15 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import User from "../models/User.js";
+import PendingUser from "../models/PendingUser.js";
 import Session from "../models/Session.js";
-import sendMail from "../../services/emails/sendMail.js";
-import { generatedOtp } from "../routes/emailRoutes.js";
+import { sendOtpEmail, sendVerificationEmail } from "../../services/emails/sendMail.js";
 import logger from "../config/logger.js";
 import { enqueue } from "../jobs/queue.js";
+import { recordAudit } from "../services/audit/auditService.js";
+import { AUDIT_ACTIONS } from "../models/AuditLog.js";
+import { generateOtp, hashOtp, verifyOtp } from "../utils/otp.js";
+import { firstPasswordIssue } from "../utils/passwordPolicy.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 
@@ -59,8 +63,25 @@ const getDeviceLabel = (userAgent) => {
   return `${browser} on ${os}`;
 };
 
+// Helper: shape the public user object returned by every auth response.
+// Kept in one place so email login, register, and Stellar login stay identical.
+export const shapeAuthUser = (user) => ({
+  id: user._id,
+  name: user.name,
+  role: user.role,
+  email: user.email,
+  avatar: user.avatar,
+  gender: user.gender,
+  age: user.age,
+  country: user.country,
+  language: user.language,
+  interests: user.interests,
+  bio: user.bio,
+  isVerified: user.isVerified,
+});
+
 // Helper: generate new session + refresh token + cookie + access token
-const createSessionAndTokens = async (user, req, res) => {
+export const createSessionAndTokens = async (user, req, res) => {
   const rawRefreshToken = crypto.randomBytes(32).toString("hex");
   const refreshTokenHash = crypto.createHash("sha256").update(rawRefreshToken).digest("hex");
   
@@ -89,10 +110,11 @@ const createSessionAndTokens = async (user, req, res) => {
   );
 
   // Set Cookie scoped to refresh path
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("refreshToken", rawRefreshToken, {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
     maxAge: refreshDurationMs,
   });
@@ -105,47 +127,216 @@ export const registerUser = catchAsync(async (req, res, next) => {
 
   logger.info(`📝 Registration attempt for: ${email}`);
 
+  // Enforce the password policy before anything else touches it. The client
+  // shows the same rules live, but that check is bypassable.
+  const passwordIssue = firstPasswordIssue(password, { name, email });
+  if (passwordIssue) {
+    logger.warn(`❌ Registration failed - weak password: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "weak_password" },
+    });
+    return next(new APIError(passwordIssue, 400));
+  }
+
   // Check if user already exists
   const existing = await User.findOne({ email });
   if (existing) {
     logger.warn(`❌ Registration failed - Email already exists: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "email_already_exists" },
+    });
     return next(new APIError("Email already exists", 400));
   }
 
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 12);
 
-  // Create user
-  const user = await User.create({
-    name,
-    email,
-    password: hashedPassword,
-    role: role || "student",
-  });
+  // Users can only self-register as student or mentor. Privileged roles
+  // (admin) can never be self-assigned — they are granted only to accounts
+  // whose email is on the ADMIN_EMAILS whitelist.
+  const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
 
-  await enqueue(
-    "sendOtpEmail",
-    { userId: user._id.toString(), otp: generatedOtp },
-    { attempts: 5, backoffMs: 1000, idempotencyKey: `otp:${user._id}:${generatedOtp}` }
+  const allowedSelfRegistrationRoles = ["student", "mentor"];
+  let assignedRole = allowedSelfRegistrationRoles.includes(role) ? role : "student";
+
+  if (ADMIN_EMAILS.includes(email.toLowerCase())) {
+    assignedRole = "admin";
+    logger.info(`👑 Whitelisted admin account registering: ${email}`);
+  } else if (!allowedSelfRegistrationRoles.includes(role)) {
+    logger.warn(
+      `⛔ Blocked invalid role attempt: ${email} tried to register as "${role}"`
+    );
+    assignedRole = "student";
+  }
+
+  // Generate verification token
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+
+  // Store pending user (auto-deletes after 24h via TTL index)
+  const pendingUser = await PendingUser.findOneAndUpdate(
+    { email },
+    {
+      name,
+      email,
+      password: hashedPassword,
+      role: assignedRole,
+      verificationToken,
+    },
+    { upsert: true, new: true },
   );
 
-  logger.info(`✅ User registered successfully: ${email} (ID: ${user._id})`);
+  try {
+    await sendVerificationEmail(email, verificationToken);
+  } catch (err) {
+    // Email delivery failed (e.g. provider outage / disconnected sender).
+    // Roll back the pending record so the user can retry cleanly, and return a
+    // clear 503 rather than a generic 500 "Programming Error".
+    await PendingUser.deleteOne({ _id: pendingUser._id }).catch(() => {});
+    logger.error(`Verification email delivery failed for ${email}: ${err.message}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "verification_email_failed" },
+    });
+    return next(
+      new APIError(
+        "We couldn't send your verification email right now. Please try again in a few minutes.",
+        503
+      )
+    );
+  }
 
-  // Generate session and tokens
-  const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_REGISTER_SUCCESS,
+    actor:      pendingUser._id,
+    req,
+    targetType: "User",
+    targetId:   pendingUser._id.toString(),
+    status:     "success",
+    metadata:   { email, assignedRole, name },
+  });
 
   res.status(201).json({
     success: true,
-    message: "User created successfully",
+    message:
+      "Please check your email to verify your account. The link expires in 24 hours.",
+  });
+});
+
+export const verifyEmail = catchAsync(async (req, res, next) => {
+  const { token } = req.params;
+
+  if (!token) {
+    return next(new APIError("Verification token is required", 400));
+  }
+
+  // Find the pending user by token
+  const pending = await PendingUser.findOne({ verificationToken: token });
+
+  if (!pending) {
+    return next(new APIError("Invalid or expired verification token. Please register again.", 400));
+  }
+
+  // Check for duplicate (e.g., if another registration happened in the meantime)
+  const existing = await User.findOne({ email: pending.email });
+  if (existing) {
+    await PendingUser.deleteOne({ _id: pending._id });
+    return next(new APIError("This email is already registered. Please log in.", 400));
+  }
+
+  // Create the real user
+  const user = await User.create({
+    name: pending.name,
+    email: pending.email,
+    password: pending.password,
+    role: pending.role,
+    isVerified: true,
+  });
+
+  // Remove the pending record
+  await PendingUser.deleteOne({ _id: pending._id });
+
+  // Generate session and tokens so user is logged in immediately
+  const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
+
+  logger.info(`✅ Email verified & user created: ${user.email} (ID: ${user._id})`);
+
+  res.status(200).json({
+    success: true,
+    message: "Email verified successfully. Welcome to DeenBridge!",
     accessToken,
     refreshToken,
-    token: accessToken, // legacy token field
+    token: accessToken,
     user: {
       id: user._id,
       name: user.name,
       role: user.role,
       email: user.email,
+      isVerified: true,
     },
+  });
+});
+
+export const resendVerification = catchAsync(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return next(new APIError("Email is required", 400));
+  }
+
+  const pending = await PendingUser.findOne({ email });
+
+  if (!pending) {
+    // Check if user is already fully registered
+    const user = await User.findOne({ email });
+    if (user) {
+      return next(new APIError("This email is already verified. Please log in.", 400));
+    }
+    return next(new APIError("No pending registration found with this email. Please register first.", 404));
+  }
+
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+  pending.verificationToken = verificationToken;
+  await pending.save();
+
+  try {
+    await sendVerificationEmail(email, verificationToken);
+  } catch (err) {
+    // Provider outage / disconnected sender — return a clear 503 so the client
+    // can prompt a retry instead of surfacing a generic 500.
+    logger.error(`Verification email resend failed for ${email}: ${err.message}`);
+    return next(
+      new APIError(
+        "We couldn't resend your verification email right now. Please try again in a few minutes.",
+        503
+      )
+    );
+  }
+
+  logger.info(`📧 Verification email resent to: ${email}`);
+
+  res.status(200).json({
+    success: true,
+    message: "Verification email sent. Please check your inbox.",
   });
 });
 
@@ -163,6 +354,15 @@ export const loginUser = catchAsync(async (req, res, next) => {
   const user = await User.findOne({ email }).select("+password");
   if (!user) {
     logger.warn(`❌ Login failed - User not found: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_LOGIN_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "user_not_found" },
+    });
     return next(new APIError("Invalid credentials", 401));
   }
 
@@ -170,7 +370,28 @@ export const loginUser = catchAsync(async (req, res, next) => {
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
     logger.warn(`❌ Login failed - Incorrect password: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_LOGIN_FAILURE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "failure",
+      metadata:   { email, reason: "invalid_password" },
+    });
     return next(new APIError("Invalid credentials", 401));
+  }
+
+  // Auto-promote whitelisted admin emails (self-healing for existing accounts)
+  const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (ADMIN_EMAILS.includes(user.email.toLowerCase()) && user.role !== "admin") {
+    user.role = "admin";
+    await user.save({ validateBeforeSave: false });
+    logger.info(`👑 Promoted ${user.email} to admin (whitelisted account)`);
   }
 
   // Update last login
@@ -181,6 +402,16 @@ export const loginUser = catchAsync(async (req, res, next) => {
   const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
 
   logger.info(`✅ Login successful: ${email} (ID: ${user._id})`);
+
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_LOGIN_SUCCESS,
+    actor:      user._id,
+    req,
+    targetType: "User",
+    targetId:   user._id.toString(),
+    status:     "success",
+    metadata:   { email, role: user.role },
+  });
 
   res.status(200).json({
     success: true,
@@ -200,6 +431,7 @@ export const loginUser = catchAsync(async (req, res, next) => {
       language: user.language,
       interests: user.interests,
       bio: user.bio,
+      isVerified: user.isVerified,
     },
   });
 });
@@ -210,39 +442,59 @@ export const requestPasswordReset = async (req, res) => {
 
   try {
     logger.info("🔑 Password reset requested for:", email);
+
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ success: false, message: "Invalid email address" });
+    }
+
     const user = await User.findOne({ email });
 
     if (!user) {
       // Don't reveal if user exists or not for security
       return res.status(200).json({
+        success: true,
         message:
           "If an account exists with this email, you will receive a password reset code.",
       });
     }
 
     // Generate a 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateOtp();
 
-    // In production, you should:
-    // 1. Store the OTP in database with expiration time
-    // 2. Send email with OTP using your email service
-    // For now, we'll use the existing sendMail function
+    // Store OTP hash and expiry in database (15 minutes)
+    const hashedOtp = await hashOtp(otp);
+    user.resetTokenHash = hashedOtp;
+    user.resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
+    await user.save();
 
-    // Store OTP temporarily (you should add resetToken and resetTokenExpiry to User model)
-    // user.resetToken = await bcrypt.hash(otp, 10);
-    // user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
-    // await user.save();
+    // Send OTP via email with error handling to preserve anti-enumeration and clear orphaned tokens
+    try {
+      await sendOtpEmail(otp, email);
+    } catch (mailErr) {
+      logger.error("❌ Password reset email delivery error:", mailErr.message);
+      user.resetTokenHash = undefined;
+      user.resetTokenExpiry = undefined;
+      await user.save();
+    }
 
-    // Send OTP via email
-    sendMail(otp, email);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_PASSWORD_RESET_REQUEST,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "success",
+      metadata:   { email },
+    });
 
     res.status(200).json({
-      message: "Password reset code sent to your email",
-      otp: otp, // Remove this in production! Only for development
+      success: true,
+      message:
+        "If an account exists with this email, you will receive a password reset code.",
     });
   } catch (err) {
     logger.error("❌ Password reset request error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -252,35 +504,67 @@ export const resetPassword = async (req, res) => {
 
   try {
     logger.info("🔐 Password reset attempt for:", email);
-    const user = await User.findOne({ email });
 
-    if (!user) {
-      return res.status(400).json({ message: "Invalid request" })
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ success: false, message: "Email, OTP, and new password are required" });
     }
 
-    // In production, verify OTP from database
-    // const isValidOtp = await bcrypt.compare(otp, user.resetToken);
-    // if (!isValidOtp || user.resetTokenExpiry < Date.now()) {
-    //   return res.status(400).json({ message: "Invalid or expired OTP" });
-    // }
+    // Same policy as registration — a reset must not be a way around it.
+    const newPasswordIssue = firstPasswordIssue(newPassword, { email });
+    if (newPasswordIssue) {
+      logger.warn(`❌ Password reset failed - weak password: ${email}`);
+      return res.status(400).json({ success: false, message: newPasswordIssue });
+    }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const user = await User.findOne({ email }).select("+password");
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    // Verify OTP presence and expiration
+    if (
+      !user.resetTokenHash ||
+      !user.resetTokenExpiry ||
+      new Date(user.resetTokenExpiry) < new Date()
+    ) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    const isValidOtp = await verifyOtp(otp.toString(), user.resetTokenHash);
+    if (!isValidOtp) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    // Hash new password using cost factor 12 (aligned with registerUser)
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
     user.password = hashedPassword;
 
-    // Clear reset token fields
-    // user.resetToken = undefined;
-    // user.resetTokenExpiry = undefined;
+    // Clear reset token fields (single use)
+    user.resetTokenHash = undefined;
+    user.resetTokenExpiry = undefined;
     await user.save();
 
     logger.info("✅ Password reset successful for:", email);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_PASSWORD_RESET_COMPLETE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "success",
+      metadata:   { email },
+    });
+
     res.status(200).json({
+      success: true,
       message:
         "Password reset successful. You can now login with your new password.",
     });
   } catch (err) {
     logger.error("❌ Password reset error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -346,10 +630,11 @@ export const refreshSession = catchAsync(async (req, res, next) => {
     { expiresIn: accessTokenTtl }
   );
 
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("refreshToken", newRawToken, {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
     maxAge: refreshDurationMs,
   });
@@ -371,6 +656,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
       language: session.user.language,
       interests: session.user.interests,
       bio: session.user.bio,
+      isVerified: session.user.isVerified,
     },
   });
 });
@@ -453,10 +739,21 @@ export const logoutUser = catchAsync(async (req, res, next) => {
     );
   }
 
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_LOGOUT,
+    actor:      req.user?._id ?? null,
+    req,
+    targetType: "User",
+    targetId:   req.user?._id?.toString() ?? null,
+    status:     "success",
+    metadata:   null,
+  });
+
+  const isProd = process.env.NODE_ENV === "production";
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure: true,
-    sameSite: "None",
+    secure: isProd,
+    sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
   });
 

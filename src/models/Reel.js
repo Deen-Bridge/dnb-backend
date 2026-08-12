@@ -37,6 +37,7 @@ const reelSchema = new Schema(
 );
 
 reelSchema.index({ createdAt: -1 });
+reelSchema.index({ description: "text" });
 
 reelSchema.virtual("likeCount").get(function () {
   return this.likes?.length || 0;

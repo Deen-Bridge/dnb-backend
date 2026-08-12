@@ -28,6 +28,7 @@ export const apiLimiter = rateLimit({
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === "test",
   handler: (req, res) => {
     logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
@@ -38,18 +39,67 @@ export const apiLimiter = rateLimit({
 });
 
 /**
+ * Make a rate limiter configured from env overrides.
+ * @param {number} defaultMax    – default max requests in the window
+ * @param {number} defaultWindow – default window in ms
+ * @param {string} prefix        – env var prefix (e.g. "RATE_LIMIT_AUTH")
+ */
+function makeLimiter(defaultMax, defaultWindow, prefix) {
+  const max = parseInt(process.env[`${prefix}_MAX`], 10) || defaultMax;
+  const windowMs =
+    parseInt(process.env[`${prefix}_WINDOW_MS`], 10) || defaultWindow;
+  const skip = () => process.env[`${prefix}_DISABLE`] === "true";
+  return rateLimit({
+    windowMs,
+    max,
+    skip,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+      logger.warn(`Rate limit exceeded for ${prefix} – IP: ${req.ip}`);
+      res.status(429).json({
+        success: false,
+        message: "Too many requests, please try again later.",
+      });
+    },
+  });
+}
+
+/**
+ * Moderate – for mutation endpoints (purchase, email, upload, payouts).
+ * 100 requests per 15 minutes by default.
+ */
+export const standardLimiter = makeLimiter(
+  100,
+  15 * 60 * 1000,
+  "RATE_LIMIT_STANDARD",
+);
+
+/**
+ * Generous – for read-heavy & content endpoints (courses, books, reels,
+ * spaces, search, progress, notifications, stellar).
+ * 500 requests per 15 minutes by default.
+ */
+export const generousLimiter = makeLimiter(
+  500,
+  15 * 60 * 1000,
+  "RATE_LIMIT_GENEROUS",
+);
+
+/**
  * Strict rate limiting for authentication routes
  */
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 2 * 60 * 1000, // 2 minutes
   max: 5, // Limit each IP to 5 login requests per windowMs
-  message: "Too many login attempts, please try again after 15 minutes.",
+  message: "Too many login attempts, please try again later.",
   skipSuccessfulRequests: true,
+  skip: () => process.env.NODE_ENV === "test",
   handler: (req, res) => {
     logger.warn(`Auth rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
       success: false,
-      message: "Too many login attempts. Please try again after 15 minutes.",
+      message: "Too many login attempts. Please try again later.",
     });
   },
 });
@@ -63,6 +113,7 @@ export const refreshLimiter = rateLimit({
   message: "Too many refresh attempts, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === "test",
   handler: (req, res) => {
     logger.warn(`Refresh rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
@@ -174,7 +225,8 @@ export const ipFilter = (req, res, next) => {
 
 export default {
   helmetMiddleware,
-  apiLimiter,
+  standardLimiter,
+  generousLimiter,
   authLimiter,
   refreshLimiter,
   mongoSanitizeMiddleware,

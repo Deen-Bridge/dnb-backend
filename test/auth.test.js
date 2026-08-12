@@ -6,17 +6,19 @@ import axios from "axios";
 import app from "../app.js";
 import User from "../src/models/User.js";
 import Session from "../src/models/Session.js";
+import PendingUser from "../src/models/PendingUser.js";
 
 const testUser = {
   name: "Test Rotation User",
   email: "test_rotation@example.com",
-  password: "password123",
+  password: "Qx7#vLmp92Zt",
   role: "student",
 };
 
 describe("Authentication & Session Management", () => {
   let usersStore = [];
   let sessionsStore = [];
+  let pendingStore = [];
 
   beforeAll(() => {
     // Mock axios to prevent network calls during tests
@@ -54,6 +56,42 @@ describe("Authentication & Session Management", () => {
     jest.spyOn(User, "deleteMany").mockImplementation(async () => {
       usersStore = [];
       return { acknowledged: true };
+    });
+
+    // PendingUser powers the email-verification-first register flow:
+    // register() upserts a pending record; verifyEmail() reads it by token.
+    jest.spyOn(PendingUser, "findOneAndUpdate").mockImplementation(
+      async (query, update) => {
+        let pending = pendingStore.find((p) => p.email === query?.email);
+        if (pending) {
+          Object.assign(pending, update);
+        } else {
+          pending = { _id: new mongoose.Types.ObjectId().toString(), ...update };
+          pendingStore.push(pending);
+        }
+        return pending;
+      }
+    );
+
+    jest.spyOn(PendingUser, "findOne").mockImplementation(async (query) => {
+      if (query?.verificationToken) {
+        return (
+          pendingStore.find(
+            (p) => p.verificationToken === query.verificationToken
+          ) || null
+        );
+      }
+      if (query?.email) {
+        return pendingStore.find((p) => p.email === query.email) || null;
+      }
+      return null;
+    });
+
+    jest.spyOn(PendingUser, "deleteOne").mockImplementation(async (query) => {
+      pendingStore = pendingStore.filter(
+        (p) => p._id !== query?._id && p.email !== query?.email
+      );
+      return { deletedCount: 1 };
     });
 
     // Mock Session methods
@@ -151,19 +189,66 @@ describe("Authentication & Session Management", () => {
   beforeEach(() => {
     usersStore = [];
     sessionsStore = [];
+    pendingStore = [];
   });
+
+  // Register no longer logs a user in directly — it creates a pending record and
+  // sends a verification email. This helper runs the real two-step flow
+  // (register -> verify-email) and returns the verify response, which carries the
+  // access/refresh tokens and the refresh cookie, so downstream tests that need a
+  // logged-in user keep working.
+  async function registerAndVerify(user = testUser) {
+    await request(app).post("/api/auth/register").send(user);
+    const pending = pendingStore.find((p) => p.email === user.email);
+    return request(app).get(`/api/auth/verify-email/${pending.verificationToken}`);
+  }
 
   afterAll(() => {
     jest.restoreAllMocks();
   });
 
   describe("Register & Login", () => {
-    it("should return access token, refresh token, and cookie on register", async () => {
+    it("should create a pending user and require email verification on register", async () => {
       const res = await request(app)
         .post("/api/auth/register")
         .send(testUser);
 
       expect(res.statusCode).toBe(201);
+      expect(res.body.success).toBe(true);
+      // No tokens yet — the account is not active until the email is verified.
+      expect(res.body.accessToken).toBeUndefined();
+      expect(res.body.refreshToken).toBeUndefined();
+      // A pending record was created for this email.
+      expect(
+        pendingStore.find((p) => p.email === testUser.email)
+      ).toBeTruthy();
+    });
+
+    it("should return 503 (not 500) and roll back the pending record when the verification email fails", async () => {
+      // Force sendVerificationEmail to throw by pointing SendLib at a closed port.
+      process.env.SENDLIB_API_URL = "http://127.0.0.1:2526";
+      process.env.SENDLIB_API_KEY = "invalid_test_key";
+      try {
+        const res = await request(app)
+          .post("/api/auth/register")
+          .send(testUser);
+
+        expect(res.statusCode).toBe(503);
+        expect(res.body.success).toBe(false);
+        // Pending record rolled back so the user can retry cleanly.
+        expect(
+          pendingStore.find((p) => p.email === testUser.email)
+        ).toBeFalsy();
+      } finally {
+        delete process.env.SENDLIB_API_URL;
+        delete process.env.SENDLIB_API_KEY;
+      }
+    });
+
+    it("should return access token, refresh token, and cookie after email verification", async () => {
+      const res = await registerAndVerify(testUser);
+
+      expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body).toHaveProperty("accessToken");
       expect(res.body).toHaveProperty("refreshToken");
@@ -180,8 +265,8 @@ describe("Authentication & Session Management", () => {
     });
 
     it("should return access token, refresh token, and cookie on login", async () => {
-      // Register first
-      await request(app).post("/api/auth/register").send(testUser);
+      // Register + verify first so the account exists.
+      await registerAndVerify(testUser);
 
       const res = await request(app)
         .post("/api/auth/login")
@@ -201,7 +286,7 @@ describe("Authentication & Session Management", () => {
   describe("Refresh Token Rotation", () => {
     it("should rotate refresh and access tokens via body mode", async () => {
       // Register
-      const regRes = await request(app).post("/api/auth/register").send(testUser);
+      const regRes = await registerAndVerify(testUser);
       const firstRefreshToken = regRes.body.refreshToken;
 
       // Refresh
@@ -222,7 +307,7 @@ describe("Authentication & Session Management", () => {
     });
 
     it("should rotate tokens via cookie mode", async () => {
-      const regRes = await request(app).post("/api/auth/register").send(testUser);
+      const regRes = await registerAndVerify(testUser);
       const cookies = regRes.headers["set-cookie"];
       const refreshCookie = cookies.find((c) => c.startsWith("refreshToken="));
 
@@ -236,7 +321,7 @@ describe("Authentication & Session Management", () => {
     });
 
     it("should detect token reuse and revoke the entire family", async () => {
-      const regRes = await request(app).post("/api/auth/register").send(testUser);
+      const regRes = await registerAndVerify(testUser);
       const firstRefreshToken = regRes.body.refreshToken;
 
       // First refresh (honest rotation)
@@ -270,7 +355,7 @@ describe("Authentication & Session Management", () => {
     });
 
     it("should return 401 for expired tokens without revoking family", async () => {
-      const regRes = await request(app).post("/api/auth/register").send(testUser);
+      const regRes = await registerAndVerify(testUser);
       const refreshToken = regRes.body.refreshToken;
 
       // Manually expire session in DB
@@ -291,7 +376,7 @@ describe("Authentication & Session Management", () => {
 
   describe("Session Management", () => {
     it("should list active sessions and mark current", async () => {
-      const loginRes = await request(app).post("/api/auth/register").send(testUser);
+      const loginRes = await registerAndVerify(testUser);
       const accessToken = loginRes.body.accessToken;
 
       const sessionsRes = await request(app)
@@ -305,7 +390,7 @@ describe("Authentication & Session Management", () => {
     });
 
     it("should revoke a single session", async () => {
-      const regRes = await request(app).post("/api/auth/register").send(testUser);
+      const regRes = await registerAndVerify(testUser);
       const accessToken = regRes.body.accessToken;
 
       // Create another session by logging in again
@@ -332,7 +417,7 @@ describe("Authentication & Session Management", () => {
     });
 
     it("should revoke all other sessions", async () => {
-      const regRes = await request(app).post("/api/auth/register").send(testUser);
+      const regRes = await registerAndVerify(testUser);
       const accessToken = regRes.body.accessToken;
 
       // Login multiple times
@@ -351,7 +436,7 @@ describe("Authentication & Session Management", () => {
     });
 
     it("should logout successfully and revoke session", async () => {
-      const regRes = await request(app).post("/api/auth/register").send(testUser);
+      const regRes = await registerAndVerify(testUser);
       const { accessToken, refreshToken } = regRes.body;
 
       const logoutRes = await request(app)
@@ -365,5 +450,9 @@ describe("Authentication & Session Management", () => {
       const activeSessions = await Session.find({ user: regRes.body.user.id, revokedAt: null });
       expect(activeSessions.length).toBe(0);
     });
+  });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
   });
 });

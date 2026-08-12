@@ -1,22 +1,38 @@
-import { MongoMemoryServer } from "mongodb-memory-server";
+import dotenv from "dotenv";
+import path from "path";
+import fs from "fs";
 
-let mongod;
+// Load test environment variables from .env.test if it exists
+// In CI environments, these should be provided via environment variables
+const envPath = path.resolve(process.cwd(), ".env.test");
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else {
+  // If no .env.test is found, we assume environment variables are set (e.g. in CI)
+  // We'll also just call dotenv.config() as a fallback
+  dotenv.config();
+}
 
-beforeAll(async () => {
-  // Start in-memory MongoDB
-  mongod = await MongoMemoryServer.create();
-  const mongoUri = mongod.getUri();
-  
-  // Set test environment and MongoDB URI
-  process.env.NODE_ENV = "test";
-  process.env.MONGO_URI = mongoUri;
-  process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-key-at-least-32-characters-long";
-  process.env.PORT = process.env.PORT || "5000";
-});
+// Force NODE_ENV to test to ensure we don't accidentally connect to production
+process.env.NODE_ENV = "test";
 
-afterAll(async () => {
-  if (mongod) {
-    await mongod.stop();
+// Prevent tests from sending real emails or connecting to external services
+for (const variable of [
+  "REDIS_URL",
+  "ADMIN_EMAILS",
+  "SENDLIB_API_KEY",
+  "SENDLIB_API_URL",
+]) {
+  delete process.env[variable];
+}
+
+for (const variable of ["MONGO_URI", "JWT_SECRET", "PORT"]) {
+  if (!process.env[variable]) {
+    throw new Error(`${variable} must be set when running tests`);
   }
-});
+}
+
+if (typeof jest !== "undefined") {
+  jest.setTimeout(60000);
+}
 

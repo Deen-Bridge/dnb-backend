@@ -55,7 +55,7 @@ The platform is composed of three services:
 
 - Node.js 20+
 - MongoDB (local or Atlas)
-- Redis (optional, for caching)
+- Redis (optional, for caching) — see [docs/redis.md](docs/redis.md) for setup
 
 ### Setup
 
@@ -81,6 +81,7 @@ The API runs at `http://localhost:5000`.
 | `QUEUE_DRIVER` | `mongo` (durable production default) or `inline` (tests/CI) |
 | `JOBS_ENABLED` | Start background workers; defaults to `true` |
 | `JOBS_DASHBOARD_TOKEN` | Bearer token protecting `/admin/jobs` |
+| `STELLAR_PLATFORM_PUBLIC_KEY` | Public key published in `stellar.toml` `ACCOUNTS[]` |
 
 See `.env.example` for the full list.
 
@@ -107,11 +108,20 @@ dashboard is available at `/admin/jobs`.
 
 | Area | Base Route |
 |------|-----------|
+| SEP-1 Metadata | `/.well-known/stellar.toml` |
 | Auth & Users | `/api/auth`, `/api/users` |
 | Courses & Books | `/api/courses`, `/api/books` |
 | Spaces & Reels | `/api/spaces`, `/api/reels` |
 | Stellar Wallet | `/api/stellar/wallet/*` |
 | Stellar Payments | `/api/stellar/payment/*` |
+
+### Machine-readable spec
+
+The full OpenAPI 3.1 contract for every mounted route lives in [`openapi.yaml`](openapi.yaml).
+Open it in any OpenAPI viewer (Swagger Editor, Redoc, Stoplight) or point a client generator
+at it. It documents auth requirements, path and query parameters, request bodies, response
+schemas and status codes, reusable schemas for the core models, the standard error shape, and
+the endpoints whose response envelope is still non-standard.
 
 ## 🌊 Contributing & Drips Wave
 
@@ -119,7 +129,7 @@ This repository participates in the **[Stellar Drips Wave](https://www.drips.net
 
 - All pull requests target the **`dev`** branch (`main` is releases only)
 - CI (tests) must pass before review
-- One contributor per issue — comment to claim it first
+- One contributor per issue — request it through the campaign (Drips Wave / GrantFox OSS); the maintainer assigns it. Please don't open a PR for an issue you haven't been assigned.
 
 Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow, coding standards, and Wave rules.
 

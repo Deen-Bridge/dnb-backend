@@ -78,7 +78,22 @@ export const errorHandler = (err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || "error";
 
+  if (err.name === "MulterError") {
+    err.statusCode = 400;
+    err.status = "fail";
+    err.isOperational = true;
+    if (err.code === "LIMIT_FILE_SIZE") {
+      err.message = "File too large. Please upload a smaller file.";
+    }
+  }
+
   if (process.env.NODE_ENV === "development") {
+    if (err.name === "AllEndpointsOpenError") {
+      return res.status(503).json({
+        error: "Stellar network currently unreachable. Please try again later.",
+        code: "NETWORK_UNAVAILABLE"
+      });
+    }
     sendErrorDev(err, req, res);
   } else {
     let error = { ...err };
@@ -89,6 +104,13 @@ export const errorHandler = (err, req, res, next) => {
     if (err.name === "ValidationError") error = handleValidationErrorDB(err);
     if (err.name === "JsonWebTokenError") error = handleJWTError();
     if (err.name === "TokenExpiredError") error = handleJWTExpiredError();
+    
+    if (err.name === "AllEndpointsOpenError") {
+      return res.status(503).json({
+        error: "Stellar network currently unreachable. Please try again later.",
+        code: "NETWORK_UNAVAILABLE"
+      });
+    }
 
     sendErrorProd(error, req, res);
   }

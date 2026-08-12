@@ -1,0 +1,2055 @@
+openapi: 3.1.0
+info:
+  title: DeenBridge Backend API
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://github.com/Deen-Bridge/dnb-backend/blob/main/LICENSE
+  description: |
+    REST API for DeenBridge: authentication and sessions, courses, the book library,
+    community spaces, reels, search, Stellar USDC payments, refunds and disputes,
+    educator payouts, media upload signing and the SEP-1 metadata document.
+
+    Provenance of this document:
+      - Paths, methods and auth requirements are derived from app.js and src/routes/**,
+        which are the authoritative mounting and middleware sources.
+      - Component schemas are derived from the Mongoose schemas in src/models/**.
+      - Per-endpoint request bodies are described from route middleware and the model
+        fields they write. Where a controller accepts more than the model exposes, the
+        body is intentionally permissive rather than invented.
+
+    Known response inconsistencies (see issue about response standardization):
+      - Most handlers return an envelope of the form { success, message, data }.
+      - Some list handlers return a bare array with no envelope.
+      - POST /api/email returns { success, otp, message } on success but a bare
+        { message } on validation failure.
+      - GET /admin/jobs returns HTML when the Accept header prefers HTML, otherwise
+        { success, jobs }.
+      - GET /metrics returns Prometheus text, and the SEP-1 document returns text/toml.
+    Endpoints whose envelope was not verified against the controller are marked with
+    x-envelope-unverified so maintainers can confirm them incrementally.
+servers:
+  - url: https://dnb-backend-api.onrender.com
+    description: Production
+  - url: http://localhost:5000
+    description: Local development
+tags:
+  - name: Meta
+    description: Service banner, health, metrics and SEP-1 metadata
+  - name: Auth
+    description: Registration, login, password reset and session management
+  - name: Users
+    description: Profiles, follow graph, recommendations and stats
+  - name: Courses
+    description: Course CRUD, enrolment, reviews and bookmarks
+  - name: Books
+    description: Book library, preview streaming, reviews and bookmarks
+  - name: Spaces
+    description: Live and upcoming spaces, waitlists
+  - name: Educators
+    description: Content-derived educator directory with contribution counts
+  - name: Reels
+    description: Short video feed, reactions, comments, shares and views
+  - name: Search
+    description: Cross-entity search and educator search
+  - name: Email
+    description: One time password delivery
+  - name: Calls
+    description: Jitsi meeting tokens
+  - name: Wallet
+    description: Stellar wallet connection and balances
+  - name: Payments
+    description: Payment quote, build, submit, history, refunds and disputes
+  - name: Donations
+    description: Sadaqah donations and aggregate stats
+  - name: Payouts
+    description: Educator balances, statements and payout batches
+  - name: Uploads
+    description: Signed Cloudinary upload parameters
+  - name: Jobs
+    description: Token protected background job dashboard
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token issued by POST /api/auth/login or POST /api/auth/refresh.
+    jobsToken:
+      type: http
+      scheme: bearer
+      description: Static token from the JOBS_DASHBOARD_TOKEN environment variable.
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 10 }
+  responses:
+    Ok:
+      description: Success envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SuccessResponse" }
+    Created:
+      description: Resource created
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SuccessResponse" }
+    BadRequest:
+      description: Missing or invalid input
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing, malformed or expired credentials
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Authenticated but not permitted for this resource or role
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource does not exist, or the feature is disabled by configuration
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflicting state, for example a duplicate or an already used resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Rate limit exceeded. /api is rate limited globally and /api/auth more strictly.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServerError:
+      description: Unhandled error, shaped by the central error handler
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    ObjectId:
+      type: string
+      description: MongoDB ObjectId as a 24 character hex string
+      pattern: "^[a-fA-F0-9]{24}$"
+    Error:
+      type: object
+      description: Standard error shape produced by the central error handler
+      properties:
+        success: { type: boolean, examples: [false] }
+        message: { type: string }
+        data: { description: Null on error responses }
+        stack: { type: string, description: Present only outside production }
+    SuccessResponse:
+      type: object
+      description: Standard success envelope. Some list handlers return a bare array instead.
+      properties:
+        success: { type: boolean, examples: [true] }
+        message: { type: string }
+        data: { description: Payload, shape depends on the endpoint }
+    StellarPublicKey:
+      type: string
+      pattern: "^G[A-Z0-9]{55}$"
+      description: Stellar account public key
+    Review:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/ObjectId" }
+        comment: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        createdAt: { type: string, format: date-time }
+      required: [user, comment, rating]
+    User:
+      type: object
+      description: Account. The password field is never returned by the API.
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        name: { type: string }
+        email: { type: string, format: email }
+        avatar: { type: string, format: uri }
+        gender: { type: string, enum: [male, female] }
+        age: { type: integer, minimum: 2, maximum: 120 }
+        country: { type: string }
+        language: { type: string }
+        interests:
+          type: array
+          items: { type: string }
+        bio: { type: string, maxLength: 500 }
+        role: { type: string, enum: [student, tutor, mentor, admin, arbiter], default: student }
+        isActive: { type: boolean, default: true }
+        lastLogin: { type: string, format: date-time }
+        following:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        followers:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        purchasedBooks:
+          type: array
+          items:
+            type: object
+            properties:
+              bookId: { $ref: "#/components/schemas/ObjectId" }
+              purchaseDate: { type: string, format: date-time }
+        purchasedCourses:
+          type: array
+          items:
+            type: object
+            properties:
+              courseId: { $ref: "#/components/schemas/ObjectId" }
+              purchaseDate: { type: string, format: date-time }
+        bookmarkedBooks:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        bookmarkedCourses:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        stellarWallet:
+          type: object
+          properties:
+            publicKey: { $ref: "#/components/schemas/StellarPublicKey" }
+            connectedAt: { type: string, format: date-time }
+            network: { type: string, enum: [testnet, mainnet], default: testnet }
+        stat:
+          type: object
+          properties:
+            coursesEnrolled: { type: integer, default: 0 }
+            booksRead: { type: integer, default: 0 }
+            totalUptime: { type: integer, default: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [name, email]
+    Course:
+      type: object
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        title: { type: string }
+        description: { type: string }
+        category: { type: string }
+        thumbnail: { type: string, format: uri }
+        video: { type: string, description: Video URL or playlist identifier }
+        price: { type: number, default: 0, description: Zero means free }
+        reviews:
+          type: array
+          items: { $ref: "#/components/schemas/Review" }
+        createdBy: { $ref: "#/components/schemas/ObjectId" }
+        enrolledUsers:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [title, description, category, createdBy]
+    Book:
+      type: object
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        title: { type: string }
+        author: { $ref: "#/components/schemas/ObjectId" }
+        category: { type: string }
+        price: { type: number, default: 0 }
+        readCount: { type: integer, default: 0 }
+        reviews:
+          type: array
+          items: { $ref: "#/components/schemas/Review" }
+        description: { type: string }
+        image: { type: string, format: uri }
+        fileUrl: { type: string, format: uri }
+        filePublicId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [title, author, description, image, fileUrl]
+    Space:
+      type: object
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        title: { type: string }
+        description: { type: string }
+        category: { type: string }
+        thumbnail: { type: string, format: uri }
+        host: { $ref: "#/components/schemas/ObjectId" }
+        price: { type: number, default: 0 }
+        status: { type: string, enum: [live, upcoming, ended], default: upcoming }
+        eventDate: { type: string, format: date-time }
+        eventTime: { type: string, examples: ["14:00"] }
+        duration: { type: integer, description: Minutes }
+        waitList:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        enrolledUsers:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        meetingRoom: { type: string, description: Generated when absent }
+        meetingUrl: { type: string, format: uri, description: Generated from the Jitsi domain }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [title, description, category, host, eventDate, eventTime, duration]
+    ReelComment:
+      type: object
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        user: { $ref: "#/components/schemas/ObjectId" }
+        text: { type: string, maxLength: 500 }
+        createdAt: { type: string, format: date-time }
+      required: [user, text]
+    Reel:
+      type: object
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        description: { type: string, maxLength: 2000 }
+        category: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        video: { type: string, format: uri }
+        videoPublicId: { type: string }
+        thumbnail: { type: string, format: uri }
+        duration: { type: number }
+        createdBy: { $ref: "#/components/schemas/ObjectId" }
+        likes:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        loves:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectId" }
+        comments:
+          type: array
+          items: { $ref: "#/components/schemas/ReelComment" }
+        shareCount: { type: integer, default: 0 }
+        viewCount: { type: integer, default: 0 }
+        likeCount: { type: integer, readOnly: true, description: Virtual }
+        loveCount: { type: integer, readOnly: true, description: Virtual }
+        commentCount: { type: integer, readOnly: true, description: Virtual }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [description, video, createdBy]
+    Transaction:
+      type: object
+      description: On chain payment or donation record. Amounts are strings to preserve precision.
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        stellarTxHash: { type: string }
+        stellarLedger: { type: integer }
+        type: { type: string, enum: [purchase, donation], default: purchase }
+        buyer: { $ref: "#/components/schemas/ObjectId" }
+        buyerWallet: { $ref: "#/components/schemas/StellarPublicKey" }
+        creator: { $ref: "#/components/schemas/ObjectId" }
+        creatorWallet: { $ref: "#/components/schemas/StellarPublicKey" }
+        itemType: { type: string, enum: [book, course], description: Absent for donations }
+        itemId: { $ref: "#/components/schemas/ObjectId" }
+        itemTypeModel: { type: string, enum: [Book, Course] }
+        itemTitle: { type: string }
+        amount: { type: string }
+        currency: { type: string, enum: [USDC], default: USDC }
+        sendAsset:
+          type: object
+          properties:
+            code: { type: string }
+            issuer: { type: string }
+        sendMax: { type: string }
+        network: { type: string, enum: [testnet, mainnet] }
+        platformFee:
+          type: object
+          description: Present only when a fee was applied at build time
+          properties:
+            feePercent: { type: number }
+            platformWallet: { type: string }
+            platformAmount: { type: string }
+            creatorAmount: { type: string }
+        settlement: { type: string, enum: [direct, platform_collect], default: direct }
+        status:
+          type: string
+          enum: [pending, submitted, retrying, confirmed, failed, expired, refunded, disputed]
+          default: pending
+        refund: { $ref: "#/components/schemas/ObjectId" }
+        failureReason: { type: string }
+        retryCount: { type: integer, default: 0 }
+        submittedAt: { type: string, format: date-time }
+        confirmedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, description: Defaults to thirty minutes after creation }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [stellarTxHash, buyer, buyerWallet, creatorWallet, amount, network]
+    Notification:
+      type: object
+      description: Persisted notification. No HTTP routes are mounted for it in app.js today.
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        recipient: { $ref: "#/components/schemas/ObjectId" }
+        sender: { $ref: "#/components/schemas/ObjectId" }
+        type:
+          type: string
+          enum:
+            - follow
+            - unfollow
+            - new_course
+            - new_book
+            - course_like
+            - book_like
+            - course_comment
+            - book_comment
+            - system
+            - welcome
+            - recommendation
+        title: { type: string }
+        message: { type: string }
+        data:
+          type: object
+          properties:
+            courseId: { $ref: "#/components/schemas/ObjectId" }
+            bookId: { $ref: "#/components/schemas/ObjectId" }
+            spaceId: { $ref: "#/components/schemas/ObjectId" }
+            reelId: { $ref: "#/components/schemas/ObjectId" }
+            commentId: { type: string }
+        isRead: { type: boolean, default: false }
+        isDeleted: { type: boolean, default: false }
+        priority: { type: string, enum: [low, medium, high, urgent], default: medium }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [recipient, sender, type, title, message]
+paths:
+  /:
+    get:
+      tags: [Meta]
+      summary: Service banner
+      security: []
+      responses:
+        "200":
+          description: Service metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  version: { type: string }
+                  environment: { type: string }
+  /health:
+    get:
+      tags: [Meta]
+      summary: Liveness probe used by CI and the host
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string, examples: [pong] }
+                  timestamp: { type: string, format: date-time }
+  /metrics:
+    get:
+      tags: [Meta]
+      summary: Prometheus metrics
+      description: Registered before the rate limiter, so it is never throttled.
+      security: []
+      responses:
+        "200":
+          description: Prometheus exposition format
+          content:
+            text/plain:
+              schema: { type: string }
+  /.well-known/stellar.toml:
+    get:
+      tags: [Meta]
+      summary: SEP-1 stellar.toml
+      description: Served outside the /api rate limiter with permissive CORS, as SEP-1 requires.
+      security: []
+      responses:
+        "200":
+          description: TOML document, cacheable for five minutes
+          content:
+            text/toml:
+              schema: { type: string }
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+              required: [name, email, password]
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/ServerError" }
+      x-envelope-unverified: true
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Exchange credentials for tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+              required: [email, password]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+      x-envelope-unverified: true
+  /api/auth/request-password-reset:
+    post:
+      tags: [Auth]
+      summary: Start a password reset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+              required: [email]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Complete a password reset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                password: { type: string, format: password }
+              required: [token, password]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the session and issue a new access token
+      description: Guarded by a dedicated refresh rate limiter.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: May instead be supplied by cookie, since cookie-parser is enabled.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+      x-envelope-unverified: true
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current session
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/auth/sessions:
+    get:
+      tags: [Auth]
+      summary: List sessions for the current user
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+    delete:
+      tags: [Auth]
+      summary: Revoke every session except the current one
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/auth/sessions/{sessionId}:
+    delete:
+      tags: [Auth]
+      summary: Revoke one session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/recommendations:
+    get:
+      tags: [Users]
+      summary: Personalised recommendations for the caller
+      description: Cached per user. Declared before the dynamic id route so it is not shadowed.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+  /api/users/update/{id}:
+    put:
+      tags: [Users]
+      summary: Update a profile, optionally replacing the avatar
+      description: Allowed only for the profile owner or an admin. Invalidates the user cache.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                avatar: { type: string, format: binary }
+                name: { type: string }
+                bio: { type: string, maxLength: 500 }
+                gender: { type: string, enum: [male, female] }
+                age: { type: integer, minimum: 2, maximum: 120 }
+                country: { type: string }
+                language: { type: string }
+                interests: { type: string, description: Repeated field or comma separated list }
+          application/json:
+            schema: { $ref: "#/components/schemas/User" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/{id}:
+    get:
+      tags: [Users]
+      summary: Get a user by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Users]
+      summary: Delete a user
+      description: Allowed only for the account owner or an admin.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/follow/{id}:
+    post:
+      tags: [Users]
+      summary: Follow a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/unfollow/{id}:
+    delete:
+      tags: [Users]
+      summary: Unfollow a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/{id}/followers:
+    get:
+      tags: [Users]
+      summary: List followers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+  /api/users/{id}/following:
+    get:
+      tags: [Users]
+      summary: List accounts a user follows
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+  /api/users/{id}/followers/count:
+    get:
+      tags: [Users]
+      summary: Follower count
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/users/{id}/following/count:
+    get:
+      tags: [Users]
+      summary: Following count
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/users/{id}/check-following:
+    get:
+      tags: [Users]
+      summary: Whether the caller follows this user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/users/{id}/stats:
+    get:
+      tags: [Users]
+      summary: Aggregate stats for a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/courses:
+    get:
+      tags: [Courses]
+      summary: List courses
+      description: Cached list. Some list handlers in this codebase return a bare array.
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+    post:
+      tags: [Courses]
+      summary: Create a course
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Course" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/courses/user:
+    get:
+      tags: [Courses]
+      summary: List courses by creator
+      security: []
+      parameters:
+        - name: createdBy
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/courses/recommended:
+    post:
+      tags: [Courses]
+      summary: Recommended courses
+      description: Uses POST so a preference payload can be sent. Not cached.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interests:
+                  type: array
+                  items: { type: string }
+                userId: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/courses/bookmarks:
+    get:
+      tags: [Courses]
+      summary: Bookmarked courses for the caller
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/courses/{id}/bookmark:
+    post:
+      tags: [Courses]
+      summary: Toggle a course bookmark
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Courses]
+      summary: Remove a course bookmark
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/courses/{id}/bookmark/check:
+    get:
+      tags: [Courses]
+      summary: Whether a course is bookmarked
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/courses/{id}:
+    get:
+      tags: [Courses]
+      summary: Get a course
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Courses]
+      summary: Update a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Course" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/courses/{id}/enroll:
+    post:
+      tags: [Courses]
+      summary: Enrol the caller in a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/courses/{id}/reviews:
+    post:
+      tags: [Courses]
+      summary: Add a course review
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment: { type: string }
+                rating: { type: integer, minimum: 1, maximum: 5 }
+              required: [comment, rating]
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/books:
+    get:
+      tags: [Books]
+      summary: List books
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+    post:
+      tags: [Books]
+      summary: Create a book with cover and file upload
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                thumbnail: { type: string, format: binary }
+                file: { type: string, format: binary }
+                title: { type: string }
+                description: { type: string }
+                category: { type: string }
+                price: { type: number }
+              required: [title, description]
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/books/recom:
+    get:
+      tags: [Books]
+      summary: Recommended books, short lived cache
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/books/recommended:
+    post:
+      tags: [Books]
+      summary: Recommended books from a preference payload
+      description: Mounted by a second router on the same /api/books base path.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interests:
+                  type: array
+                  items: { type: string }
+                userId: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/books/bookmarks:
+    get:
+      tags: [Books]
+      summary: Bookmarked books for the caller
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/books/{id}/bookmark:
+    post:
+      tags: [Books]
+      summary: Toggle a book bookmark
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Books]
+      summary: Remove a book bookmark
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/books/{id}/bookmark/check:
+    get:
+      tags: [Books]
+      summary: Whether a book is bookmarked
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/books/by-author/{authorId}:
+    get:
+      tags: [Books]
+      summary: List books by author
+      security: []
+      parameters:
+        - name: authorId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/books/{id}/preview:
+    get:
+      tags: [Books]
+      summary: Stream a limited book preview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200":
+          description: Streamed file bytes
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/books/{id}:
+    get:
+      tags: [Books]
+      summary: Get a book
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Books]
+      summary: Delete a book
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/books/{id}/reviews:
+    post:
+      tags: [Books]
+      summary: Add a book review
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment: { type: string }
+                rating: { type: integer, minimum: 1, maximum: 5 }
+              required: [comment, rating]
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/educators:
+    get:
+      tags: [Educators]
+      summary: List educators derived from published content
+      description: |
+        There is no standalone "educators" collection. The directory is built
+        from real content: course creators, book authors and space hosts are
+        aggregated by user, deduped by _id, and each person gets per-type
+        contribution counts plus a total. Results are sorted by total (then
+        name). `meta` holds the full-roster totals used for header stats.
+      security: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          description: Filter roster to contributors of a given content type.
+          schema:
+            type: string
+            enum: [all, courses, books, spaces]
+            default: all
+        - name: search
+          in: query
+          required: false
+          description: Case-insensitive match against name or bio.
+          schema:
+            type: string
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/spaces:
+    get:
+      tags: [Spaces]
+      summary: List spaces
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+    post:
+      tags: [Spaces]
+      summary: Create a space
+      description: The meeting room and URL are generated server side when omitted.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                thumbnail: { type: string, format: binary }
+                title: { type: string }
+                description: { type: string }
+                category: { type: string }
+                price: { type: number }
+                eventDate: { type: string, format: date-time }
+                eventTime: { type: string }
+                duration: { type: integer }
+              required: [title, description, category, eventDate, eventTime, duration]
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/spaces/by-host/{hostId}:
+    get:
+      tags: [Spaces]
+      summary: List spaces by host
+      security: []
+      parameters:
+        - name: hostId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/spaces/{id}:
+    get:
+      tags: [Spaces]
+      summary: Get a space
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Spaces]
+      summary: Delete a space
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/spaces/{id}/waitlist:
+    post:
+      tags: [Spaces]
+      summary: Join the waitlist for a space
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/spaces/update/{id}:
+    put:
+      tags: [Spaces]
+      summary: Update a space
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Space" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/reels:
+    get:
+      tags: [Reels]
+      summary: Reel feed
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+    post:
+      tags: [Reels]
+      summary: Upload a reel
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                video: { type: string, format: binary }
+                description: { type: string, maxLength: 2000 }
+                category: { type: string }
+                tags: { type: string, description: Repeated field or comma separated list }
+              required: [video, description]
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/reels/{id}:
+    get:
+      tags: [Reels]
+      summary: Get a reel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/reels/{id}/react:
+    post:
+      tags: [Reels]
+      summary: Like or love a reel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reaction: { type: string, enum: [like, love] }
+              required: [reaction]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/reels/{id}/comments:
+    get:
+      tags: [Reels]
+      summary: List comments on a reel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+    post:
+      tags: [Reels]
+      summary: Comment on a reel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string, maxLength: 500 }
+              required: [text]
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/reels/{id}/comments/{commentId}:
+    delete:
+      tags: [Reels]
+      summary: Delete a reel comment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+        - name: commentId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/reels/{id}/share:
+    post:
+      tags: [Reels]
+      summary: Register a share
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/reels/{id}/view:
+    post:
+      tags: [Reels]
+      summary: Register a view
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/search:
+    get:
+      tags: [Search]
+      summary: Search across users, courses, books, spaces and reels
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+          description: Search term. The alias query is also accepted.
+        - name: query
+          in: query
+          required: false
+          schema: { type: string }
+        - name: type
+          in: query
+          required: false
+          schema: { type: string, default: all }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/Limit" }
+        - name: minPrice
+          in: query
+          required: false
+          schema: { type: number }
+        - name: maxPrice
+          in: query
+          required: false
+          schema: { type: number }
+        - name: free
+          in: query
+          required: false
+          schema: { type: boolean }
+        - name: category
+          in: query
+          required: false
+          schema: { type: string }
+        - name: minRating
+          in: query
+          required: false
+          schema: { type: number, minimum: 1, maximum: 5 }
+        - name: interest
+          in: query
+          required: false
+          schema: { type: string }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/search/educators:
+    get:
+      tags: [Search]
+      summary: Search educators
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/email:
+    post:
+      tags: [Email]
+      summary: Send a one time password to an email address
+      description: |
+        Returns the generated code in the response body, and the validation failure path
+        returns a bare { message } rather than the standard envelope. Both are existing
+        behaviours recorded here rather than endorsed.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+              required: [email]
+      responses:
+        "200":
+          description: Code sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  otp: { type: string }
+                  message: { type: string }
+        "400":
+          description: Missing or non string email, returned without the success field
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+        "500": { $ref: "#/components/responses/ServerError" }
+  /api/purchase/book:
+    post:
+      tags: [Books]
+      summary: Record a book purchase for the caller
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bookId: { $ref: "#/components/schemas/ObjectId" }
+              required: [bookId]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/calls/token:
+    post:
+      tags: [Calls]
+      summary: Issue a Jitsi meeting token for a space
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                spaceId: { $ref: "#/components/schemas/ObjectId" }
+              required: [spaceId]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/wallet/connect:
+    post:
+      tags: [Wallet]
+      summary: Connect a Stellar wallet to the caller account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                publicKey: { $ref: "#/components/schemas/StellarPublicKey" }
+                network: { type: string, enum: [testnet, mainnet] }
+              required: [publicKey]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/wallet/disconnect:
+    delete:
+      tags: [Wallet]
+      summary: Disconnect the wallet from the caller account
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/stellar/wallet/me:
+    get:
+      tags: [Wallet]
+      summary: Wallet attached to the caller account
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/wallet/balance/{publicKey}:
+    get:
+      tags: [Wallet]
+      summary: Horizon balances and trustlines for an account
+      security: []
+      parameters:
+        - name: publicKey
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/StellarPublicKey" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/wallet/check/{userId}:
+    get:
+      tags: [Wallet]
+      summary: Whether a user has a connected wallet
+      security: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/payment/quote:
+    post:
+      tags: [Payments]
+      summary: Quote a payment before building it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                itemType: { type: string, enum: [book, course] }
+                itemId: { $ref: "#/components/schemas/ObjectId" }
+                sendAsset:
+                  type: object
+                  properties:
+                    code: { type: string }
+                    issuer: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/stellar/payment/preflight:
+    post:
+      tags: [Payments]
+      summary: Check account, trustline and balance readiness before building
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                itemType: { type: string, enum: [book, course] }
+                itemId: { $ref: "#/components/schemas/ObjectId" }
+                buyerWallet: { $ref: "#/components/schemas/StellarPublicKey" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/stellar/payment/initialize:
+    post:
+      tags: [Payments]
+      summary: Build an unsigned payment transaction
+      description: Non custodial flow. The API returns an XDR for the buyer wallet to sign.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                itemType: { type: string, enum: [book, course] }
+                itemId: { $ref: "#/components/schemas/ObjectId" }
+                buyerWallet: { $ref: "#/components/schemas/StellarPublicKey" }
+              required: [itemType, itemId]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/payment/submit:
+    post:
+      tags: [Payments]
+      summary: Submit a signed transaction and verify it on chain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                signedXdr: { type: string }
+                transactionId: { $ref: "#/components/schemas/ObjectId" }
+              required: [signedXdr]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/payment/transactions:
+    get:
+      tags: [Payments]
+      summary: Transaction history for the caller
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/Limit" }
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, submitted, retrying, confirmed, failed, expired, refunded, disputed]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+  /api/stellar/payment/transactions/{transactionId}:
+    get:
+      tags: [Payments]
+      summary: Get one transaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200":
+          description: Transaction record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data: { $ref: "#/components/schemas/Transaction" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Payments]
+      summary: Cancel a pending transaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/payment/transactions/{transactionId}/refund-request:
+    post:
+      tags: [Payments]
+      summary: Request a refund for a transaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/payment/refunds/{refundId}/build:
+    post:
+      tags: [Payments]
+      summary: Build the unsigned refund transaction
+      parameters:
+        - name: refundId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/payment/refunds/{refundId}/submit:
+    post:
+      tags: [Payments]
+      summary: Submit the signed refund transaction
+      parameters:
+        - name: refundId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                signedXdr: { type: string }
+              required: [signedXdr]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/payment/refunds/{refundId}/reject:
+    post:
+      tags: [Payments]
+      summary: Reject a refund request
+      parameters:
+        - name: refundId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/payment/refunds/{refundId}/dispute:
+    post:
+      tags: [Payments]
+      summary: Escalate a refund to a dispute
+      parameters:
+        - name: refundId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/payment/refunds/{refundId}/arbitrate:
+    patch:
+      tags: [Payments]
+      summary: Arbitrate a dispute
+      description: Restricted to the admin and arbiter roles.
+      parameters:
+        - name: refundId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision: { type: string }
+                notes: { type: string }
+              required: [decision]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/payment/reconciliation/status:
+    get:
+      tags: [Payments]
+      summary: Reconciliation status for unmatched on chain payments
+      description: Restricted to the admin and arbiter roles.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/stellar/donation/stats:
+    get:
+      tags: [Donations]
+      summary: Aggregate donation stats
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+      x-envelope-unverified: true
+  /api/stellar/donation/initialize:
+    post:
+      tags: [Donations]
+      summary: Build an unsigned donation transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: string, description: String to preserve precision }
+                donorWallet: { $ref: "#/components/schemas/StellarPublicKey" }
+              required: [amount]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/stellar/donation/submit:
+    post:
+      tags: [Donations]
+      summary: Submit a signed donation transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                signedXdr: { type: string }
+              required: [signedXdr]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/payouts/me/balance:
+    get:
+      tags: [Payouts]
+      summary: Educator balance for the caller
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/payouts/me/statement:
+    get:
+      tags: [Payouts]
+      summary: Ledger statement for the caller
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+  /api/payouts/me/history:
+    get:
+      tags: [Payouts]
+      summary: Past payouts for the caller
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      x-envelope-unverified: true
+  /api/payouts/build:
+    post:
+      tags: [Payouts]
+      summary: Build a payout batch
+      description: Operator only. Gated by the PAYOUT_ADMIN_USER_IDS allowlist inside the controller.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                minAmount: { type: string }
+                educatorIds:
+                  type: array
+                  items: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/payouts/{batchId}/submit:
+    post:
+      tags: [Payouts]
+      summary: Submit a payout batch
+      description: Operator only. Gated by the PAYOUT_ADMIN_USER_IDS allowlist inside the controller.
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                signedXdr: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/uploads/signature:
+    post:
+      tags: [Uploads]
+      summary: Signed Cloudinary upload parameters
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folder: { type: string }
+                resourceType: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /admin/jobs:
+    get:
+      tags: [Jobs]
+      summary: Recent background jobs
+      description: |
+        Guarded by a static bearer token. Returns 404 when JOBS_DASHBOARD_TOKEN is unset,
+        so the dashboard is invisible rather than merely locked. Content negotiated: HTML
+        when the Accept header prefers HTML, otherwise JSON.
+      security:
+        - jobsToken: []
+      responses:
+        "200":
+          description: Job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  jobs:
+                    type: array
+                    items: { type: object }
+            text/html:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/jobs/dead:
+    get:
+      tags: [Jobs]
+      summary: Terminally failed jobs
+      security:
+        - jobsToken: []
+      responses:
+        "200":
+          description: Dead letter job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  jobs:
+                    type: array
+                    items: { type: object }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }

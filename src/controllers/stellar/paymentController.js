@@ -8,6 +8,8 @@ import {
   buildPaymentTransaction,
   buildPathPaymentTransaction,
   buildSep7Uri,
+  calculateFeeSplit,
+  preflightPayment,
   submitTransaction,
   verifyTransaction,
   verifyPaymentOperations,
@@ -19,8 +21,10 @@ import {
   USDC,
   PLATFORM_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
+import { getAssetConfig, isAssetSupported, getSupportedCodes } from "../../config/assets.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { recordSaleEarnings } from "../../services/payoutService.js";
+import { grantItemAccess } from "../../services/stellar/reconciliationService.js";
 import { enqueue } from "../../jobs/queue.js";
 import logger from "../../config/logger.js";
 import {
@@ -29,10 +33,78 @@ import {
   paymentsConfirmed,
   paymentsFailed,
 } from "../../config/metrics.js";
+import { recordAudit } from "../../services/audit/auditService.js";
+import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
+
+/**
+ * Resolve the item, its creator, and the settlement destination wallet for a
+ * purchase. Shared by initializePayment and the pre-flight endpoint so both
+ * look up the same destination the same way.
+ */
+const resolvePaymentDestination = async ({ itemType, itemId, session }) => {
+  const Model = itemType === "book" ? Book : Course;
+  const populateField = itemType === "book" ? "author" : "createdBy";
+  const query = Model.findById(itemId).populate(populateField, "stellarWallet name");
+  const item = session ? await query.session(session) : await query;
+  if (!item) {
+    return { error: { status: 404, message: `${itemType} not found` } };
+  }
+  const creator = itemType === "book" ? item.author : item.createdBy;
+  const platformCollectEnabled = process.env.PLATFORM_COLLECT_ENABLED === "true";
+  let destinationPublicKey;
+  let settlementMode = "direct";
+  if (!creator?.stellarWallet?.publicKey) {
+    if (!platformCollectEnabled) {
+      return {
+        error: {
+          status: 400,
+          message: "Creator has not connected their Stellar wallet yet",
+        },
+      };
+    }
+
+    const platformWalletKey = process.env.PLATFORM_WALLET_PUBLIC_KEY || PLATFORM_WALLET_PUBLIC_KEY;
+    if (!platformWalletKey) {
+      return {
+        error: {
+          status: 500,
+          message: "Platform wallet is not configured for platform-collect mode",
+        },
+      };
+    }
+
+    destinationPublicKey = platformWalletKey;
+    settlementMode = "platform_collect";
+  } else {
+    destinationPublicKey = creator.stellarWallet.publicKey;
+  }
+
+  return { item, creator, destinationPublicKey, settlementMode };
+};
+
+/**
+ * Resolve the asset code an item is priced in, defaulting to USDC for
+ * existing items with no currency set.
+ */
+const resolveItemCurrency = (item) => item.currency || "USDC";
+
+/**
+ * Platform memo convention: purchases are tagged DNB-<ITEMTYPE>-<last 8 chars
+ * of the Mongo item id>, always as a text memo. This is always non-empty, so
+ * it already satisfies SEP-29 "some memo present" destinations; it does not
+ * substitute for a destination-specific memo (e.g. an exchange deposit id).
+ */
+const buildPurchaseMemo = (itemType, itemId) =>
+  `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
 
 /**
  * Get a quote for paying with a non-USDC asset via path payment
  * POST /api/stellar/payment/quote
+ *
+ * NOTE: path payments always settle in USDC regardless of the item's own
+ * currency - that mechanism is issue #27's scope. Items priced in a
+ * non-USDC currency (e.g. EURC) are rejected here rather than silently
+ * treating item.price as a USDC amount.
  */
 export const getQuote = async (req, res) => {
   try {
@@ -59,6 +131,14 @@ export const getQuote = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "This item is free, no quote needed",
+      });
+    }
+
+    const itemAssetCode = resolveItemCurrency(item);
+    if (itemAssetCode !== "USDC") {
+      return res.status(400).json({
+        success: false,
+        message: `Path payment quotes are only available for USDC-priced items. This item is priced in ${itemAssetCode}; pay directly in ${itemAssetCode} instead.`,
       });
     }
 
@@ -142,6 +222,85 @@ export const getQuote = async (req, res) => {
 };
 
 /**
+ * Run pre-flight payment safety checks (destination existence, trustline
+ * for the item's currency, source balance/reserve, SEP-29 memo-required)
+ * before the frontend prompts the wallet to sign anything.
+ * POST /api/stellar/payment/preflight
+ */
+export const getPaymentPreflight = async (req, res) => {
+  try {
+    const buyerId = req.user._id;
+    const { itemType, itemId } = req.body;
+
+    if (!["book", "course"].includes(itemType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid item type. Must be 'book' or 'course'",
+      });
+    }
+
+    const buyer = await User.findById(buyerId);
+    if (!buyer?.stellarWallet?.publicKey) {
+      return res.status(400).json({
+        success: false,
+        message: "Please connect your Stellar wallet first",
+      });
+    }
+
+    const resolved = await resolvePaymentDestination({ itemType, itemId });
+    if (resolved.error) {
+      return res.status(resolved.error.status).json({
+        success: false,
+        message: resolved.error.message,
+      });
+    }
+
+    const { item, destinationPublicKey, settlementMode } = resolved;
+
+    if (!item.price || item.price === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "This item is free, no payment required",
+      });
+    }
+
+    const assetCode = resolveItemCurrency(item);
+    if (!isAssetSupported(assetCode)) {
+      return res.status(400).json({
+        success: false,
+        message: `This item is priced in an unsupported asset (${assetCode}). Supported: ${getSupportedCodes().join(", ")}`,
+      });
+    }
+
+    const memo = buildPurchaseMemo(itemType, itemId);
+    const feeSplitPreview =
+      settlementMode === "direct" ? calculateFeeSplit(item.price) : null;
+
+    const preflight = await preflightPayment({
+      sourcePublicKey: buyer.stellarWallet.publicKey,
+      destinationPublicKey,
+      amount: item.price.toString(),
+      memo,
+      operationCount: feeSplitPreview ? 2 : 1,
+      assetCode,
+    });
+
+    res.status(200).json({
+      success: true,
+      preflight,
+    });
+  } catch (error) {
+    logger.error("Payment preflight error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to run payment pre-flight checks",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
  * Initialize a payment - creates pending transaction and returns XDR to sign
  * POST /api/stellar/payment/initialize
  */
@@ -153,7 +312,6 @@ export const initializePayment = async (req, res) => {
     const buyerId = req.user._id;
     const { itemType, itemId, buyerWallet, sendAsset: sendAssetInput, sendMax, path: pathInput } = req.body;
 
-    // Validate item type
     if (!["book", "course"].includes(itemType)) {
       await session.abortTransaction();
       return res.status(400).json({
@@ -162,7 +320,6 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Get buyer info
     const buyer = await User.findById(buyerId).session(session);
     if (!buyer?.stellarWallet?.publicKey) {
       await session.abortTransaction();
@@ -172,7 +329,6 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Verify wallet matches
     if (buyer.stellarWallet.publicKey !== buyerWallet) {
       await session.abortTransaction();
       return res.status(400).json({
@@ -181,55 +337,17 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Get item details
-    const Model = itemType === "book" ? Book : Course;
-    const populateField = itemType === "book" ? "author" : "createdBy";
-
-    const item = await Model.findById(itemId)
-      .populate(populateField, "stellarWallet name")
-      .session(session);
-
-    if (!item) {
+    const resolved = await resolvePaymentDestination({ itemType, itemId, session });
+    if (resolved.error) {
       await session.abortTransaction();
-      return res.status(404).json({
+      return res.status(resolved.error.status).json({
         success: false,
-        message: `${itemType} not found`,
+        message: resolved.error.message,
       });
     }
 
-    const creator = itemType === "book" ? item.author : item.createdBy;
-    const platformCollectEnabled =
-      process.env.PLATFORM_COLLECT_ENABLED === "true";
-    let destinationPublicKey;
-    let settlementMode = "direct";
+    const { item, creator, destinationPublicKey, settlementMode } = resolved;
 
-    // Check creator has wallet or platform-collect mode is enabled
-    if (!creator?.stellarWallet?.publicKey) {
-      if (!platformCollectEnabled) {
-        await session.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          message: "Creator has not connected their Stellar wallet yet",
-        });
-      }
-
-      const platformWalletKey =
-        process.env.PLATFORM_WALLET_PUBLIC_KEY || PLATFORM_WALLET_PUBLIC_KEY;
-      if (!platformWalletKey) {
-        await session.abortTransaction();
-        return res.status(500).json({
-          success: false,
-          message: "Platform wallet is not configured for platform-collect mode",
-        });
-      }
-
-      destinationPublicKey = platformWalletKey;
-      settlementMode = "platform_collect";
-    } else {
-      destinationPublicKey = creator.stellarWallet.publicKey;
-    }
-
-    // Check if item is free
     if (!item.price || item.price === 0) {
       await session.abortTransaction();
       return res.status(400).json({
@@ -238,7 +356,15 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Check if already purchased
+    const itemAssetCode = resolveItemCurrency(item);
+    if (!isAssetSupported(itemAssetCode)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: `This item is priced in an unsupported asset (${itemAssetCode}). Supported: ${getSupportedCodes().join(", ")}`,
+      });
+    }
+
     const purchasedArray =
       itemType === "book" ? buyer.purchasedBooks : buyer.purchasedCourses;
     const idField = itemType === "book" ? "bookId" : "courseId";
@@ -254,7 +380,6 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Check for existing pending transaction
     const existingTx = await Transaction.findOne({
       buyer: buyerId,
       itemType,
@@ -271,15 +396,30 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Generate unique memo for this transaction
-    const memo = `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
+    const memo = buildPurchaseMemo(itemType, itemId);
 
-    // Build the payment transaction (single op full amount for platform collect, split for direct if fee configured)
     const isPathPayment = sendAssetInput && sendMax;
     let paymentTx;
     let sep7Uri = null;
+    // Currency actually settled on-chain: path payments always settle in
+    // USDC (issue #27's mechanism); direct payments settle in the item's
+    // own currency. Set explicitly in each branch below rather than
+    // defaulting, so it's clear neither branch can silently fall through.
+    let settledAssetCode;
 
     if (isPathPayment) {
+      // Path payments always settle in USDC. Guard against an item priced
+      // in a different asset, since destAmount below is item.price and
+      // would otherwise be misinterpreted as a USDC amount.
+      if (itemAssetCode !== "USDC") {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: `Path payments are only available for USDC-priced items. This item is priced in ${itemAssetCode}; pay directly in ${itemAssetCode} instead.`,
+        });
+      }
+      settledAssetCode = "USDC";
+
       const sendAsset = sendAssetInput.issuer
         ? new StellarSdk.Asset(sendAssetInput.code, sendAssetInput.issuer)
         : StellarSdk.Asset.native();
@@ -303,24 +443,48 @@ export const initializePayment = async (req, res) => {
         applyPlatformFee: settlementMode === "direct",
       });
     } else {
+      settledAssetCode = itemAssetCode;
+      const feeSplitPreview =
+        settlementMode === "direct" ? calculateFeeSplit(item.price) : null;
+
+      const preflight = await preflightPayment({
+        sourcePublicKey: buyer.stellarWallet.publicKey,
+        destinationPublicKey,
+        amount: item.price.toString(),
+        memo,
+        operationCount: feeSplitPreview ? 2 : 1,
+        assetCode: itemAssetCode,
+      });
+
+      if (!preflight.ok) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Payment failed pre-flight safety checks",
+          reasons: preflight.reasons,
+        });
+      }
+
       paymentTx = await buildPaymentTransaction({
         sourcePublicKey: buyer.stellarWallet.publicKey,
         destinationPublicKey,
         amount: item.price.toString(),
         memo,
         applyPlatformFee: settlementMode === "direct",
+        assetCode: itemAssetCode,
       });
 
       sep7Uri = buildSep7Uri({
         destination: destinationPublicKey,
         amount: item.price.toString(),
         memo,
+        assetCode: itemAssetCode,
       });
     }
 
     const feeSplit = paymentTx.feeSplit;
+    const settledAssetConfig = getAssetConfig(settledAssetCode);
 
-    // Create pending transaction record
     const transaction = new Transaction({
       buyer: buyerId,
       buyerWallet: buyer.stellarWallet.publicKey,
@@ -331,6 +495,8 @@ export const initializePayment = async (req, res) => {
       itemTypeModel: itemType === "book" ? "Book" : "Course",
       itemTitle: item.title,
       amount: item.price.toString(),
+      currency: settledAssetCode,
+      assetIssuer: settledAssetConfig?.issuer || null,
       network: NETWORK,
       status: "pending",
       settlement: settlementMode,
@@ -357,6 +523,23 @@ export const initializePayment = async (req, res) => {
     logger.info(
       `Payment initialized: ${transaction._id} for ${itemType} ${itemId}`
     );
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.PAYMENT_INITIALIZE,
+      actor:      buyerId,
+      req,
+      targetType: "Transaction",
+      targetId:   transaction._id.toString(),
+      status:     "success",
+      metadata:   {
+        transactionId:  transaction._id.toString(),
+        itemType,
+        itemId,
+        itemTitle:      item.title,
+        amount:         item.price.toString(),
+        settlementMode,
+      },
+    });
 
     res.status(200).json({
       success: true,
@@ -415,7 +598,6 @@ export const submitPayment = async (req, res) => {
       });
     }
 
-    // Find the pending transaction
     const transaction = await Transaction.findOne({
       _id: transactionId,
       buyer: buyerId,
@@ -431,7 +613,7 @@ export const submitPayment = async (req, res) => {
     }
 
     // Build expected payments to validate XDR BEFORE submit
-    let expectedPayments = transaction.platformFee?.platformAmount
+    const expectedPayments = transaction.platformFee?.platformAmount
       ? [
           {
             destination: transaction.creatorWallet,
@@ -480,12 +662,10 @@ export const submitPayment = async (req, res) => {
     await transaction.save({ session });
     paymentsSubmitted.inc({ type: "purchase" });
 
-    // Submit to Stellar network
     let result;
     try {
       result = await submitTransaction(signedXdr);
     } catch (stellarError) {
-      // Handle Stellar submission errors
       transaction.status = "failed";
       transaction.failureReason = stellarError.message;
       await transaction.save({ session });
@@ -507,7 +687,8 @@ export const submitPayment = async (req, res) => {
 
     const verification = await verifyPaymentOperations(
       result.hash,
-      expectedPayments
+      expectedPayments,
+      transaction.currency || "USDC"
     );
 
     if (!verification.verified) {
@@ -516,16 +697,26 @@ export const submitPayment = async (req, res) => {
         transaction.status = "retrying";
         transaction.failureReason = verification.reason;
         await transaction.save({ session });
-        await enqueue(
-          "verifyPaymentOnChain",
-          { transactionId: transaction._id.toString() },
-          {
-            attempts: 5,
-            backoffMs: 1000,
-            idempotencyKey: `verify:${result.hash}`,
-            session,
-          }
-        );
+        try {
+          await enqueue(
+            "verifyPaymentOnChain",
+            { transactionId: transaction._id.toString() },
+            {
+              attempts: 5,
+              backoffMs: 1000,
+              idempotencyKey: `verify:${result.hash}`,
+              session,
+            }
+          );
+        } catch (enqueueErr) {
+          // Don't let a queue outage roll back the on-chain-verified
+          // "retrying" status - a sweeper can still reconcile this later
+          // from stellarTxHash even if scheduling the retry job failed.
+          logger.error(
+            `Failed to enqueue verifyPaymentOnChain for transaction ${transaction._id}:`,
+            enqueueErr
+          );
+        }
         await session.commitTransaction();
         return res.status(202).json({
           success: true,
@@ -545,6 +736,20 @@ export const submitPayment = async (req, res) => {
         `Transaction ${transactionId} verification failed: ${verification.reason}`
       );
 
+      recordAudit({
+        action:     AUDIT_ACTIONS.PAYMENT_SUBMIT_FAILED,
+        actor:      buyerId,
+        req,
+        targetType: "Transaction",
+        targetId:   transactionId,
+        status:     "failure",
+        metadata:   {
+          transactionId,
+          stellarTxHash: result.hash,
+          failureReason:  `On-chain verification failed: ${verification.reason}`,
+        },
+      });
+
       return res.status(400).json({
         success: false,
         message: "Payment could not be verified on the Stellar network",
@@ -552,7 +757,6 @@ export const submitPayment = async (req, res) => {
       });
     }
 
-    // Update transaction with Stellar response
     transaction.stellarTxHash = result.hash;
     transaction.stellarLedger = result.ledger;
     transaction.status = "confirmed";
@@ -560,53 +764,58 @@ export const submitPayment = async (req, res) => {
     await transaction.save({ session });
     paymentsConfirmed.inc({ type: "purchase" });
 
-    // Record earnings for educator balance & ledger (idempotent per stellarTxHash)
     await recordSaleEarnings(transaction, { session });
 
-    // Grant access to the purchased item
-    const buyer = await User.findById(buyerId).session(session);
-
-    if (transaction.itemType === "book") {
-      buyer.purchasedBooks.push({
-        bookId: transaction.itemId,
-        purchaseDate: new Date(),
-      });
-      if (buyer.stat) {
-        buyer.stat.booksRead = (buyer.stat.booksRead || 0) + 1;
-      }
-    } else {
-      buyer.purchasedCourses.push({
-        courseId: transaction.itemId,
-        purchaseDate: new Date(),
-      });
-      if (buyer.stat) {
-        buyer.stat.coursesEnrolled = (buyer.stat.coursesEnrolled || 0) + 1;
-      }
-
-      // Also add to course's enrolledUsers
-      await Course.findByIdAndUpdate(
-        transaction.itemId,
-        { $addToSet: { enrolledUsers: buyerId } },
-        { session }
+    // Grant access to the purchased item (shared with ingestion worker)
+    await grantItemAccess({
+      buyerId,
+      itemType: transaction.itemType,
+      itemId: transaction.itemId,
+      session,
+    });
+    try {
+      await enqueue(
+        "generateReceipt",
+        { transactionId: transaction._id.toString() },
+        {
+          attempts: 5,
+          backoffMs: 1000,
+          idempotencyKey: `receipt:${result.hash}`,
+          session,
+        }
+      );
+    } catch (enqueueErr) {
+      // Don't let a queue outage roll back a payment that's already
+      // confirmed on-chain (earnings recorded, access granted) - the
+      // receipt can be regenerated later; the purchase itself must stand.
+      logger.error(
+        `Failed to enqueue generateReceipt for transaction ${transaction._id}:`,
+        enqueueErr
       );
     }
-
-    await buyer.save({ session });
-    await enqueue(
-      "generateReceipt",
-      { transactionId: transaction._id.toString() },
-      {
-        attempts: 5,
-        backoffMs: 1000,
-        idempotencyKey: `receipt:${result.hash}`,
-        session,
-      }
-    );
     await session.commitTransaction();
 
     logger.info(
       `Payment successful: ${transactionId}, Stellar TX: ${result.hash}`
     );
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.PAYMENT_SUBMIT_CONFIRMED,
+      actor:      buyerId,
+      req,
+      targetType: "Transaction",
+      targetId:   transactionId,
+      status:     "success",
+      metadata:   {
+        transactionId,
+        stellarTxHash:  result.hash,
+        stellarLedger:  result.ledger,
+        amount:         transaction.amount,
+        itemType:       transaction.itemType,
+        itemId:         transaction.itemId.toString(),
+        settlementMode: transaction.settlement,
+      },
+    });
 
     res.status(200).json({
       success: true,
@@ -655,7 +864,6 @@ export const getTransactionHistory = async (req, res) => {
 
     const total = await Transaction.countDocuments(query);
 
-    // Add explorer URLs
     const transactionsWithUrls = transactions.map((tx) => ({
       ...tx.toObject(),
       explorerUrl:
@@ -704,7 +912,6 @@ export const getTransaction = async (req, res) => {
       });
     }
 
-    // If confirmed, verify on Stellar
     let stellarVerification = null;
     if (transaction.status === "confirmed") {
       try {
@@ -769,6 +976,22 @@ export const cancelTransaction = async (req, res) => {
     }
 
     logger.info(`Transaction ${transactionId} cancelled by user ${userId}`);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.PAYMENT_CANCEL,
+      actor:      userId,
+      req,
+      targetType: "Transaction",
+      targetId:   transactionId,
+      status:     "success",
+      metadata:   {
+        transactionId,
+        itemType:  transaction.itemType,
+        itemId:    transaction.itemId?.toString(),
+        amount:    transaction.amount,
+        failureReason: "Cancelled by user",
+      },
+    });
 
     res.status(200).json({
       success: true,

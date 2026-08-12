@@ -496,4 +496,8 @@ describe("Payout Service & Earnings Ledger", () => {
       expect(isPayoutAdmin({ _id: "admin_user_1" })).toBe(false);
     });
   });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
 });

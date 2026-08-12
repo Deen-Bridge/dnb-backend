@@ -17,6 +17,11 @@ const optionalEnvVars = [
   "JITSI_KID",
   "JITSI_TENANT",
   "STELLAR_NETWORK",
+  "SEP10_SIGNING_SECRET",
+  "SEP10_HOME_DOMAIN",
+  "SEP10_WEB_AUTH_DOMAIN",
+  "SEP10_CHALLENGE_TIMEOUT",
+  "SEP10_WEB_AUTH_ENDPOINT",
   "DONATION_WALLET_PUBLIC_KEY",
   "PLATFORM_FEE_PERCENT",
   "PLATFORM_WALLET_PUBLIC_KEY",
@@ -24,10 +29,30 @@ const optionalEnvVars = [
   "PAYOUT_ADMIN_USER_IDS",
   "ACCESS_TOKEN_TTL",
   "REFRESH_TOKEN_TTL",
+  // Redis configuration (optional - app works without Redis)
+  "REDIS_URL",
+  "REDIS_HOST",
+  "REDIS_PORT",
+  "REDIS_USERNAME",
+  "REDIS_PASSWORD",
+  "HORIZON_URLS",
+  "HORIZON_TIMEOUT_MS",
+  "HORIZON_MAX_RETRIES",
+  "HORIZON_CB_THRESHOLD",
+  "HORIZON_CB_COOLDOWN_MS",
   "QUEUE_DRIVER",
   "JOBS_ENABLED",
   "JOBS_DASHBOARD_TOKEN",
-  "EMAILJS_RECEIPT_TEMPLATE_ID",
+  "STELLAR_PLATFORM_PUBLIC_KEY",
+  "ORG_NAME",
+  "ORG_URL",
+  "ORG_DESCRIPTION",
+  "ORG_LOGO",
+  "ORG_TWITTER",
+  "ORG_GITHUB",
+  "SIGNING_KEY",
+  "INGESTION_WORKER_ENABLED",
+  "INGESTION_POLL_INTERVAL_MS",
 ];
 
 export const validateEnv = () => {
@@ -41,6 +66,19 @@ export const validateEnv = () => {
   // Default values for TTLs if not provided
   process.env.ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
   process.env.REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || "30d";
+
+  // Default values for Horizon resilient client if not provided
+  const network = process.env.STELLAR_NETWORK || "testnet";
+  if (!process.env.HORIZON_URLS) {
+    process.env.HORIZON_URLS =
+      network === "mainnet"
+        ? "https://horizon.stellar.org"
+        : "https://horizon-testnet.stellar.org";
+  }
+  process.env.HORIZON_TIMEOUT_MS = process.env.HORIZON_TIMEOUT_MS || "10000";
+  process.env.HORIZON_MAX_RETRIES = process.env.HORIZON_MAX_RETRIES || "3";
+  process.env.HORIZON_CB_THRESHOLD = process.env.HORIZON_CB_THRESHOLD || "5";
+  process.env.HORIZON_CB_COOLDOWN_MS = process.env.HORIZON_CB_COOLDOWN_MS || "30000";
 
   const missing = [];
 

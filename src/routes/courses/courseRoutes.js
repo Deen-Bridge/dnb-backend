@@ -7,6 +7,9 @@ import {
   getCoursesByUser,
   updateCourse,
   addCourseReview,
+  getCourseReviews,
+  updateCourseReview,
+  deleteCourseReview,
   fetchRecommendedCourses,
 } from "../../controllers/courses/courseController.js";
 import {
@@ -15,29 +18,117 @@ import {
   checkIfBookmarked,
   removeBookmark,
 } from "../../controllers/courses/bookmarkController.js";
+import {
+  getCourseProgress,
+  updateCourseProgress,
+} from "../../controllers/analytics/analyticsController.js";
 import { protect } from "../../middlewares/authMiddleware.js";
+import {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} from "../../middlewares/cache.js";
+import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 
 const router = express.Router();
 
-// Public routes
-router.get("/", getCourses); // GET /api/courses
-router.get("/user", getCoursesByUser); // GET /api/courses/user
-router.post("/recommended", fetchRecommendedCourses); // POST /api/courses/recommended
+// Cache key generators
+const coursesListCacheKey = () => `${CACHE_KEYS.COURSES}list`;
+const courseDetailCacheKey = (req) => `${CACHE_KEYS.COURSE}${req.params.id}`;
+const coursesByUserCacheKey = (req) =>
+  `${CACHE_KEYS.COURSES}user:${req.query.createdBy}`;
+
+// Public routes - cached for 15 minutes
+router.get(
+  "/",
+  cacheMiddleware(CACHE_TTL.COURSES, coursesListCacheKey),
+  getCourses
+);
+router.get(
+  "/user",
+  cacheMiddleware(CACHE_TTL.COURSES, coursesByUserCacheKey),
+  getCoursesByUser
+);
+router.post("/recommended", fetchRecommendedCourses); // POST routes not cached
 
 // Bookmark routes (MUST come before /:id route to avoid conflicts)
-router.get("/bookmarks", protect, getBookmarkedCourses); // Get all bookmarks
-router.post("/:courseId/bookmark", protect, toggleCourseBookmark); // Toggle bookmark
-router.get("/:courseId/bookmark/check", protect, checkIfBookmarked); // Check if bookmarked
-router.delete("/:courseId/bookmark", protect, removeBookmark); // Remove bookmark
+router.get("/bookmarks", protect, getBookmarkedCourses);
+router.post("/:courseId/bookmark", protect, toggleCourseBookmark);
+router.get("/:courseId/bookmark/check", protect, checkIfBookmarked);
+router.delete("/:courseId/bookmark", protect, removeBookmark);
+router.get("/:id/progress", protect, getCourseProgress);
+router.post("/:id/progress", protect, updateCourseProgress);
 
-// Dynamic routes (MUST come after specific routes like /bookmarks)
-router.get("/:id", getCourseById); // GET /api/courses/123
+// Review listing route
+router.get("/:id/reviews", getCourseReviews);
 
-// Protected routes
-// Note: No file upload middleware needed - files uploaded from frontend
-router.post("/", protect, createCourse);
-router.post("/:id/enroll", protect, enrollInCourse);
-router.post("/:id/reviews", protect, addCourseReview);
-router.put("/:id", protect, updateCourse);
+// Dynamic routes - cached for 15 minutes
+router.get(
+  "/:id",
+  cacheMiddleware(CACHE_TTL.COURSES, courseDetailCacheKey),
+  getCourseById
+);
+
+// Protected routes with cache invalidation
+router.post(
+  "/",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.EDUCATORS}*`]),
+  createCourse
+);
+router.post(
+  "/:id/enroll",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  enrollInCourse
+);
+router.post(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
+  addCourseReview
+);
+router.put(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  updateCourseReview
+);
+router.patch(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  updateCourseReview
+);
+router.put(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  updateCourseReview
+);
+router.patch(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  updateCourseReview
+);
+router.delete(
+  "/:id/reviews",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  deleteCourseReview
+);
+router.delete(
+  "/:id/reviews/:reviewId",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
+  deleteCourseReview
+);
+router.put(
+  "/:id",
+  protect,
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
+  updateCourse
+);
 
 export default router;
+
