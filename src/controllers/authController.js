@@ -200,7 +200,30 @@ export const registerUser = catchAsync(async (req, res, next) => {
     { upsert: true, new: true },
   );
 
-  await sendVerificationEmail(email, verificationToken);
+  try {
+    await sendVerificationEmail(email, verificationToken);
+  } catch (err) {
+    // Email delivery failed (e.g. provider outage / disconnected sender).
+    // Roll back the pending record so the user can retry cleanly, and return a
+    // clear 503 rather than a generic 500 "Programming Error".
+    await PendingUser.deleteOne({ _id: pendingUser._id }).catch(() => {});
+    logger.error(`Verification email delivery failed for ${email}: ${err.message}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "verification_email_failed" },
+    });
+    return next(
+      new APIError(
+        "We couldn't send your verification email right now. Please try again in a few minutes.",
+        503
+      )
+    );
+  }
 
   recordAudit({
     action:     AUDIT_ACTIONS.AUTH_REGISTER_SUCCESS,
@@ -295,7 +318,19 @@ export const resendVerification = catchAsync(async (req, res, next) => {
   pending.verificationToken = verificationToken;
   await pending.save();
 
-  await sendVerificationEmail(email, verificationToken);
+  try {
+    await sendVerificationEmail(email, verificationToken);
+  } catch (err) {
+    // Provider outage / disconnected sender — return a clear 503 so the client
+    // can prompt a retry instead of surfacing a generic 500.
+    logger.error(`Verification email resend failed for ${email}: ${err.message}`);
+    return next(
+      new APIError(
+        "We couldn't resend your verification email right now. Please try again in a few minutes.",
+        503
+      )
+    );
+  }
 
   logger.info(`📧 Verification email resent to: ${email}`);
 

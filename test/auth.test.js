@@ -224,6 +224,27 @@ describe("Authentication & Session Management", () => {
       ).toBeTruthy();
     });
 
+    it("should return 503 (not 500) and roll back the pending record when the verification email fails", async () => {
+      // Force sendVerificationEmail to throw by pointing SendLib at a closed port.
+      process.env.SENDLIB_API_URL = "http://127.0.0.1:2526";
+      process.env.SENDLIB_API_KEY = "invalid_test_key";
+      try {
+        const res = await request(app)
+          .post("/api/auth/register")
+          .send(testUser);
+
+        expect(res.statusCode).toBe(503);
+        expect(res.body.success).toBe(false);
+        // Pending record rolled back so the user can retry cleanly.
+        expect(
+          pendingStore.find((p) => p.email === testUser.email)
+        ).toBeFalsy();
+      } finally {
+        delete process.env.SENDLIB_API_URL;
+        delete process.env.SENDLIB_API_KEY;
+      }
+    });
+
     it("should return access token, refresh token, and cookie after email verification", async () => {
       const res = await registerAndVerify(testUser);
 
