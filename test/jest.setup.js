@@ -25,6 +25,8 @@ for (const variable of [
   "ADMIN_EMAILS",
   "RESEND_API_KEY",
   "RESEND_API_URL",
+  "SENDLIB_API_KEY",
+  "SENDLIB_API_URL",
 ]) {
   delete process.env[variable];
 }

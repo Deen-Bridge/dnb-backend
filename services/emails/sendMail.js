@@ -96,7 +96,13 @@ const sendMail = async ({
     logger.warn(
       "SENDLIB_API_KEY / SENDLIB_API_URL not set — email not sent"
     );
-    logger.info(`[EMAIL SKIPPED] To: ${to} | Subject: ${subject}`);
+    // Test env only (synthetic data): expose the body so tests can assert
+    // OTP/verification behavior. NEVER logged in dev/prod — bodies carry secrets.
+    if (NODE_ENV() === "test") {
+      logger.info(`[EMAIL LOG] To: ${to} | Subject: ${subject} | Body: ${html}`);
+    } else {
+      logger.info(`[EMAIL SKIPPED] To: ${to} | Subject: ${subject}`);
+    }
     return;
   }
   if (!from) {

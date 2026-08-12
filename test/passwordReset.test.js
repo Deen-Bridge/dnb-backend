@@ -159,10 +159,10 @@ describe("Password Reset Flow", () => {
   it("should handle sendMail delivery failure by rolling back token fields and returning generic 200 (anti-enumeration)", async () => {
     await request(app).post("/api/auth/register").send(testUser);
 
-    // Force the OTP email to fail: point Resend at a closed local port so the
+    // Force the OTP email to fail: point SendLib at a closed local port so the
     // connection is refused and sendOtpEmail throws.
-    process.env.RESEND_API_URL = "http://127.0.0.1:2525";
-    process.env.RESEND_API_KEY = "re_test_invalid";
+    process.env.SENDLIB_API_URL = "http://127.0.0.1:2525";
+    process.env.SENDLIB_API_KEY = "invalid_test_key";
     try {
       const res = await request(app)
         .post("/api/auth/request-password-reset")
@@ -172,8 +172,8 @@ describe("Password Reset Flow", () => {
       expect(res.body.success).toBe(true);
       expect(res.body.message).toContain("If an account exists");
     } finally {
-      delete process.env.RESEND_API_URL;
-      delete process.env.RESEND_API_KEY;
+      delete process.env.SENDLIB_API_URL;
+      delete process.env.SENDLIB_API_KEY;
     }
 
     // Token fields should be rolled back to undefined so orphaned tokens aren't left active
