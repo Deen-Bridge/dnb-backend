@@ -18,13 +18,8 @@ process.env.NODE_ENV = "test";
 
 // Prevent tests from sending real emails or connecting to external services
 for (const variable of [
-  "SMTP_USER",
-  "SMTP_PASS",
-  "SMTP_HOST",
   "REDIS_URL",
   "ADMIN_EMAILS",
-  "RESEND_API_KEY",
-  "RESEND_API_URL",
   "SENDLIB_API_KEY",
   "SENDLIB_API_URL",
 ]) {

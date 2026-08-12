@@ -3,8 +3,9 @@ import request from "supertest";
 import app from "../app.js";
 import logger from "../src/config/logger.js";
 
-// RESEND_API_KEY is stripped by test/jest.setup.js, so sendMail logs the email
-// body via [EMAIL LOG] instead of delivering. That lets us inspect the code.
+// SENDLIB_API_KEY/URL are stripped by test/jest.setup.js, so in the test env
+// sendMail logs the email body via [EMAIL LOG] instead of delivering. That lets
+// us inspect the generated OTP. (Bodies are never logged in dev/prod.)
 
 const extractOtpFromLog = (logCalls) => {
   const emailLog = logCalls
