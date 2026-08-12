@@ -39,6 +39,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   submitTransaction,
   verifyTransaction: jest.fn(),
   verifyPaymentOperations,
+  validateSignedPaymentXdr: jest.fn(),
   hasUsdcTrustline: jest.fn(),
   getExplorerUrl,
   getAccountExplorerUrl: jest.fn(),
