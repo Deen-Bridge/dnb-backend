@@ -5,8 +5,7 @@ const FRONTEND_URL = () => process.env.FRONTEND_URL || "http://localhost:3000";
 const ASSET_URL = () =>
   process.env.EMAIL_ASSET_URL || `${FRONTEND_URL()}/images`;
 
-const SENDLIB_API_URL = () =>
-  process.env.SENDLIB_API_URL || "https://sendlib.samueltuoyo.com/api/send";
+const SENDLIB_API_URL = () => process.env.SENDLIB_API_URL || "";
 
 // Must be the Gmail / Google Workspace address connected in SendLib.
 const getFrom = () => process.env.EMAIL_FROM || "";
@@ -88,12 +87,15 @@ const sendMail = async ({
   attachments,
 }) => {
   const apiKey = process.env.SENDLIB_API_KEY || "";
+  const apiUrl = SENDLIB_API_URL();
   const from = getFrom();
 
   // Security: never log the html body — it contains OTP codes / verification
   // tokens. Log recipient + subject only.
-  if (!apiKey) {
-    logger.warn("SENDLIB_API_KEY not set — email not sent");
+  if (!apiKey || !apiUrl) {
+    logger.warn(
+      "SENDLIB_API_KEY / SENDLIB_API_URL not set — email not sent"
+    );
     logger.info(`[EMAIL SKIPPED] To: ${to} | Subject: ${subject}`);
     return;
   }
@@ -111,7 +113,7 @@ const sendMail = async ({
   if (attachments) body.attachments = attachments;
 
   try {
-    const response = await fetch(SENDLIB_API_URL(), {
+    const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
