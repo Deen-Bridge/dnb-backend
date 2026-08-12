@@ -5,10 +5,11 @@ const FRONTEND_URL = () => process.env.FRONTEND_URL || "http://localhost:3000";
 const ASSET_URL = () =>
   process.env.EMAIL_ASSET_URL || `${FRONTEND_URL()}/images`;
 
-const RESEND_API_URL = () =>
-  process.env.RESEND_API_URL || "https://api.resend.com/emails";
+const SENDLIB_API_URL = () =>
+  process.env.SENDLIB_API_URL || "https://sendlib.samueltuoyo.com/api/send";
 
-const getFrom = () => process.env.EMAIL_FROM || "onboarding@resend.dev";
+// Must be the Gmail / Google Workspace address connected in SendLib.
+const getFrom = () => process.env.EMAIL_FROM || "";
 
 const emailShell = ({ content, preheader }) => `
 <!DOCTYPE html>
@@ -76,39 +77,62 @@ const primaryButton = (href, label) => `
   </table>
 `;
 
-const sendMail = async ({ to, subject, html }) => {
-  const apiKey = process.env.RESEND_API_KEY || "";
+const sendMail = async ({
+  to,
+  subject,
+  html,
+  text,
+  replyTo,
+  cc,
+  bcc,
+  attachments,
+}) => {
+  const apiKey = process.env.SENDLIB_API_KEY || "";
   const from = getFrom();
 
+  // Security: never log the html body — it contains OTP codes / verification
+  // tokens. Log recipient + subject only.
   if (!apiKey) {
-    logger.warn("RESEND_API_KEY not set — emails will be logged");
-    logger.info(`[EMAIL LOG] To: ${to} | Subject: ${subject} | Body: ${html}`);
+    logger.warn("SENDLIB_API_KEY not set — email not sent");
+    logger.info(`[EMAIL SKIPPED] To: ${to} | Subject: ${subject}`);
     return;
   }
+  if (!from) {
+    logger.warn(
+      "EMAIL_FROM not set — SendLib requires your connected sender address"
+    );
+  }
+
+  const body = { from, to, subject, html };
+  if (text) body.text = text;
+  if (replyTo) body.reply_to = replyTo;
+  if (cc) body.cc = cc;
+  if (bcc) body.bcc = bcc;
+  if (attachments) body.attachments = attachments;
 
   try {
-    const response = await fetch(RESEND_API_URL(), {
+    const response = await fetch(SENDLIB_API_URL(), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to, subject, html }),
+      body: JSON.stringify(body),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(
-        `Resend API ${response.status}: ${JSON.stringify(payload)}`
+        `SendLib API ${response.status}: ${JSON.stringify(payload)}`
       );
     }
-    logger.info(`Email sent to ${to}: ${payload.id}`);
+    const messageId = payload.messageId || payload.id;
+    logger.info(`Email sent to ${to}${messageId ? `: ${messageId}` : ""}`);
     return payload;
   } catch (error) {
     logger.error("Failed to send email:", error.message);
     if (NODE_ENV() === "development") {
-      logger.info(
-        `[DEV FALLBACK] To: ${to} | Subject: ${subject} | Body: ${html}`
-      );
+      // Subject only — never log the body (contains OTP/token).
+      logger.info(`[DEV FALLBACK] To: ${to} | Subject: ${subject}`);
       return;
     }
     throw error;
