@@ -762,3 +762,69 @@ export const logoutUser = catchAsync(async (req, res, next) => {
     message: "Logged out successfully",
   });
 });
+
+// Change password for an authenticated user. Verifies the current password,
+// enforces the password policy on the new one, and signs out all OTHER sessions.
+export const changePassword = catchAsync(async (req, res, next) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return next(new APIError("Current and new password are required", 400));
+  }
+
+  const passwordIssue = firstPasswordIssue(newPassword, {
+    name: req.user?.name,
+    email: req.user?.email,
+  });
+  if (passwordIssue) {
+    return next(new APIError(passwordIssue, 400));
+  }
+
+  const user = await User.findById(req.user._id).select("+password");
+  if (!user || !user.password) {
+    return next(new APIError("User not found", 404));
+  }
+
+  const isCurrentCorrect = await bcrypt.compare(currentPassword, user.password);
+  if (!isCurrentCorrect) {
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_PASSWORD_CHANGE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "failure",
+      metadata:   { reason: "invalid_current_password" },
+    });
+    return next(new APIError("Current password is incorrect", 401));
+  }
+
+  const isSameAsOld = await bcrypt.compare(newPassword, user.password);
+  if (isSameAsOld) {
+    return next(
+      new APIError("New password must be different from the current one", 400)
+    );
+  }
+
+  user.password = await bcrypt.hash(newPassword, 12);
+  await user.save();
+
+  // Sign out every OTHER session so a password change kicks other devices.
+  await Session.deleteMany({ user: user._id, _id: { $ne: req.sessionId } });
+
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_PASSWORD_CHANGE,
+    actor:      user._id,
+    req,
+    targetType: "User",
+    targetId:   user._id.toString(),
+    status:     "success",
+    metadata:   {},
+  });
+
+  res.status(200).json({
+    success: true,
+    message:
+      "Password changed successfully. Other devices have been signed out.",
+  });
+});

@@ -24,6 +24,7 @@ export const AUDIT_ACTIONS = Object.freeze({
   AUTH_LOGOUT:           "auth.logout",
   AUTH_PASSWORD_RESET_REQUEST:  "auth.password_reset.request",
   AUTH_PASSWORD_RESET_COMPLETE: "auth.password_reset.complete",
+  AUTH_PASSWORD_CHANGE:         "auth.password_change",
 
   // Wallet
   WALLET_CONNECT_SUCCESS:   "wallet.connect.success",
