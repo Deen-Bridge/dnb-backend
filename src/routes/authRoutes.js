@@ -10,6 +10,7 @@ import {
   logoutUser,
   requestPasswordReset,
   resetPassword,
+  changePassword,
   verifyEmail,
   resendVerification,
 } from "../controllers/authController.js";
@@ -43,5 +44,6 @@ router.post("/logout", protect, logoutUser);
 router.get("/sessions", protect, getSessions);
 router.delete("/sessions/:sessionId", protect, revokeSession);
 router.delete("/sessions", protect, revokeAllOtherSessions);
+router.put("/change-password", protect, changePassword);
 
 export default router;
