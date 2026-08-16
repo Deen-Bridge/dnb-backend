@@ -29,19 +29,22 @@ const generateToken = (userId, role = "student") => {
   return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: "1h" });
 };
 
+import { MongoMemoryServer } from "mongodb-memory-server";
+
 describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
   let buyer, educator, otherUser, adminUser;
   let buyerWallet;
   let buyerToken, educatorToken, otherToken, adminToken;
   let confirmedTx;
   let course;
+  let mongoServer;
 
   beforeAll(async () => {
-    const uri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/dnb-backend-test";
-
-    if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(uri);
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
     }
+    mongoServer = await MongoMemoryServer.create();
+    await mongoose.connect(mongoServer.getUri());
 
     // Mock Horizon Server
     jest.spyOn(server, "loadAccount").mockImplementation(async (publicKey) => {
