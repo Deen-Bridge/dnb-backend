@@ -13,7 +13,7 @@ jobs:
 
     services:
       mongodb:
-        image: mongo:7
+        image: mongo:6.0
         ports:
           - 27017:27017
 
@@ -29,6 +29,17 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Wait for MongoDB
+        run: |
+          for i in $(seq 1 30); do
+            if nc -z localhost 27017 2>/dev/null || (exec 6<>/dev/tcp/localhost/27017) 2>/dev/null; then
+              echo "MongoDB is listening on port 27017"
+              break
+            fi
+            echo "Waiting for MongoDB..."
+            sleep 1
+          done
 
       - name: Run tests
         run: npm test
@@ -48,7 +59,7 @@ jobs:
 
     services:
       mongodb:
-        image: mongo:7
+        image: mongo:6.0
         ports:
           - 27017:27017
 
@@ -64,6 +75,17 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Wait for MongoDB
+        run: |
+          for i in $(seq 1 30); do
+            if nc -z localhost 27017 2>/dev/null || (exec 6<>/dev/tcp/localhost/27017) 2>/dev/null; then
+              echo "MongoDB is listening on port 27017"
+              break
+            fi
+            echo "Waiting for MongoDB..."
+            sleep 1
+          done
 
       - name: Check syntax of all source files
         run: |
