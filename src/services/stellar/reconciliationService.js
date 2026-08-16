@@ -55,6 +55,7 @@ const promoteTransaction = async (transaction, paymentRecord) => {
   transaction.stellarLedger = paymentRecord.ledger || undefined;
   transaction.status = "confirmed";
   transaction.confirmedAt = new Date();
+  transaction.expiresAt = undefined;
   await transaction.save();
 
   await recordSaleEarnings(transaction);

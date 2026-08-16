@@ -48,6 +48,7 @@ registerJob("verifyPaymentOnChain", async ({ transactionId }, context) => {
       throw new Error(verification.reason);
     }
     transaction.status = "failed";
+    transaction.expiresAt = undefined;
     transaction.failureReason = `On-chain verification failed: ${verification.reason}`;
     await transaction.save();
     return;
@@ -55,6 +56,7 @@ registerJob("verifyPaymentOnChain", async ({ transactionId }, context) => {
 
   transaction.status = "confirmed";
   transaction.confirmedAt = new Date();
+  transaction.expiresAt = undefined;
   transaction.failureReason = undefined;
   await transaction.save();
 
