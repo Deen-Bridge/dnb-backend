@@ -7,6 +7,7 @@
 import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
+import axios from "axios";
 import app from "../app.js";
 import AuditLog, { AUDIT_ACTIONS } from "../src/models/AuditLog.js";
 import User from "../src/models/User.js";
@@ -47,6 +48,9 @@ const makeUser = (overrides = {}) => {
 // Global mock setup
 // ─────────────────────────────────────────────────────────────────────────────
 beforeAll(() => {
+  // Mock the HIBP breached-password range call (empty data => not breached).
+  jest.spyOn(axios, "get").mockResolvedValue({ status: 200, statusText: "OK", data: "" });
+
   // ── AuditLog mocks ──────────────────────────────────────────────────────
   jest.spyOn(AuditLog, "create").mockImplementation(async (data) => {
     const doc = {
