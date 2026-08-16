@@ -13,6 +13,8 @@ import logger from "../config/logger.js";
 
 const CAPTCHA_VERIFY_URL =
   process.env.CAPTCHA_VERIFY_URL || "https://hcaptcha.com/siteverify";
+const CAPTCHA_TIMEOUT_MS =
+  parseInt(process.env.CAPTCHA_TIMEOUT_MS, 10) || 5000;
 
 /**
  * Verify a captcha token. Returns true when captcha is not configured
@@ -29,7 +31,8 @@ export async function verifyCaptcha(token) {
   try {
     const { data } = await axios.post(
       CAPTCHA_VERIFY_URL,
-      new URLSearchParams({ secret, response: token || "" })
+      new URLSearchParams({ secret, response: token || "" }),
+      { timeout: CAPTCHA_TIMEOUT_MS }
     );
     return Boolean(data && data.success === true);
   } catch (err) {

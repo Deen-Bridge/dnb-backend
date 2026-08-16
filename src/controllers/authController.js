@@ -16,7 +16,9 @@ import { isPasswordBreached } from "../utils/hibp.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
+// Never fall back to a hardcoded default — that would sign tokens with a known
+// value. validateEnv() also enforces this at boot; refuse to start if missing.
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // ── Progressive login lockout (issue #89) ───────────────────────────────────
 // After LOGIN_MAX_FAILED_ATTEMPTS consecutive failures, the account is locked
@@ -39,16 +41,16 @@ const lockoutDurationMs = (failedAttempts) =>
         Math.max(0, failedAttempts - LOGIN_MAX_FAILED_ATTEMPTS)
   );
 
-// Log JWT configuration on startup and warn if using fallback
-if (!process.env.JWT_SECRET) {
-  logger.warn(
-    "⚠️ WARNING: JWT_SECRET not found in .env! Using fallback (INSECURE for production)"
+// Log JWT configuration on startup and fail fast if the secret is missing.
+if (!JWT_SECRET) {
+  logger.error(
+    "❌ JWT_SECRET is required to sign auth tokens but is missing or empty. Refusing to start."
   );
-} else {
-  logger.info(
-    `✅ JWT_SECRET loaded from .env (length: ${process.env.JWT_SECRET.length})`
-  );
+  process.exit(1);
 }
+logger.info(
+  `✅ JWT_SECRET loaded from environment (length: ${JWT_SECRET.length})`
+);
 
 // Helper: parse duration string to ms (e.g. 15m, 30d)
 export const parseDurationToMs = (duration) => {
@@ -412,8 +414,10 @@ export const loginUser = catchAsync(async (req, res, next) => {
   }
 
   // Per-account lockout: reject BEFORE running bcrypt while the account is
-  // locked, and do not leak whether the account exists beyond the generic
-  // "too many attempts" response.
+  // locked. Respond with the SAME generic "Invalid credentials" used for a
+  // nonexistent account so a locked account is indistinguishable from one that
+  // does not exist (no enumeration). The lock itself is recorded in the audit
+  // log for operators.
   const isLocked = user.lockUntil && new Date(user.lockUntil) > new Date();
   if (isLocked) {
     logger.warn(`🔒 Login blocked - account locked: ${email}`);
@@ -426,21 +430,33 @@ export const loginUser = catchAsync(async (req, res, next) => {
       status:     "failure",
       metadata:   { email, reason: "account_locked" },
     });
-    return next(
-      new APIError("Too many failed login attempts. Please try again later.", 429)
-    );
+    return next(new APIError("Invalid credentials", 401));
   }
 
   // Verify password
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
-    user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-    if (user.failedLoginAttempts >= LOGIN_MAX_FAILED_ATTEMPTS) {
-      user.lockUntil = new Date(
-        Date.now() + lockoutDurationMs(user.failedLoginAttempts)
+    // Atomic increment — the DB is the single source of truth for the counter,
+    // so concurrent login attempts cannot race a read-then-write snapshot.
+    const updated = await User.findByIdAndUpdate(
+      user._id,
+      { $inc: { failedLoginAttempts: 1 } },
+      { new: true }
+    );
+    const failedAttempts = updated?.failedLoginAttempts ?? 1;
+    user.failedLoginAttempts = failedAttempts;
+
+    if (failedAttempts >= LOGIN_MAX_FAILED_ATTEMPTS) {
+      const lockUntil = new Date(
+        Date.now() + lockoutDurationMs(failedAttempts)
       );
+      await User.updateOne(
+        { _id: user._id },
+        { $set: { lockUntil } }
+      );
+      user.lockUntil = lockUntil;
       logger.warn(
-        `🔒 Account locked after ${user.failedLoginAttempts} failed attempts: ${email}`
+        `🔒 Account locked after ${failedAttempts} failed attempts: ${email}`
       );
       recordAudit({
         action:     AUDIT_ACTIONS.AUTH_ACCOUNT_LOCKED,
@@ -452,7 +468,6 @@ export const loginUser = catchAsync(async (req, res, next) => {
         metadata:   { email, reason: "account_locked" },
       });
     }
-    await user.save({ validateBeforeSave: false });
 
     logger.warn(`❌ Login failed - Incorrect password: ${email}`);
     recordAudit({
@@ -605,17 +620,6 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: newPasswordIssue });
     }
 
-    // A reset must not be a way around a breached-password rejection either.
-    const breached = await isPasswordBreached(newPassword);
-    if (breached) {
-      logger.warn(`❌ Password reset failed - breached password: ${email}`);
-      return res.status(400).json({
-        success: false,
-        message:
-          "This password has appeared in a known data breach. Please choose a different one.",
-      });
-    }
-
     const user = await User.findOne({ email }).select("+password");
 
     if (!user) {
@@ -634,6 +638,19 @@ export const resetPassword = async (req, res) => {
     const isValidOtp = await verifyOtp(otp.toString(), user.resetTokenHash);
     if (!isValidOtp) {
       return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    // A reset must not be a way around a breached-password rejection either.
+    // Run only AFTER the caller proves account ownership via the OTP, so an
+    // unauthenticated attacker cannot trigger HIBP lookups for arbitrary emails.
+    const breached = await isPasswordBreached(newPassword);
+    if (breached) {
+      logger.warn(`❌ Password reset failed - breached password: ${email}`);
+      return res.status(400).json({
+        success: false,
+        message:
+          "This password has appeared in a known data breach. Please choose a different one.",
+      });
     }
 
     // Hash new password using cost factor 12 (aligned with registerUser)

@@ -27,11 +27,14 @@ describe("Authentication abuse hardening (issue #89)", () => {
   let sessionsStore = [];
   let pendingStore = [];
   let auditStore = [];
+  let emailAuthLimiter;
+  let usedEmails = new Set();
 
   beforeAll(async () => {
     process.env.RATE_LIMIT_EMAIL_AUTH_MAX = "3";
     process.env.RATE_LIMIT_EMAIL_AUTH_WINDOW_MS = String(60 * 1000);
     ({ default: app } = await import("../app.js"));
+    ({ emailAuthLimiter } = await import("../src/middlewares/security.js"));
 
     // Block real network: HIBP range GET + any POST axios would make.
     jest.spyOn(axios, "get").mockResolvedValue({ status: 200, statusText: "OK", data: "" });
@@ -54,6 +57,25 @@ describe("Authentication abuse hardening (issue #89)", () => {
     jest.spyOn(User, "findById").mockImplementation((id) => {
       const found = usersStore.find((u) => u._id.toString() === id.toString());
       return { select: () => found || null, then: (resolve) => resolve(found || null) };
+    });
+
+    // Atomic $inc used by loginUser's failed-login path — applies the
+    // increment to the same store object the assertions inspect.
+    jest.spyOn(User, "findByIdAndUpdate").mockImplementation(async (id, update) => {
+      const user = usersStore.find((u) => u._id.toString() === id.toString());
+      if (!user) return null;
+      if (update?.$inc) {
+        for (const [field, amount] of Object.entries(update.$inc)) {
+          user[field] = (user[field] || 0) + amount;
+        }
+      }
+      return user;
+    });
+
+    jest.spyOn(User, "updateOne").mockImplementation(async (query, update) => {
+      const user = usersStore.find((u) => u._id.toString() === query?._id?.toString());
+      if (user && update?.$set) Object.assign(user, update.$set);
+      return { acknowledged: true, modifiedCount: 1 };
     });
 
     jest.spyOn(User, "create").mockImplementation(async (data) => {
@@ -128,7 +150,14 @@ describe("Authentication abuse hardening (issue #89)", () => {
     sessionsStore = [];
     pendingStore = [];
     auditStore = [];
+    // Reset the per-email limiter buckets so counters never carry across tests.
+    for (const email of usedEmails) {
+      emailAuthLimiter?.resetKey(`email:${email}`);
+    }
+    usedEmails = new Set();
   });
+
+  const trackEmail = (email) => usedEmails.add(email);
 
   const makeUser = (overrides = {}) => {
     const _id = new mongoose.Types.ObjectId().toString();
@@ -182,7 +211,7 @@ describe("Authentication abuse hardening (issue #89)", () => {
       ).toBe(true);
     });
 
-    it("rejects even a correct password while the account is locked (generic 429)", async () => {
+    it("rejects even a correct password while locked, without leaking the account exists", async () => {
       const email = "locked@example.com";
       const hashed = await bcrypt.hash("CorrectPass123!", 4);
       const user = makeUser({ email, password: hashed, failedLoginAttempts: 5, lockUntil: new Date(Date.now() + 60 * 1000) });
@@ -192,11 +221,13 @@ describe("Authentication abuse hardening (issue #89)", () => {
         .post("/api/auth/login")
         .send({ email, password: "CorrectPass123!" });
 
-      expect(res.statusCode).toBe(429);
+      // Identical to a nonexistent-account login — no enumeration.
+      expect(res.statusCode).toBe(401);
       expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe("Invalid credentials");
       // The response must not reveal the account exists beyond the generic
-      // "too many attempts" phrasing.
-      expect(res.body.message).not.toMatch(/user|account exists|found/i);
+      // "Invalid credentials" phrasing.
+      expect(res.body.message).not.toMatch(/user|account exists|found|attempts/i);
       expect(user.failedLoginAttempts).toBe(5); // untouched while locked
     });
 
@@ -238,7 +269,32 @@ describe("Authentication abuse hardening (issue #89)", () => {
 
       expect(res.statusCode).toBe(401);
       expect(user.failedLoginAttempts).toBe(6);
-      expect(new Date(user.lockUntil).getTime()).toBeGreaterThan(Date.now());
+      // 6th failure => base * 2^(6-5) = 2 minutes, not the 1-minute base.
+      const remainingMs = new Date(user.lockUntil).getTime() - Date.now();
+      expect(remainingMs).toBeGreaterThan(90 * 1000);
+      expect(remainingMs).toBeLessThanOrEqual(120 * 1000);
+    });
+
+    it("caps the escalating backoff at LOGIN_LOCKOUT_MAX_MS", async () => {
+      const email = "capped@example.com";
+      const user = makeUser({
+        email,
+        failedLoginAttempts: 20,
+        // Prior lock has long since elapsed.
+        lockUntil: new Date(Date.now() - 1000),
+      });
+      usersStore.push(user);
+
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ email, password: "still-wrong" });
+
+      expect(res.statusCode).toBe(401);
+      expect(user.failedLoginAttempts).toBe(21);
+      const maxMs = 24 * 60 * 60 * 1000; // LOGIN_LOCKOUT_MAX_MS default (24h)
+      const remainingMs = new Date(user.lockUntil).getTime() - Date.now();
+      expect(remainingMs).toBeGreaterThan(maxMs - 60 * 1000);
+      expect(remainingMs).toBeLessThanOrEqual(maxMs);
     });
   });
 
@@ -246,6 +302,7 @@ describe("Authentication abuse hardening (issue #89)", () => {
   describe("per-email signup/verification throttling", () => {
     it("returns 429 for burst signups with the same email (works in test env)", async () => {
       const email = "burst-signup@example.com";
+      trackEmail(email);
       const statuses = [];
       for (let i = 0; i < 4; i += 1) {
         const res = await request(app)
@@ -265,6 +322,7 @@ describe("Authentication abuse hardening (issue #89)", () => {
 
     it("returns 429 for burst verification resends with the same email", async () => {
       const email = "burst-resend@example.com";
+      trackEmail(email);
       const pending = {
         _id: new mongoose.Types.ObjectId().toString(),
         email,
@@ -291,6 +349,7 @@ describe("Authentication abuse hardening (issue #89)", () => {
   describe("captcha gate", () => {
     it("passes register requests when captcha is not configured", async () => {
       const email = "nocaptcha@example.com";
+      trackEmail(email);
       const res = await request(app)
         .post("/api/auth/register")
         .send({

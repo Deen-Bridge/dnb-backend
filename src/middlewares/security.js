@@ -111,6 +111,7 @@ export const captchaGate = () => async (req, res, next) => {
     return res.status(400).json({
       success: false,
       message: "Captcha verification failed. Please try again.",
+      data: null,
     });
   }
   next();

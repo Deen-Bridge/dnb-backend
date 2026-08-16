@@ -46,13 +46,23 @@ export async function isPasswordBreached(password) {
   try {
     const { data } = await axios.get(`${HIBP_RANGE_URL}${prefix}`, {
       timeout: HIBP_TIMEOUT_MS,
-      headers: { "User-Agent": "DeenBridgeBackend/1.0" },
+      headers: {
+        "User-Agent": "DeenBridgeBackend/1.0",
+        // Ask HIBP to append padding records so responses are a fixed size and
+        // cannot be fingerprinted over TLS.
+        "Add-Padding": "true",
+      },
     });
-    // Each line is "<suffix>:<occurrence-count>". Only suffixes matter.
-    const breached = String(data || "")
+    // Each line is "<suffix>:<occurrence-count>". Padding records have count 0
+    // and must be ignored — a real breach always has count >= 1.
+    const records = String(data || "")
       .split("\n")
-      .map((line) => line.trim().split(":")[0].toUpperCase())
-      .includes(suffix);
+      .map((line) => line.trim().split(":"))
+      .filter((parts) => parts.length >= 2)
+      .filter((parts) => parseInt(parts[1], 10) > 0);
+    const breached = records.some(
+      (parts) => parts[0].toUpperCase() === suffix
+    );
 
     if (breached) {
       logger.warn("hibp: password is present in a known breach");

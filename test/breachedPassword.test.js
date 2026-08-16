@@ -91,9 +91,17 @@ describe("Breached-password rejection (HIBP)", () => {
     if (getSpy) getSpy.mockRestore();
   });
 
-  // Default: mock the range GET as NOT breached (empty body).
-  const mockHibp = (data) => {
-    getSpy = jest.spyOn(axios, "get").mockResolvedValue({ status: 200, statusText: "OK", data });
+  // Default: mock the range GET as NOT breached (empty body). Accepts either a
+  // response body string or a custom mock implementation (e.g. a rejection for
+  // outage tests) so the suite's shared getSpy is always the spy that gets
+  // restored by beforeEach.
+  const mockHibp = (dataOrImpl) => {
+    getSpy =
+      typeof dataOrImpl === "function"
+        ? jest.spyOn(axios, "get").mockImplementation(dataOrImpl)
+        : jest
+            .spyOn(axios, "get")
+            .mockResolvedValue({ status: 200, statusText: "OK", data: dataOrImpl });
     return getSpy;
   };
 
@@ -145,10 +153,24 @@ describe("Breached-password rejection (HIBP)", () => {
       expect(res.body.success).toBe(true);
     });
 
+    it("ignores HIBP padding records (count 0) and never treats them as a breach", async () => {
+      // Add-Padding responses append fake suffixes with a 0 occurrence count;
+      // even our own suffix must be ignored when its count is 0.
+      mockHibp(`${SUFFIX}:0\n0123ABCDEF:2\nFFFF0000AA:1`);
+      const email = "padding-register@example.com";
+
+      const res = await request(app)
+        .post("/api/auth/register")
+        .send({ name: "Padding", email, password: STRONG_PASSWORD, role: "student" });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.body.success).toBe(true);
+    });
+
     it("fails OPEN (allows signup) when the HIBP API is down", async () => {
-      jest
-        .spyOn(axios, "get")
-        .mockRejectedValue(new Error("ECONNREFUSED — HIBP outage"));
+      mockHibp(() =>
+        Promise.reject(new Error("ECONNREFUSED — HIBP outage"))
+      );
       const email = "outage-register@example.com";
 
       const res = await request(app)
