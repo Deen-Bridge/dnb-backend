@@ -12,10 +12,32 @@ import { recordAudit } from "../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 import { generateOtp, hashOtp, verifyOtp } from "../utils/otp.js";
 import { firstPasswordIssue } from "../utils/passwordPolicy.js";
+import { isPasswordBreached } from "../utils/hibp.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
+
+// ── Progressive login lockout (issue #89) ───────────────────────────────────
+// After LOGIN_MAX_FAILED_ATTEMPTS consecutive failures, the account is locked
+// for an escalating duration. Each new failure while unlocked (re)extends the
+// lock with exponential backoff, capped at LOGIN_LOCKOUT_MAX_MS.
+const LOGIN_MAX_FAILED_ATTEMPTS =
+  parseInt(process.env.LOGIN_MAX_ATTEMPTS, 10) || 5;
+const LOGIN_LOCKOUT_BASE_MS =
+  parseInt(process.env.LOGIN_LOCKOUT_BASE_MS, 10) || 60 * 1000; // 1 min
+const LOGIN_LOCKOUT_MAX_MS =
+  parseInt(process.env.LOGIN_LOCKOUT_MAX_MS, 10) || 24 * 60 * 60 * 1000; // 24 h
+const LOGIN_LOCKOUT_MULTIPLIER = 2;
+
+/** Escalating backoff: base * 2^(failures - threshold), capped at the max. */
+const lockoutDurationMs = (failedAttempts) =>
+  Math.min(
+    LOGIN_LOCKOUT_MAX_MS,
+    LOGIN_LOCKOUT_BASE_MS *
+      LOGIN_LOCKOUT_MULTIPLIER **
+        Math.max(0, failedAttempts - LOGIN_MAX_FAILED_ATTEMPTS)
+  );
 
 // Log JWT configuration on startup and warn if using fallback
 if (!process.env.JWT_SECRET) {
@@ -142,6 +164,29 @@ export const registerUser = catchAsync(async (req, res, next) => {
       metadata:   { email, reason: "weak_password" },
     });
     return next(new APIError(passwordIssue, 400));
+  }
+
+  // Reject passwords that appear in real-world breach dumps (HIBP range API,
+  // SHA-1 prefix only — the password is never transmitted). Fails open on a
+  // HIBP outage so signups don't break.
+  const breached = await isPasswordBreached(password);
+  if (breached) {
+    logger.warn(`❌ Registration failed - breached password: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "breached_password" },
+    });
+    return next(
+      new APIError(
+        "This password has appeared in a known data breach. Please choose a different one.",
+        400
+      )
+    );
   }
 
   // Check if user already exists
@@ -366,9 +411,49 @@ export const loginUser = catchAsync(async (req, res, next) => {
     return next(new APIError("Invalid credentials", 401));
   }
 
+  // Per-account lockout: reject BEFORE running bcrypt while the account is
+  // locked, and do not leak whether the account exists beyond the generic
+  // "too many attempts" response.
+  const isLocked = user.lockUntil && new Date(user.lockUntil) > new Date();
+  if (isLocked) {
+    logger.warn(`🔒 Login blocked - account locked: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_ACCOUNT_LOCKED,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "failure",
+      metadata:   { email, reason: "account_locked" },
+    });
+    return next(
+      new APIError("Too many failed login attempts. Please try again later.", 429)
+    );
+  }
+
   // Verify password
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
+    user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+    if (user.failedLoginAttempts >= LOGIN_MAX_FAILED_ATTEMPTS) {
+      user.lockUntil = new Date(
+        Date.now() + lockoutDurationMs(user.failedLoginAttempts)
+      );
+      logger.warn(
+        `🔒 Account locked after ${user.failedLoginAttempts} failed attempts: ${email}`
+      );
+      recordAudit({
+        action:     AUDIT_ACTIONS.AUTH_ACCOUNT_LOCKED,
+        actor:      user._id,
+        req,
+        targetType: "User",
+        targetId:   user._id.toString(),
+        status:     "failure",
+        metadata:   { email, reason: "account_locked" },
+      });
+    }
+    await user.save({ validateBeforeSave: false });
+
     logger.warn(`❌ Login failed - Incorrect password: ${email}`);
     recordAudit({
       action:     AUDIT_ACTIONS.AUTH_LOGIN_FAILURE,
@@ -394,8 +479,12 @@ export const loginUser = catchAsync(async (req, res, next) => {
     logger.info(`👑 Promoted ${user.email} to admin (whitelisted account)`);
   }
 
-  // Update last login
+  // Update last login and clear any lockout state (success is the reset).
   user.lastLogin = new Date();
+  if (user.failedLoginAttempts || user.lockUntil) {
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+  }
   await user.save({ validateBeforeSave: false });
 
   // Generate session and tokens
@@ -514,6 +603,17 @@ export const resetPassword = async (req, res) => {
     if (newPasswordIssue) {
       logger.warn(`❌ Password reset failed - weak password: ${email}`);
       return res.status(400).json({ success: false, message: newPasswordIssue });
+    }
+
+    // A reset must not be a way around a breached-password rejection either.
+    const breached = await isPasswordBreached(newPassword);
+    if (breached) {
+      logger.warn(`❌ Password reset failed - breached password: ${email}`);
+      return res.status(400).json({
+        success: false,
+        message:
+          "This password has appeared in a known data breach. Please choose a different one.",
+      });
     }
 
     const user = await User.findOne({ email }).select("+password");
