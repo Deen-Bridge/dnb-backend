@@ -30,6 +30,11 @@ const METADATA_ALLOWLIST = new Set([
   "assignedRole",
   "name",
 
+  // 2FA
+  "mfaRequired",
+  "recoveryCodeUsed",
+  "twoFactorEnabled",
+
   // Wallet
   "publicKey",
   "network",

@@ -63,6 +63,27 @@ const userSchema = new mongoose.Schema(
     resetTokenExpiry: {
       type: Date,
     },
+    twoFactor: {
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+      secret: {
+        type: String,
+        select: false,
+      },
+      pendingSecret: {
+        type: String,
+        select: false,
+      },
+      recoveryCodes: {
+        type: [String],
+        select: false,
+      },
+      enrolledAt: {
+        type: Date,
+      },
+    },
     // Follow system
     following: [
       {

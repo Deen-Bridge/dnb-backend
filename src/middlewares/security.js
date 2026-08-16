@@ -124,6 +124,24 @@ export const refreshLimiter = rateLimit({
 });
 
 /**
+ * Rate limiting specifically for 2FA verification routes
+ */
+export const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 attempts
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === "test" && process.env.ENABLE_TEST_RATE_LIMIT !== "true",
+  handler: (req, res) => {
+    logger.warn(`2FA rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json({
+      success: false,
+      message: "Too many 2FA verification attempts, please try again later.",
+    });
+  },
+});
+
+/**
  * MongoDB Injection Protection
  * Custom implementation for Express 5 compatibility
  * Sanitizes user input to prevent NoSQL injection attacks

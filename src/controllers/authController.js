@@ -14,6 +14,16 @@ import { generateOtp, hashOtp, verifyOtp } from "../utils/otp.js";
 import { firstPasswordIssue } from "../utils/passwordPolicy.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
+import qrcode from "qrcode";
+import {
+  encryptSecret,
+  decryptSecret,
+  generateRecoveryCodes,
+  verifyAndConsumeRecoveryCode,
+  generateBase32Secret,
+  verifyTOTPCode,
+  generateOtpauthUrl,
+} from "../utils/twoFactorCrypto.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
 
@@ -81,7 +91,8 @@ export const shapeAuthUser = (user) => ({
 });
 
 // Helper: generate new session + refresh token + cookie + access token
-export const createSessionAndTokens = async (user, req, res) => {
+export const createSessionAndTokens = async (user, req, res, options = {}) => {
+  const is2FAVerified = options.is2FAVerified === true;
   const rawRefreshToken = crypto.randomBytes(32).toString("hex");
   const refreshTokenHash = crypto.createHash("sha256").update(rawRefreshToken).digest("hex");
   
@@ -100,11 +111,12 @@ export const createSessionAndTokens = async (user, req, res) => {
       label: getDeviceLabel(req.headers["user-agent"]),
     },
     expiresAt,
+    is2FAVerified,
   });
 
   const accessTokenTtl = process.env.ACCESS_TOKEN_TTL || "15m";
   const accessToken = jwt.sign(
-    { userId: user._id, role: user.role, sessionId: session._id },
+    { userId: user._id, role: user.role, sessionId: session._id, is2FAVerified },
     JWT_SECRET,
     { expiresIn: accessTokenTtl }
   );
@@ -382,23 +394,55 @@ export const loginUser = catchAsync(async (req, res, next) => {
     return next(new APIError("Invalid credentials", 401));
   }
 
-  // Auto-promote whitelisted admin emails (self-healing for existing accounts)
+  // Auto-promote whitelisted admin emails (self-healing for existing accounts, only if 2FA is enabled)
   const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
 
   if (ADMIN_EMAILS.includes(user.email.toLowerCase()) && user.role !== "admin") {
-    user.role = "admin";
-    await user.save({ validateBeforeSave: false });
-    logger.info(`👑 Promoted ${user.email} to admin (whitelisted account)`);
+    if (user.twoFactor?.enabled) {
+      user.role = "admin";
+      await user.save({ validateBeforeSave: false });
+      logger.info(`👑 Promoted ${user.email} to admin (whitelisted account with 2FA)`);
+    } else {
+      logger.warn(`⚠️ Whitelisted admin account ${user.email} not promoted because 2FA is not enabled`);
+    }
+  }
+
+  // If 2FA is enabled for this user, issue a short-lived MFA challenge token instead of session tokens
+  if (user.twoFactor?.enabled) {
+    const mfaToken = jwt.sign(
+      { userId: user._id, type: "mfa_challenge" },
+      JWT_SECRET,
+      { expiresIn: "5m" }
+    );
+
+    logger.info(`🔐 2FA step-up challenge issued for: ${email}`);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_2FA_LOGIN_CHALLENGE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "success",
+      metadata:   { email, mfaRequired: true },
+    });
+
+    return res.status(200).json({
+      success: true,
+      mfaRequired: true,
+      mfaToken,
+      message: "Two-factor authentication required",
+    });
   }
 
   // Update last login
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
-  // Generate session and tokens
+  // Generate session and tokens (for users without 2FA)
   const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
 
   logger.info(`✅ Login successful: ${email} (ID: ${user._id})`);
@@ -599,6 +643,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
   }
 
   // Perform rotation
+  const is2FAVerified = session.is2FAVerified === true;
   const newRawToken = crypto.randomBytes(32).toString("hex");
   const newHash = crypto.createHash("sha256").update(newRawToken).digest("hex");
   
@@ -616,6 +661,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
       label: getDeviceLabel(req.headers["user-agent"]),
     },
     expiresAt: newExpiresAt,
+    is2FAVerified,
   });
 
   session.revokedAt = new Date();
@@ -625,7 +671,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
 
   const accessTokenTtl = process.env.ACCESS_TOKEN_TTL || "15m";
   const accessToken = jwt.sign(
-    { userId: session.user._id, role: session.user.role, sessionId: newSession._id },
+    { userId: session.user._id, role: session.user.role, sessionId: newSession._id, is2FAVerified },
     JWT_SECRET,
     { expiresIn: accessTokenTtl }
   );
@@ -828,3 +874,283 @@ export const changePassword = catchAsync(async (req, res, next) => {
       "Password changed successfully. Other devices have been signed out.",
   });
 });
+
+// ── TOTP 2FA Controllers ───────────────────────────────────────────────────
+
+/**
+ * Enrollment endpoint (POST /api/auth/2fa/setup, protect)
+ * Generates secret, stores encrypted pendingSecret, returns otpauth URI & QR code.
+ */
+export const setup2FA = catchAsync(async (req, res, next) => {
+  const user = await User.findById(req.user._id).select("+twoFactor.secret +twoFactor.pendingSecret");
+  if (!user) {
+    return next(new APIError("User not found", 404));
+  }
+
+  if (user.twoFactor?.enabled) {
+    return next(new APIError("Two-factor authentication is already enabled", 400));
+  }
+
+  const secret = generateBase32Secret();
+  const encryptedSecret = encryptSecret(secret);
+
+  if (!user.twoFactor) {
+    user.twoFactor = {};
+  }
+  user.twoFactor.pendingSecret = encryptedSecret;
+  await user.save({ validateBeforeSave: false });
+
+  const otpauthUrl = generateOtpauthUrl(user.email, secret);
+  const qrCode = await qrcode.toDataURL(otpauthUrl);
+
+  recordAudit({
+    action: AUDIT_ACTIONS.AUTH_2FA_SETUP_INITIATED,
+    actor: user._id,
+    req,
+    targetType: "User",
+    targetId: user._id.toString(),
+    status: "success",
+    metadata: { email: user.email },
+  });
+
+  res.status(200).json({
+    success: true,
+    secret,
+    otpauthUrl,
+    qrCode,
+    message: "2FA setup initiated. Scan QR code or enter secret into your authenticator app, then confirm with a 2FA code.",
+  });
+});
+
+/**
+ * Confirm/Verify endpoint (POST /api/auth/2fa/verify)
+ * Supports:
+ *  1. Setup confirmation (with protect authorization header & code)
+ *  2. Login step-up completion (with mfaToken & code / recoveryCode)
+ */
+export const verify2FA = catchAsync(async (req, res, next) => {
+  const { code, recoveryCode, mfaToken } = req.body;
+
+  // Branch A: Login step-up verification
+  if (mfaToken) {
+    let decoded;
+    try {
+      decoded = jwt.verify(mfaToken, JWT_SECRET);
+    } catch (err) {
+      return next(new APIError("Invalid or expired 2FA challenge token", 401));
+    }
+
+    if (decoded.type !== "mfa_challenge" || !decoded.userId) {
+      return next(new APIError("Invalid 2FA challenge token", 401));
+    }
+
+    const user = await User.findById(decoded.userId).select("+twoFactor.secret +twoFactor.recoveryCodes");
+    if (!user || !user.twoFactor?.enabled) {
+      return next(new APIError("Two-factor authentication is not enabled for this user", 400));
+    }
+
+    let isValid = false;
+    let isRecovery = false;
+
+    if (code) {
+      const decryptedSecret = decryptSecret(user.twoFactor.secret);
+      isValid = verifyTOTPCode(code.toString(), decryptedSecret);
+    }
+
+    if (!isValid && recoveryCode) {
+      isValid = await verifyAndConsumeRecoveryCode(user, recoveryCode);
+      if (isValid) isRecovery = true;
+    }
+
+    // Fallback: if recovery code was passed in the code field
+    if (!isValid && code && !recoveryCode) {
+      isValid = await verifyAndConsumeRecoveryCode(user, code);
+      if (isValid) isRecovery = true;
+    }
+
+    if (!isValid) {
+      recordAudit({
+        action: AUDIT_ACTIONS.AUTH_2FA_LOGIN_FAILURE,
+        actor: user._id,
+        req,
+        targetType: "User",
+        targetId: user._id.toString(),
+        status: "failure",
+        metadata: { email: user.email, reason: "invalid_2fa_code" },
+      });
+      return next(new APIError("Invalid 2FA code or recovery code", 401));
+    }
+
+    // Auto-promote whitelisted admin emails now that 2FA is verified & enabled
+    const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (ADMIN_EMAILS.includes(user.email.toLowerCase()) && user.role !== "admin") {
+      user.role = "admin";
+      logger.info(`👑 Promoted ${user.email} to admin (whitelisted account with 2FA)`);
+    }
+
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+
+    if (isRecovery) {
+      recordAudit({
+        action: AUDIT_ACTIONS.AUTH_2FA_RECOVERY_USED,
+        actor: user._id,
+        req,
+        targetType: "User",
+        targetId: user._id.toString(),
+        status: "success",
+        metadata: { email: user.email, recoveryCodeUsed: true },
+      });
+    }
+
+    const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res, { is2FAVerified: true });
+
+    recordAudit({
+      action: AUDIT_ACTIONS.AUTH_2FA_LOGIN_SUCCESS,
+      actor: user._id,
+      req,
+      targetType: "User",
+      targetId: user._id.toString(),
+      status: "success",
+      metadata: { email: user.email, role: user.role },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      accessToken,
+      refreshToken,
+      token: accessToken,
+      user: shapeAuthUser(user),
+    });
+  }
+
+  // Branch B: Setup confirmation
+  if (!req.user) {
+    return next(new APIError("Authentication required (provide authorization header or mfaToken)", 401));
+  }
+
+  if (!code) {
+    return next(new APIError("Please provide a 2FA code", 400));
+  }
+
+  const user = await User.findById(req.user._id).select("+twoFactor.pendingSecret +twoFactor.secret +twoFactor.recoveryCodes");
+  if (!user || !user.twoFactor?.pendingSecret) {
+    return next(new APIError("No 2FA setup in progress. Please call setup first.", 400));
+  }
+
+  const decryptedSecret = decryptSecret(user.twoFactor.pendingSecret);
+  const isValid = verifyTOTPCode(code.toString(), decryptedSecret);
+
+  if (!isValid) {
+    recordAudit({
+      action: AUDIT_ACTIONS.AUTH_2FA_ENABLE_FAILURE,
+      actor: user._id,
+      req,
+      targetType: "User",
+      targetId: user._id.toString(),
+      status: "failure",
+      metadata: { email: user.email, reason: "invalid_confirmation_code" },
+    });
+    return next(new APIError("Invalid 2FA verification code", 401));
+  }
+
+  // Generate single-use recovery codes
+  const { plainCodes, hashedCodes } = await generateRecoveryCodes(10);
+
+  user.twoFactor.secret = user.twoFactor.pendingSecret;
+  user.twoFactor.pendingSecret = undefined;
+  user.twoFactor.enabled = true;
+  user.twoFactor.recoveryCodes = hashedCodes;
+  user.twoFactor.enrolledAt = new Date();
+  await user.save({ validateBeforeSave: false });
+
+  recordAudit({
+    action: AUDIT_ACTIONS.AUTH_2FA_ENABLE_SUCCESS,
+    actor: user._id,
+    req,
+    targetType: "User",
+    targetId: user._id.toString(),
+    status: "success",
+    metadata: { email: user.email, twoFactorEnabled: true },
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Two-factor authentication enabled successfully",
+    recoveryCodes: plainCodes,
+  });
+});
+
+/**
+ * Disable 2FA endpoint (POST /api/auth/2fa/disable, protect)
+ * Requires a valid code or recovery code.
+ */
+export const disable2FA = catchAsync(async (req, res, next) => {
+  const { code, recoveryCode } = req.body;
+
+  if (!code && !recoveryCode) {
+    return next(new APIError("Please provide a 2FA code or recovery code to disable 2FA", 400));
+  }
+
+  const user = await User.findById(req.user._id).select("+twoFactor.secret +twoFactor.recoveryCodes");
+  if (!user || !user.twoFactor?.enabled) {
+    return next(new APIError("Two-factor authentication is not enabled", 400));
+  }
+
+  let isValid = false;
+
+  if (code) {
+    const decryptedSecret = decryptSecret(user.twoFactor.secret);
+    isValid = verifyTOTPCode(code.toString(), decryptedSecret);
+  }
+
+  if (!isValid && recoveryCode) {
+    isValid = await verifyAndConsumeRecoveryCode(user, recoveryCode);
+  }
+
+  if (!isValid && code && !recoveryCode) {
+    isValid = await verifyAndConsumeRecoveryCode(user, code);
+  }
+
+  if (!isValid) {
+    recordAudit({
+      action: AUDIT_ACTIONS.AUTH_2FA_DISABLE_FAILURE,
+      actor: user._id,
+      req,
+      targetType: "User",
+      targetId: user._id.toString(),
+      status: "failure",
+      metadata: { email: user.email, reason: "invalid_code" },
+    });
+    return next(new APIError("Invalid 2FA code or recovery code", 401));
+  }
+
+  user.twoFactor.enabled = false;
+  user.twoFactor.secret = undefined;
+  user.twoFactor.pendingSecret = undefined;
+  user.twoFactor.recoveryCodes = [];
+  user.twoFactor.enrolledAt = undefined;
+
+  await user.save({ validateBeforeSave: false });
+
+  recordAudit({
+    action: AUDIT_ACTIONS.AUTH_2FA_DISABLE_SUCCESS,
+    actor: user._id,
+    req,
+    targetType: "User",
+    targetId: user._id.toString(),
+    status: "success",
+    metadata: { email: user.email, twoFactorEnabled: false },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Two-factor authentication disabled successfully",
+  });
+});
+

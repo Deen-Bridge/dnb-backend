@@ -27,6 +27,7 @@ export const protect = async (req, res, next) => {
       }
 
       req.sessionId = decoded.sessionId;
+      req.is2FAVerified = decoded.is2FAVerified === true;
 
       next();
     } catch (error) {
@@ -49,8 +50,46 @@ export const authorizeRoles = (...roles) => {
         message: `Forbidden: Access requires one of the following roles: ${roles.join(", ")}`,
       });
     }
+
+    // Enforce 2FA for admin role
+    if (req.user.role === "admin") {
+      if (!req.user.twoFactor?.enabled) {
+        return res.status(403).json({
+          success: false,
+          message: "Forbidden: Admin access requires TOTP two-factor authentication to be enabled.",
+        });
+      }
+      if (!req.is2FAVerified) {
+        return res.status(403).json({
+          success: false,
+          message: "Forbidden: Admin access requires a 2FA-verified session.",
+        });
+      }
+    }
+
     next();
   };
+};
+
+export const require2FA = (req, res, next) => {
+  if (!req.user) {
+    return res
+      .status(401)
+      .json({ success: false, message: "Not authenticated" });
+  }
+  if (!req.user.twoFactor?.enabled) {
+    return res.status(403).json({
+      success: false,
+      message: "Two-factor authentication is required to be enabled for this action.",
+    });
+  }
+  if (!req.is2FAVerified) {
+    return res.status(403).json({
+      success: false,
+      message: "This action requires a 2FA-verified session.",
+    });
+  }
+  next();
 };
 
 export const requireVerified = (req, res, next) => {

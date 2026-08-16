@@ -26,6 +26,17 @@ export const AUDIT_ACTIONS = Object.freeze({
   AUTH_PASSWORD_RESET_COMPLETE: "auth.password_reset.complete",
   AUTH_PASSWORD_CHANGE:         "auth.password_change",
 
+  // 2FA
+  AUTH_2FA_SETUP_INITIATED: "auth.2fa.setup_initiated",
+  AUTH_2FA_ENABLE_SUCCESS:  "auth.2fa.enable.success",
+  AUTH_2FA_ENABLE_FAILURE:  "auth.2fa.enable.failure",
+  AUTH_2FA_LOGIN_CHALLENGE: "auth.2fa.login.challenge",
+  AUTH_2FA_LOGIN_SUCCESS:   "auth.2fa.login.success",
+  AUTH_2FA_LOGIN_FAILURE:   "auth.2fa.login.failure",
+  AUTH_2FA_DISABLE_SUCCESS: "auth.2fa.disable.success",
+  AUTH_2FA_DISABLE_FAILURE: "auth.2fa.disable.failure",
+  AUTH_2FA_RECOVERY_USED:   "auth.2fa.recovery_used",
+
   // Wallet
   WALLET_CONNECT_SUCCESS:   "wallet.connect.success",
   WALLET_CONNECT_FAILURE:   "wallet.connect.failure",

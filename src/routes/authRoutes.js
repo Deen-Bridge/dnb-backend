@@ -13,13 +13,16 @@ import {
   changePassword,
   verifyEmail,
   resendVerification,
+  setup2FA,
+  verify2FA,
+  disable2FA,
 } from "../controllers/authController.js";
 import {
   getStellarChallenge,
   verifyStellarChallenge,
 } from "../controllers/stellar/sep10Controller.js";
 import { protect } from "../middlewares/authMiddleware.js";
-import { refreshLimiter } from "../middlewares/security.js";
+import { refreshLimiter, twoFactorLimiter } from "../middlewares/security.js";
 
 const router = express.Router();
 
@@ -30,6 +33,18 @@ router.post("/request-password-reset", requestPasswordReset);
 router.post("/reset-password", resetPassword);
 router.get("/verify-email/:token", verifyEmail);
 router.post("/resend-verification", resendVerification);
+
+// 2FA Routes
+router.post("/2fa/setup", protect, twoFactorLimiter, setup2FA);
+router.post("/2fa/verify", twoFactorLimiter, (req, res, next) => {
+  // If authorization header is provided and no mfaToken, pass through protect middleware first
+  if (req.headers.authorization && !req.body.mfaToken) {
+    return protect(req, res, next);
+  }
+  next();
+}, verify2FA);
+router.post("/2fa/login", twoFactorLimiter, verify2FA);
+router.post("/2fa/disable", protect, twoFactorLimiter, disable2FA);
 
 // Stellar SEP-10 Web Authentication ("Sign in with Stellar"). Returns 503 when
 // the feature is unconfigured (SEP10_SIGNING_SECRET/domains unset). See #25.
