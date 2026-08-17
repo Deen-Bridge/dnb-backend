@@ -13,18 +13,31 @@ const generateToken = (userId) => {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "1h" });
 };
 
+import { MongoMemoryServer } from "mongodb-memory-server";
+
 describe("Reviews & Ratings API (Course and Book)", () => {
   let author, enrolledUser, purchaserUser, randomUser, adminUser;
   let authorToken, enrolledToken, purchaserToken, randomToken, adminToken;
   let course, book;
+  let mongoServer;
 
   beforeAll(async () => {
-    await mongoose.connect(`${process.env.MONGO_URI}_reviews`);
+    if (process.env.MONGO_URI && !process.env.MONGO_URI.includes("localhost")) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_reviews`);
+        return;
+      } catch (_err) {}
+    }
+    mongoServer = await MongoMemoryServer.create();
+    await mongoose.connect(mongoServer.getUri());
   }, 60000);
 
   afterAll(async () => {
     if (mongoose.connection.readyState !== 0) {
       await mongoose.connection.close();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
     }
   });
 

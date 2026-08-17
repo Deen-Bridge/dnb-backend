@@ -6,14 +6,33 @@ import Book from "../src/models/Book.js";
 import User from "../src/models/User.js";
 import Space from "../src/models/Space.js";
 
+import { MongoMemoryServer } from "mongodb-memory-server";
+
 let userId1;
 let userId2;
 let userId3;
 let adminId;
+let mongoServer;
 
 beforeAll(async () => {
-  await mongoose.connect(`${process.env.MONGO_URI}_educators`);
+  if (process.env.MONGO_URI && !process.env.MONGO_URI.includes("localhost")) {
+    try {
+      await mongoose.connect(`${process.env.MONGO_URI}_educators`);
+      return;
+    } catch (_err) {}
+  }
+  mongoServer = await MongoMemoryServer.create();
+  await mongoose.connect(mongoServer.getUri());
 }, 60000);
+
+afterAll(async () => {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.connection.close();
+  }
+  if (mongoServer) {
+    await mongoServer.stop();
+  }
+});
 
 beforeEach(async () => {
   await Course.deleteMany({});
