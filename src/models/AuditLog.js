@@ -45,6 +45,9 @@ export const AUDIT_ACTIONS = Object.freeze({
   // Authorization
   AUTHZ_OWNERSHIP_DENIED: "authz.ownership.denied",
 
+  // Service-to-service auth (dnb-ai)
+  SERVICE_AUTH_DENIED: "service_auth.denied",
+
   // Extension points — to be instrumented with issue #20 / #28
   PAYOUT_BATCH_INITIATED: "payout.batch.initiated",
   PAYOUT_BATCH_CONFIRMED: "payout.batch.confirmed",
