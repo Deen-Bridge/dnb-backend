@@ -1,4 +1,4 @@
-import app from "./app.js";
+import app, { setReadiness } from "./app.js";
 import logger from "./src/config/logger.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
 import { startJobs, stopJobs } from "./src/jobs/queue.js";
@@ -38,6 +38,13 @@ if (process.env.INGESTION_WORKER_ENABLED === "true") {
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
+
+  // FIRST: signal not ready so load balancer stops sending new requests
+  setReadiness(false);
+
+  // Give load balancer time to drain (adjust to your LB health check interval)
+  // Typical health check intervals are 5-10 seconds
+  await new Promise((resolve) => setTimeout(resolve, 5000));
 
   server.close(async () => {
     logger.info("HTTP server closed");
