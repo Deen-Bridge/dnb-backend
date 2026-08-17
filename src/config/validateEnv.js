@@ -53,6 +53,9 @@ const optionalEnvVars = [
   "SIGNING_KEY",
   "INGESTION_WORKER_ENABLED",
   "INGESTION_POLL_INTERVAL_MS",
+  // Service-to-service auth keys for the AI service (dnb-ai). Required in
+  // production (fail-fast below); optional in development/test.
+  "AI_SERVICE_KEYS",
 ];
 
 export const validateEnv = () => {
@@ -87,6 +90,13 @@ export const validateEnv = () => {
       missing.push(envVar);
     }
   });
+
+  // Service-to-service auth keys are REQUIRED in production so a misconfigured
+  // deploy fails fast rather than leaving the AI channel open/unauthenticated.
+  // In development/test they stay optional.
+  if (process.env.NODE_ENV === "production" && !process.env.AI_SERVICE_KEYS) {
+    missing.push("AI_SERVICE_KEYS");
+  }
 
   if (missing.length > 0) {
     logger.error(
