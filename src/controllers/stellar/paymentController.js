@@ -642,6 +642,7 @@ export const submitPayment = async (req, res) => {
       );
     } catch (validationError) {
       transaction.status = "failed";
+      transaction.expiresAt = undefined;
       transaction.failureReason = `validation_failed: ${validationError.message}`;
       await transaction.save({ session });
       await session.commitTransaction();
@@ -667,6 +668,7 @@ export const submitPayment = async (req, res) => {
       result = await submitTransaction(signedXdr);
     } catch (stellarError) {
       transaction.status = "failed";
+      transaction.expiresAt = undefined;
       transaction.failureReason = stellarError.message;
       await transaction.save({ session });
       await session.commitTransaction();
@@ -727,6 +729,7 @@ export const submitPayment = async (req, res) => {
         });
       }
       transaction.status = "failed";
+      transaction.expiresAt = undefined;
       transaction.failureReason = `On-chain verification failed: ${verification.reason}`;
       await transaction.save({ session });
       await session.commitTransaction();
@@ -761,6 +764,7 @@ export const submitPayment = async (req, res) => {
     transaction.stellarLedger = result.ledger;
     transaction.status = "confirmed";
     transaction.confirmedAt = new Date();
+    transaction.expiresAt = undefined;
     await transaction.save({ session });
     paymentsConfirmed.inc({ type: "purchase" });
 
@@ -962,8 +966,13 @@ export const cancelTransaction = async (req, res) => {
         status: "pending",
       },
       {
-        status: "expired",
-        failureReason: "Cancelled by user",
+        $set: {
+          status: "expired",
+          failureReason: "Cancelled by user",
+        },
+        $unset: {
+          expiresAt: 1,
+        },
       },
       { new: true }
     );

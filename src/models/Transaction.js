@@ -147,7 +147,11 @@ const transactionSchema = new mongoose.Schema(
     confirmedAt: Date,
     expiresAt: {
       type: Date,
-      default: () => new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+      default: function () {
+        return this.status === "pending" || !this.status
+          ? new Date(Date.now() + 30 * 60 * 1000)
+          : undefined;
+      },
     },
   },
   { timestamps: true }
@@ -157,5 +161,8 @@ transactionSchema.index({ buyer: 1, status: 1 });
 transactionSchema.index({ creator: 1, status: 1 });
 transactionSchema.index({ itemType: 1, itemId: 1 });
 transactionSchema.index({ type: 1, status: 1, createdAt: -1 }); // Donation stats
-transactionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL for expired pending
+transactionSchema.index(
+  { expiresAt: 1 },
+  { expireAfterSeconds: 0, partialFilterExpression: { status: "pending" } }
+); // TTL for expired pending only
 export default mongoose.model("Transaction", transactionSchema);
