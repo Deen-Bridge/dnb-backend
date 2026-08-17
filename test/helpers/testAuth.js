@@ -1,5 +1,5 @@
 import request from "supertest";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import User from "../../src/models/User.js";
 
 // Registration is email-verification-first, so POST /api/auth/register no longer

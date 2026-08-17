@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import app from "../app.js";
 import User from "../src/models/User.js";
 import PendingUser from "../src/models/PendingUser.js";

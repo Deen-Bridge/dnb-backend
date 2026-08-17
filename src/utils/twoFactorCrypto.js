@@ -1,6 +1,6 @@
 // utils/twoFactorCrypto.js
 import crypto from "crypto";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 const ALGORITHM = "aes-256-gcm";
 const KEY_STRING =
