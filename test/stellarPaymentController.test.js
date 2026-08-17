@@ -334,6 +334,9 @@ describe("Stellar payment controller", () => {
       { session }
     );
     expect(tx.status).toBe("confirmed");
+    // Terminal state — the submit confirm path must leave the row without an
+    // expiry so the TTL reaper can never delete it.
+    expect(tx.expiresAt).toBeUndefined();
     expect(session.commitTransaction).toHaveBeenCalledTimes(1);
     expect(session.abortTransaction).not.toHaveBeenCalled();
   });
