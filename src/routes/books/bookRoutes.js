@@ -21,6 +21,11 @@ import {
 } from "../../controllers/books/bookmarkBookController.js";
 import { protect } from "../../middlewares/authMiddleware.js";
 import {
+  authorizeOwnership,
+  authorizeReviewOwnership,
+} from "../../middlewares/authorize.js";
+import Book from "../../models/Book.js";
+import {
   cacheMiddleware,
   invalidateCacheMiddleware,
 } from "../../middlewares/cache.js";
@@ -84,6 +89,7 @@ router.get(
 router.delete(
   "/:id",
   protect,
+  authorizeOwnership({ model: Book, ownerField: "author", resourceType: "Book" }),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   deleteBook
 );
@@ -98,36 +104,42 @@ router.post(
 router.put(
   "/:id/reviews",
   protect,
+  authorizeReviewOwnership({ model: Book }),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   updateBookReview
 );
 router.patch(
   "/:id/reviews",
   protect,
+  authorizeReviewOwnership({ model: Book }),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   updateBookReview
 );
 router.put(
   "/:id/reviews/:reviewId",
   protect,
+  authorizeReviewOwnership({ model: Book }),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   updateBookReview
 );
 router.patch(
   "/:id/reviews/:reviewId",
   protect,
+  authorizeReviewOwnership({ model: Book }),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   updateBookReview
 );
 router.delete(
   "/:id/reviews",
   protect,
+  authorizeReviewOwnership({ model: Book }),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   deleteBookReview
 );
 router.delete(
   "/:id/reviews/:reviewId",
   protect,
+  authorizeReviewOwnership({ model: Book }),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   deleteBookReview
 );

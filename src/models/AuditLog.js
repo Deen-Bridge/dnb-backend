@@ -42,6 +42,9 @@ export const AUDIT_ACTIONS = Object.freeze({
   // Entitlements (access grants)
   ENTITLEMENT_GRANT: "entitlement.grant",
 
+  // Authorization
+  AUTHZ_OWNERSHIP_DENIED: "authz.ownership.denied",
+
   // Extension points — to be instrumented with issue #20 / #28
   PAYOUT_BATCH_INITIATED: "payout.batch.initiated",
   PAYOUT_BATCH_CONFIRMED: "payout.batch.confirmed",
