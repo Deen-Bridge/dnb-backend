@@ -195,7 +195,7 @@ const performReview = async (req, res, targetStatus, auditAction) => {
     throw err;
   }
 
-  recordAudit({
+  await recordAudit({
     action: auditAction,
     actor: reviewerId,
     req,

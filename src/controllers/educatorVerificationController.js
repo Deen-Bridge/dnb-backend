@@ -179,7 +179,7 @@ export const submitApplication = catchAsync(async (req, res) => {
     ? AUDIT_ACTIONS.EDUCATOR_VERIFY_RESUBMIT
     : AUDIT_ACTIONS.EDUCATOR_VERIFY_SUBMIT;
 
-  recordAudit({
+  await recordAudit({
     action: auditAction,
     actor: applicantId,
     req,

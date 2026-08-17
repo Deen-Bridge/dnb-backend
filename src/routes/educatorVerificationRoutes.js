@@ -6,15 +6,14 @@ import {
   getDocumentSignedUrl,
   generateUploadSignature,
 } from "../controllers/educatorVerificationController.js";
-import { catchAsync } from "../middlewares/errorHandler.js";
 
 const router = express.Router();
 
 router.use(protect);
 
-router.get("/", catchAsync(getMyApplication));
-router.get("/documents/:documentIndex/signed-url", catchAsync(getDocumentSignedUrl));
-router.get("/upload-signature", catchAsync(generateUploadSignature));
-router.post("/submit", catchAsync(submitApplication));
+router.get("/", getMyApplication);
+router.get("/documents/:documentIndex/signed-url", getDocumentSignedUrl);
+router.get("/upload-signature", generateUploadSignature);
+router.post("/submit", submitApplication);
 
 export default router;

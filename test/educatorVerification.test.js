@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import app from "../app.js";
 import User from "../src/models/User.js";
 import Book from "../src/models/Book.js";
@@ -28,7 +28,9 @@ describe("Issue #92 — Educator Verification Pipeline + Content Gating", () => 
   let mongoServer;
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryReplSet.create({
+      replSet: { count: 1, storageEngine: "wiredTiger" },
+    });
     await mongoose.connect(mongoServer.getUri());
   }, 60000);
 
@@ -43,7 +45,7 @@ describe("Issue #92 — Educator Verification Pipeline + Content Gating", () => 
     await Course.deleteMany({});
     await Space.deleteMany({});
     await EducatorVerification.deleteMany({});
-    await AuditLog.deleteMany({});
+    await AuditLog.collection.deleteMany({});
   });
 
   // ── Shared helpers ──────────────────────────────────────────────────────
