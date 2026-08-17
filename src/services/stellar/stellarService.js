@@ -765,6 +765,16 @@ export const getAccountExplorerUrl = (publicKey) => {
   return baseUrl + publicKey;
 };
 
+export const validateSignedPaymentXdr = (xdr) => {
+  if (!xdr) return { valid: false, reason: "XDR is required" };
+  try {
+    const tx = StellarSdk.TransactionBuilder.fromXDR(xdr, networkPassphrase);
+    return { valid: true, transaction: tx };
+  } catch (err) {
+    return { valid: false, reason: err.message };
+  }
+};
+
 export const server = client.endpoints[0].server;
 
 export {

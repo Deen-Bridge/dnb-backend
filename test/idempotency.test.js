@@ -34,6 +34,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   submitTransaction: jest.fn().mockResolvedValue({ hash: "mock_tx_hash_123" }),
   verifyTransaction: jest.fn(),
   verifyPaymentOperations: jest.fn().mockResolvedValue({ ok: true }),
+  validateSignedPaymentXdr: jest.fn().mockReturnValue({ valid: true }),
   hasTrustline: jest.fn().mockResolvedValue(true),
   hasUsdcTrustline: jest.fn().mockResolvedValue(true),
   getExplorerUrl: jest.fn((hash) => `https://stellar.expert/tx/${hash}`),
