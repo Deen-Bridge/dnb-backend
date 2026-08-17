@@ -126,16 +126,10 @@ export const getBooksByAuthor = async (req, res) => {
 // delete book by id
 export const deleteBook = async (req, res) => {
   try {
-    const book = await Book.findById(req.params.id);
+    // Ownership is enforced by authorizeOwnership middleware (req.resource).
+    const book = req.resource || (await Book.findById(req.params.id));
     if (!book) {
       return res.status(404).json({ success: false, message: "Book not found" });
-    }
-
-    if (req.user.role !== "admin" && book.author.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to delete this book",
-      });
     }
 
     await Book.findByIdAndDelete(req.params.id);
