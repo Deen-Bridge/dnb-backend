@@ -30,8 +30,6 @@ const generateToken = (userId, role = "student") => {
   return jwt.sign({ userId, role, is2FAVerified: true }, JWT_SECRET, { expiresIn: "1h" });
 };
 
-import { MongoMemoryServer } from "mongodb-memory-server";
-
 describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
   let buyer, educator, otherUser, adminUser;
   let buyerWallet;
