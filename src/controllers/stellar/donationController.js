@@ -8,6 +8,7 @@ import {
   buildSep7Uri,
   submitTransaction,
   verifyPaymentOperations,
+  validateSignedPaymentXdr,
   getExplorerUrl,
   NETWORK,
   DONATION_WALLET_PUBLIC_KEY,
@@ -93,7 +94,8 @@ export const initializeDonation = async (req, res) => {
       amount: amount.toString(),
       network: NETWORK,
       status: "pending",
-      stellarTxHash: paymentTx.hash, // Temporary hash, will be replaced with actual
+      expectedHash: paymentTx.hash,
+      memo: DONATION_MEMO,
     });
 
     await donation.save({ session });
@@ -159,7 +161,40 @@ export const submitDonation = async (req, res) => {
       });
     }
 
-    // Update status to submitted
+    // Build expected payments array for validation
+    const expectedPayments = [
+      {
+        destination: donation.creatorWallet,
+        amount: donation.amount,
+      },
+    ];
+
+    // Validate signed XDR contents (memo, payments, optional source)
+    try {
+      validateSignedPaymentXdr(
+        signedXdr,
+        expectedPayments,
+        donation.memo,
+        donation.buyerWallet,
+        true
+      );
+    } catch (validationError) {
+      donation.status = "failed";
+      donation.failureReason = `validation_failed: ${validationError.message}`;
+      await donation.save({ session });
+      await session.commitTransaction();
+      paymentsFailed.inc({ type: "donation", reason: "validation_failed" });
+
+      logger.error(`Donation ${donationId} validation failed:`, validationError.message);
+
+      return res.status(400).json({
+        success: false,
+        message: "Signed transaction does not match expected payment details",
+        error: validationError.message,
+      });
+    }
+
+    // Update status to submitted after validation
     donation.status = "submitted";
     donation.submittedAt = new Date();
     await donation.save({ session });
@@ -186,12 +221,8 @@ export const submitDonation = async (req, res) => {
     }
 
     // Verify on-chain that the donation actually paid the fund (amount, destination, asset)
-    const verification = await verifyPaymentOperations(result.hash, [
-      {
-        destination: donation.creatorWallet,
-        amount: donation.amount,
-      },
-    ]);
+    // (expectedPayments already defined above for pre-submission validation)
+    const verification = await verifyPaymentOperations(result.hash, expectedPayments);
 
     if (!verification.verified) {
       donation.stellarTxHash = result.hash;

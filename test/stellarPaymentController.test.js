@@ -39,6 +39,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   submitTransaction,
   verifyTransaction: jest.fn(),
   verifyPaymentOperations,
+  validateSignedPaymentXdr: jest.fn(),
   hasUsdcTrustline: jest.fn(),
   getExplorerUrl,
   getAccountExplorerUrl: jest.fn(),
@@ -201,7 +202,9 @@ describe("Stellar payment controller", () => {
       creator: creatorId,
       creatorWallet,
       status: "pending",
-      stellarTxHash: "expected-hash",
+      // #18: the pre-computed hash is stored as expectedHash at init for later
+      // XDR validation; stellarTxHash is only set after actual submission.
+      expectedHash: "expected-hash",
     });
     expect(session.commitTransaction).toHaveBeenCalledTimes(1);
     expect(session.abortTransaction).not.toHaveBeenCalled();

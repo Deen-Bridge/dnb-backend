@@ -21,6 +21,7 @@ export const AUDIT_ACTIONS = Object.freeze({
   AUTH_REGISTER_FAILURE: "auth.register.failure",
   AUTH_LOGIN_SUCCESS:    "auth.login.success",
   AUTH_LOGIN_FAILURE:    "auth.login.failure",
+  AUTH_ACCOUNT_LOCKED:   "auth.account_locked",
   AUTH_LOGOUT:           "auth.logout",
   AUTH_PASSWORD_RESET_REQUEST:  "auth.password_reset.request",
   AUTH_PASSWORD_RESET_COMPLETE: "auth.password_reset.complete",

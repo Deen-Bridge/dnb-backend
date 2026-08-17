@@ -23,6 +23,8 @@ describe("Authentication & Session Management", () => {
   beforeAll(() => {
     // Mock axios to prevent network calls during tests
     jest.spyOn(axios, "post").mockResolvedValue({ status: 200, statusText: "OK", data: {} });
+    // Mock the HIBP breached-password range call (empty data => not breached).
+    jest.spyOn(axios, "get").mockResolvedValue({ status: 200, statusText: "OK", data: "" });
 
     // Mock User methods
     jest.spyOn(User, "findOne").mockImplementation((query) => {

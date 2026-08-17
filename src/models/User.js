@@ -57,6 +57,17 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    // Progressive login lockout (issue #89): consecutive failures increment
+    // failedLoginAttempts; after the env-configurable threshold the account is
+    // temporarily locked until lockUntil. Reset to 0 / null on successful login.
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lockUntil: {
+      type: Date,
+      default: null,
+    },
     resetTokenHash: {
       type: String,
     },
