@@ -9,6 +9,7 @@ import { errorHandler } from "../src/middlewares/errorHandler.js";
 jest.setTimeout(60000);
 
 jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
+  resolveAsset: jest.fn(),
   STROOPS_PER_UNIT: 10000000n,
   toStroops: jest.fn(),
   fromStroops: jest.fn(),
@@ -33,6 +34,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   submitTransaction: jest.fn().mockResolvedValue({ hash: "mock_tx_hash_123" }),
   verifyTransaction: jest.fn(),
   verifyPaymentOperations: jest.fn().mockResolvedValue({ ok: true }),
+  hasTrustline: jest.fn().mockResolvedValue(true),
   hasUsdcTrustline: jest.fn().mockResolvedValue(true),
   getExplorerUrl: jest.fn((hash) => `https://stellar.expert/tx/${hash}`),
   getAccountExplorerUrl: jest.fn(),
@@ -44,6 +46,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   DONATION_WALLET_PUBLIC_KEY: "GAAZI4TCR3TY5OJHCTJC2A4QSYRZPBTXFDVKT5GLA7IHQMMLVJSSZ26K",
   PLATFORM_FEE_PERCENT: 0,
   PLATFORM_WALLET_PUBLIC_KEY: "",
+  DEFAULT_ASSET_CODE: "USDC",
 }));
 
 jest.unstable_mockModule("../src/jobs/queue.js", () => ({
