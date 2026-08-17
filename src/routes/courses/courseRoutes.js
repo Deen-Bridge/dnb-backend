@@ -22,7 +22,7 @@ import {
   getCourseProgress,
   updateCourseProgress,
 } from "../../controllers/analytics/analyticsController.js";
-import { protect } from "../../middlewares/authMiddleware.js";
+import { protect, requireVerifiedEducator } from "../../middlewares/authMiddleware.js";
 import {
   cacheMiddleware,
   invalidateCacheMiddleware,
@@ -72,6 +72,7 @@ router.get(
 router.post(
   "/",
   protect,
+  requireVerifiedEducator,
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createCourse
 );

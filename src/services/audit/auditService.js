@@ -59,6 +59,14 @@ const METADATA_ALLOWLIST = new Set([
   "newRole",
   "changedBy",
 
+  // Educator verification (issue #92)
+  "verificationId",
+  "previousStatus",
+  "newStatus",
+  "reviewedBy",
+  "reviewNotes",
+  "documentCount",
+
   // Generic error context
   "reason",
   "conflictUserId",

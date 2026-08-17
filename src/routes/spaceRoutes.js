@@ -1,5 +1,5 @@
 import express from "express";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, requireVerifiedEducator } from "../middlewares/authMiddleware.js";
 import upload from "../middlewares/upload.js";
 import {
   cacheMiddleware,
@@ -50,6 +50,7 @@ router.get(
 router.post(
   "/",
   protect,
+  requireVerifiedEducator,
   upload.fields([{ name: "thumbnail", maxCount: 1 }]),
   invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createSpace

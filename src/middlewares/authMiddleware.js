@@ -68,5 +68,24 @@ export const requireVerified = (req, res, next) => {
   next();
 };
 
+export const requireVerifiedEducator = (req, res, next) => {
+  if (!req.user) {
+    return res
+      .status(401)
+      .json({ success: false, message: "Not authenticated" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  if (!req.user.verifiedEducator) {
+    return res.status(403).json({
+      success: false,
+      message:
+        "Forbidden: You must be a verified educator to create content. Please submit a verification application via /api/educator-verification.",
+    });
+  }
+  next();
+};
+
 export const restrictTo = (...roles) => authorizeRoles(...roles);
 export const authorize = (...roles) => authorizeRoles(...roles);

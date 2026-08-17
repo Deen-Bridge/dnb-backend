@@ -19,7 +19,7 @@ import {
   checkIfBookBookmarked,
   removeBookBookmark,
 } from "../../controllers/books/bookmarkBookController.js";
-import { protect } from "../../middlewares/authMiddleware.js";
+import { protect, requireVerifiedEducator } from "../../middlewares/authMiddleware.js";
 import {
   cacheMiddleware,
   invalidateCacheMiddleware,
@@ -38,6 +38,7 @@ const booksByAuthorCacheKey = (req) =>
 router.post(
   "/",
   protect,
+  requireVerifiedEducator,
   uploadBook.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "file", maxCount: 1 },

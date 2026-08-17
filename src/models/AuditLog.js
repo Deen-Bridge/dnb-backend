@@ -46,6 +46,12 @@ export const AUDIT_ACTIONS = Object.freeze({
   PAYOUT_BATCH_INITIATED: "payout.batch.initiated",
   PAYOUT_BATCH_CONFIRMED: "payout.batch.confirmed",
   ROLE_CHANGE:            "role.change",
+
+  // Educator verification pipeline (issue #92)
+  EDUCATOR_VERIFY_SUBMIT:   "educator_verify.submit",
+  EDUCATOR_VERIFY_RESUBMIT: "educator_verify.resubmit",
+  EDUCATOR_VERIFY_APPROVE:  "educator_verify.approve",
+  EDUCATOR_VERIFY_REJECT:   "educator_verify.reject",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);
