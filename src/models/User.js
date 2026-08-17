@@ -53,6 +53,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    verifiedEducator: {
+      type: Boolean,
+      default: false,
+    },
 
     lastLogin: {
       type: Date,

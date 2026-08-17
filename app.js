@@ -56,6 +56,8 @@ import jobsRoutes from "./src/routes/jobsRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
 import auditRoutes from "./src/routes/admin/auditRoutes.js";
 import educatorRoutes from "./src/routes/educatorRoutes.js";
+import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
+import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -194,6 +196,7 @@ app.use("/api/users", generousLimiter, userRoutes);
 app.use("/api/search", generousLimiter, searchRoutes);
 app.use("/api/calls", generousLimiter, callRoutes);
 app.use("/api/educators", generousLimiter, educatorRoutes);
+app.use("/api/educator-verification", standardLimiter, educatorVerificationRoutes);
 app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
 app.use("/api/stellar/payment", generousLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
@@ -202,6 +205,7 @@ app.use("/api/notifications", generousLimiter, notificationRoutes);
 // Admin — no rate limit
 app.use("/admin/jobs", jobsRoutes);
 app.use("/api/admin/audit", auditRoutes);
+app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
 
 // ======================
 // ERROR HANDLING
