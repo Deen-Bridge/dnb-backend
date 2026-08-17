@@ -236,6 +236,9 @@ describe("Payment Reconciliation Service", () => {
       const updated = await Transaction.findById(tx._id);
       expect(updated.status).toBe("confirmed");
       expect(updated.confirmedAt).toBeDefined();
+      // Terminal state — the reconciliation confirm path must leave the row
+      // without an expiry so the TTL reaper can never delete it.
+      expect(updated.expiresAt).toBeUndefined();
       expect(mockRecordSaleEarnings).toHaveBeenCalled();
     });
 

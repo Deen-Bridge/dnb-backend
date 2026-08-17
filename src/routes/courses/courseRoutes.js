@@ -24,6 +24,11 @@ import {
 } from "../../controllers/analytics/analyticsController.js";
 import { protect, requireVerifiedEducator } from "../../middlewares/authMiddleware.js";
 import {
+  authorizeOwnership,
+  authorizeReviewOwnership,
+} from "../../middlewares/authorize.js";
+import Course from "../../models/Course.js";
+import {
   cacheMiddleware,
   invalidateCacheMiddleware,
 } from "../../middlewares/cache.js";
@@ -91,42 +96,49 @@ router.post(
 router.put(
   "/:id/reviews",
   protect,
+  authorizeReviewOwnership({ model: Course }),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   updateCourseReview
 );
 router.patch(
   "/:id/reviews",
   protect,
+  authorizeReviewOwnership({ model: Course }),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   updateCourseReview
 );
 router.put(
   "/:id/reviews/:reviewId",
   protect,
+  authorizeReviewOwnership({ model: Course }),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   updateCourseReview
 );
 router.patch(
   "/:id/reviews/:reviewId",
   protect,
+  authorizeReviewOwnership({ model: Course }),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   updateCourseReview
 );
 router.delete(
   "/:id/reviews",
   protect,
+  authorizeReviewOwnership({ model: Course }),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   deleteCourseReview
 );
 router.delete(
   "/:id/reviews/:reviewId",
   protect,
+  authorizeReviewOwnership({ model: Course }),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`, `${CACHE_KEYS.COURSES}*`]),
   deleteCourseReview
 );
 router.put(
   "/:id",
   protect,
+  authorizeOwnership({ model: Course, ownerField: "createdBy", resourceType: "Course" }),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
   updateCourse
 );

@@ -147,15 +147,43 @@ const transactionSchema = new mongoose.Schema(
     confirmedAt: Date,
     expiresAt: {
       type: Date,
-      default: () => new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+      // Only abandoned `pending` checkouts get a reaping deadline. Records
+      // created directly in a terminal state (e.g. worker-created confirmed
+      // donations/purchases) must never be born with an expiry.
+      default: function () {
+        return this.status === "pending" || !this.status
+          ? new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
+          : undefined;
+      },
     },
   },
   { timestamps: true }
 );
+
+// Terminal statuses are permanent records (paid purchases, donations, refunds,
+// disputes, failures) that must never be reaped by the TTL monitor.
+const TERMINAL_STATUSES = ["confirmed", "failed", "expired", "refunded", "disputed"];
+
+// TTL invariant: `expiresAt` is only meaningful for abandoned `pending`
+// checkouts. Enforce it at the schema level so a future code path that forgets
+// to clear `expiresAt` cannot regress confirmed/terminal rows back into the
+// TTL reaper's window — defense in depth on top of the partial index below.
+transactionSchema.pre("save", function (next) {
+  if (TERMINAL_STATUSES.includes(this.status)) {
+    this.expiresAt = undefined;
+  }
+  next();
+});
+
 // Indexes for efficient queries
 transactionSchema.index({ buyer: 1, status: 1 });
 transactionSchema.index({ creator: 1, status: 1 });
 transactionSchema.index({ itemType: 1, itemId: 1 });
 transactionSchema.index({ type: 1, status: 1, createdAt: -1 }); // Donation stats
-transactionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL for expired pending
+// TTL for expired pending checkouts only — a blanket index would also reap
+// confirmed purchases/donations once their original 30-minute expiry passes.
+transactionSchema.index(
+  { expiresAt: 1 },
+  { expireAfterSeconds: 0, partialFilterExpression: { status: "pending" } }
+);
 export default mongoose.model("Transaction", transactionSchema);
