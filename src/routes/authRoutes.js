@@ -22,17 +22,30 @@ import {
   verifyStellarChallenge,
 } from "../controllers/stellar/sep10Controller.js";
 import { protect } from "../middlewares/authMiddleware.js";
-import { refreshLimiter, twoFactorLimiter } from "../middlewares/security.js";
+import {
+  refreshLimiter,
+  twoFactorLimiter,
+  emailAuthLimiter,
+  captchaGate,
+} from "../middlewares/security.js";
 
 const router = express.Router();
 
-// Public routes with auth rate limit
-router.post("/register", registerUser);
+// Public routes with auth rate limit.
+// /register and /resend-verification also carry a per-EMAIL limiter (survives
+// IP rotation) plus a pluggable captcha gate (no-op when unconfigured) —
+// see issue #89.
+router.post("/register", emailAuthLimiter, captchaGate(), registerUser);
 router.post("/login", loginUser);
 router.post("/request-password-reset", requestPasswordReset);
 router.post("/reset-password", resetPassword);
 router.get("/verify-email/:token", verifyEmail);
-router.post("/resend-verification", resendVerification);
+router.post(
+  "/resend-verification",
+  emailAuthLimiter,
+  captchaGate(),
+  resendVerification
+);
 
 // 2FA Routes
 router.post("/2fa/setup", protect, twoFactorLimiter, setup2FA);

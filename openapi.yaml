@@ -82,6 +82,13 @@ components:
       scheme: bearer
       description: Static token from the JOBS_DASHBOARD_TOKEN environment variable.
   parameters:
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Unique key for request idempotency protection. Prevents duplicate charges and transactions on retried requests.
+      schema:
+        type: string
     Page:
       name: page
       in: query
@@ -125,6 +132,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
       description: Conflicting state, for example a duplicate or an already used resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnprocessableEntity:
+      description: Request payload mismatch for idempotency key
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

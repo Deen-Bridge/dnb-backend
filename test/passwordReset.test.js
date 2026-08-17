@@ -2,6 +2,7 @@ import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import axios from "axios";
 import app from "../app.js";
 import User from "../src/models/User.js";
 import PendingUser from "../src/models/PendingUser.js";
@@ -25,6 +26,8 @@ describe("Password Reset Flow", () => {
   beforeAll(() => {
     // Capture the OTP code from the [EMAIL LOG] fallback (SMTP is unset in tests)
     loggerInfoSpy = jest.spyOn(logger, "info");
+    // Mock the HIBP breached-password range call (empty data => not breached).
+    jest.spyOn(axios, "get").mockResolvedValue({ status: 200, statusText: "OK", data: "" });
 
     // Mock User methods
     jest.spyOn(User, "findOne").mockImplementation((query) => {

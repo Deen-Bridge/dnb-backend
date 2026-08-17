@@ -13,6 +13,7 @@ import {
   submitTransaction,
   verifyTransaction,
   verifyPaymentOperations,
+  validateSignedPaymentXdr,
   findPaymentPaths,
   applySlippage,
   NETWORK,
@@ -499,7 +500,8 @@ export const initializePayment = async (req, res) => {
       network: NETWORK,
       status: "pending",
       settlement: settlementMode,
-      stellarTxHash: paymentTx.hash,
+      expectedHash: paymentTx.hash,
+      memo,
       ...(sendAssetInput && {
         sendAsset: sendAssetInput,
         sendMax,
@@ -610,6 +612,51 @@ export const submitPayment = async (req, res) => {
       });
     }
 
+    // Build expected payments to validate XDR BEFORE submit
+    const expectedPayments = transaction.platformFee?.platformAmount
+      ? [
+          {
+            destination: transaction.creatorWallet,
+            amount: transaction.platformFee.creatorAmount,
+          },
+          {
+            destination: transaction.platformFee.platformWallet,
+            amount: transaction.platformFee.platformAmount,
+          },
+        ]
+      : [
+          {
+            destination: transaction.creatorWallet,
+            amount: transaction.amount,
+          },
+        ];
+
+    // Validate signed XDR contents (memo, payments, optional source)
+    try {
+      validateSignedPaymentXdr(
+        signedXdr,
+        expectedPayments,
+        transaction.memo,
+        transaction.buyerWallet,
+        true
+      );
+    } catch (validationError) {
+      transaction.status = "failed";
+      transaction.failureReason = `validation_failed: ${validationError.message}`;
+      await transaction.save({ session });
+      await session.commitTransaction();
+      paymentsFailed.inc({ type: "purchase", reason: "validation_failed" });
+
+      logger.error(`Transaction ${transactionId} validation failed:`, validationError.message);
+
+      return res.status(400).json({
+        success: false,
+        message: "Signed transaction does not match expected payment details",
+        error: validationError.message,
+      });
+    }
+
+    // Update status to submitted after validation
     transaction.status = "submitted";
     transaction.submittedAt = new Date();
     await transaction.save({ session });
@@ -634,23 +681,9 @@ export const submitPayment = async (req, res) => {
       });
     }
 
-    const expectedPayments = transaction.platformFee?.platformAmount
-      ? [
-          {
-            destination: transaction.creatorWallet,
-            amount: transaction.platformFee.creatorAmount,
-          },
-          {
-            destination: transaction.platformFee.platformWallet,
-            amount: transaction.platformFee.platformAmount,
-          },
-        ]
-      : [
-          {
-            destination: transaction.creatorWallet,
-            amount: transaction.amount,
-          },
-        ];
+    // Verify on-chain that the creator (and platform, when a fee was applied)
+    // actually received the expected USDC amounts
+    // (expectedPayments already defined above for pre-submission validation)
 
     const verification = await verifyPaymentOperations(
       result.hash,
