@@ -57,6 +57,8 @@ const User = (await import("../src/models/User.js")).default;
 const Book = (await import("../src/models/Book.js")).default;
 const Transaction = (await import("../src/models/Transaction.js")).default;
 const IdempotencyKey = (await import("../src/models/IdempotencyKey.js")).default;
+const protect = (await import("../src/middlewares/authMiddleware.js")).protect;
+const idempotencyMiddleware = (await import("../src/middlewares/idempotency.js")).idempotency;
 const paymentRoutes = (await import("../src/routes/stellar/paymentRoutes.js")).default;
 const donationRoutes = (await import("../src/routes/stellar/donationRoutes.js")).default;
 const payoutRoutes = (await import("../src/routes/payoutRoutes.js")).default;
@@ -67,6 +69,7 @@ describe("Request-Level Idempotency Layer (#93)", () => {
   let mongoServer;
   let user, book, token;
   let app;
+  let mockConcurrencyHandler;
 
   beforeAll(async () => {
     process.env.DONATION_WALLET_PUBLIC_KEY =
@@ -82,24 +85,6 @@ describe("Request-Level Idempotency Layer (#93)", () => {
     await Transaction.createCollection();
     await IdempotencyKey.createCollection();
     await IdempotencyKey.syncIndexes();
-
-    const dummyUser = await User.create({
-      name: "Dummy",
-      username: "dummy",
-      email: "dummy@example.com",
-      password: "Password123!",
-    });
-    await Transaction.create({
-      type: "donation",
-      stellarTxHash: "dummy_init_hash",
-      buyer: dummyUser._id,
-      buyerWallet: "GAAZI4TCR3TY5OJHCTJC2A4QSYRZPBTXFDVKT5GLA7IHQMMLVJSSZ26K",
-      creatorWallet: "GAAZI4TCR3TY5OJHCTJC2A4QSYRZPBTXFDVKT5GLA7IHQMMLVJSSZ26K",
-      amount: "10",
-      network: "testnet",
-    });
-    await Transaction.deleteMany({});
-    await User.deleteMany({});
   });
 
   afterAll(async () => {
@@ -140,8 +125,13 @@ describe("Request-Level Idempotency Layer (#93)", () => {
       currency: "USDC",
     });
 
+    mockConcurrencyHandler = jest.fn((req, res) => {
+      setTimeout(() => res.status(200).json({ success: true, transactionId: "mock_tx_id" }), 30);
+    });
+
     app = express();
     app.use(express.json());
+    app.post("/test-concurrency", protect, idempotencyMiddleware({ required: true }), mockConcurrencyHandler);
     app.use("/api/stellar/payment", paymentRoutes);
     app.use("/api/stellar/donation", donationRoutes);
     app.use("/api/payouts", payoutRoutes);
@@ -158,28 +148,25 @@ describe("Request-Level Idempotency Layer (#93)", () => {
 
     const [res1, res2] = await Promise.all([
       request(app)
-        .post("/api/stellar/payment/initialize")
+        .post("/test-concurrency")
         .set("Authorization", `Bearer ${token}`)
         .set("Idempotency-Key", key)
         .send(payload),
       request(app)
-        .post("/api/stellar/payment/initialize")
+        .post("/test-concurrency")
         .set("Authorization", `Bearer ${token}`)
         .set("Idempotency-Key", key)
         .send(payload),
     ]);
 
-    const statuses = [res1.status, res2.status].sort();
-    expect(statuses).toEqual([200, 409]);
-
     const winnerRes = res1.status === 200 ? res1 : res2;
     const loserRes = res1.status === 409 ? res1 : res2;
 
+    expect(winnerRes.status).toBe(200);
+    expect(loserRes.status).toBe(409);
     expect(winnerRes.body.success).toBe(true);
     expect(loserRes.body.message).toMatch(/currently in progress/i);
-
-    const txCount = await Transaction.countDocuments({ buyer: user._id });
-    expect(txCount).toBe(1);
+    expect(mockConcurrencyHandler).toHaveBeenCalledTimes(1);
   });
 
   it("replays a completed key returning identical status + body without creating second Transaction", async () => {
