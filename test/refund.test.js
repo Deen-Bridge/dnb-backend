@@ -28,8 +28,8 @@ app.use(errorHandler);
 
 const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
 
-const generateToken = (userId, role = "student") => {
-  return jwt.sign({ userId, role, is2FAVerified: true }, JWT_SECRET, { expiresIn: "1h" });
+const generateToken = (userId, role = "student", is2FAVerified = true) => {
+  return jwt.sign({ userId, role, is2FAVerified }, JWT_SECRET, { expiresIn: "1h" });
 };
 
 describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
@@ -148,13 +148,13 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
       email: "admin@example.com",
       password: "Qx7#vLmp92Zt",
       role: "admin",
-      twoFactor: { enabled: true, secret: "MOCKSECRET" },
+      twoFactor: { enabled: true, secret: "MOCKSECRET", enrolledAt: new Date() },
     });
 
-    buyerToken = generateToken(buyer._id, "student");
-    educatorToken = generateToken(educator._id, "tutor");
-    otherToken = generateToken(otherUser._id, "student");
-    adminToken = generateToken(adminUser._id, "admin");
+    buyerToken = generateToken(buyer._id, "student", true);
+    educatorToken = generateToken(educator._id, "tutor", true);
+    otherToken = generateToken(otherUser._id, "student", true);
+    adminToken = generateToken(adminUser._id, "admin", true);
 
     // Create a purchased course and enroll buyer
     course = await Course.create({
