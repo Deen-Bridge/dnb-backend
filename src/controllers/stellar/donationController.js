@@ -180,6 +180,7 @@ export const submitDonation = async (req, res) => {
       );
     } catch (validationError) {
       donation.status = "failed";
+      donation.expiresAt = undefined;
       donation.failureReason = `validation_failed: ${validationError.message}`;
       await donation.save({ session });
       await session.commitTransaction();
@@ -206,6 +207,7 @@ export const submitDonation = async (req, res) => {
       result = await submitTransaction(signedXdr);
     } catch (stellarError) {
       donation.status = "failed";
+      donation.expiresAt = undefined;
       donation.failureReason = stellarError.message;
       await donation.save({ session });
       await session.commitTransaction();
@@ -250,6 +252,7 @@ export const submitDonation = async (req, res) => {
         });
       }
       donation.status = "failed";
+      donation.expiresAt = undefined;
       donation.failureReason = `On-chain verification failed: ${verification.reason}`;
       await donation.save({ session });
       await session.commitTransaction();
@@ -271,6 +274,7 @@ export const submitDonation = async (req, res) => {
     donation.stellarLedger = result.ledger;
     donation.status = "confirmed";
     donation.confirmedAt = new Date();
+    donation.expiresAt = undefined; // terminal state — never TTL-reapable
     await donation.save({ session });
     await enqueue(
       "generateReceipt",

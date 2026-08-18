@@ -53,10 +53,31 @@ export const AUDIT_ACTIONS = Object.freeze({
   // Entitlements (access grants)
   ENTITLEMENT_GRANT: "entitlement.grant",
 
+  // Authorization
+  AUTHZ_OWNERSHIP_DENIED: "authz.ownership.denied",
+
+  // Service-to-service auth (dnb-ai)
+  SERVICE_AUTH_DENIED: "service_auth.denied",
+
   // Extension points — to be instrumented with issue #20 / #28
   PAYOUT_BATCH_INITIATED: "payout.batch.initiated",
   PAYOUT_BATCH_CONFIRMED: "payout.batch.confirmed",
   ROLE_CHANGE:            "role.change",
+
+  // Educator verification pipeline (issue #92)
+  EDUCATOR_VERIFY_SUBMIT:   "educator_verify.submit",
+  EDUCATOR_VERIFY_RESUBMIT: "educator_verify.resubmit",
+  EDUCATOR_VERIFY_APPROVE:  "educator_verify.approve",
+  EDUCATOR_VERIFY_REJECT:   "educator_verify.reject",
+
+  // Outbound webhooks (issue #45)
+  WEBHOOK_ENDPOINT_CREATED:  "webhook.endpoint.created",
+  WEBHOOK_ENDPOINT_UPDATED:  "webhook.endpoint.updated",
+  WEBHOOK_ENDPOINT_DELETED:  "webhook.endpoint.deleted",
+  WEBHOOK_ENDPOINT_DISABLED: "webhook.endpoint.disabled",
+  WEBHOOK_SECRET_ROTATED:    "webhook.secret.rotated",
+  WEBHOOK_DELIVERY_REDELIVERED: "webhook.delivery.redelivered",
+  WEBHOOK_PING:              "webhook.ping",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);

@@ -53,6 +53,8 @@ describe("Media Upload Hardening", () => {
     const { token: authToken, user } = await seedUserAndLogin(app, {
       name: "Uploader",
       email: "uploader@example.com",
+      role: "mentor",
+      verifiedEducator: true,
     });
     token = authToken;
     testUser = user;

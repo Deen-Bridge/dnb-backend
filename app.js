@@ -53,9 +53,13 @@ import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
+import internalAiRoutes from "./src/routes/internal/aiRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
 import auditRoutes from "./src/routes/admin/auditRoutes.js";
 import educatorRoutes from "./src/routes/educatorRoutes.js";
+import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
+import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
+import webhookRoutes from "./src/routes/webhookRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -143,7 +147,17 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-app.use(express.json({ limit: "10mb" }));
+// Capture the raw request bytes so the service-to-service auth middleware can
+// verify HMAC signatures over the exact body (see middlewares/serviceAuth.js).
+// This only stashes a Buffer reference and does not alter parsing behaviour.
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 app.use(compression());
@@ -194,14 +208,22 @@ app.use("/api/users", generousLimiter, userRoutes);
 app.use("/api/search", generousLimiter, searchRoutes);
 app.use("/api/calls", generousLimiter, callRoutes);
 app.use("/api/educators", generousLimiter, educatorRoutes);
+app.use("/api/educator-verification", standardLimiter, educatorVerificationRoutes);
 app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
 app.use("/api/stellar/payment", generousLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
 
+// Outbound webhook management API (admin-gated)
+app.use("/api/webhooks", standardLimiter, webhookRoutes);
+
+// Internal service-to-service (dnb-ai) — signed-request auth, no user JWTs
+app.use("/api/internal/ai", internalAiRoutes);
+
 // Admin — no rate limit
 app.use("/admin/jobs", jobsRoutes);
 app.use("/api/admin/audit", auditRoutes);
+app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
 
 // ======================
 // ERROR HANDLING

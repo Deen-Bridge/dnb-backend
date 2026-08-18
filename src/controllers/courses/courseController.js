@@ -4,6 +4,7 @@ import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
 import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 import { createNewCourseNotification } from "../notificationController.js";
+import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
 
 /**
  * Create a new course
@@ -149,6 +150,12 @@ export const enrollInCourse = async (req, res) => {
       }
     }
 
+    await emitEvent(EVENT_TYPES.COURSE_ENROLLED, {
+      courseId: course._id.toString(),
+      itemTitle: course.title,
+      userId: req.user._id.toString(),
+    });
+
     res
       .status(200)
       .json({
@@ -169,17 +176,10 @@ export const updateCourse = catchAsync(async (req, res, next) => {
 
   logger.info(`Updating course: ${courseId}`);
 
-  const course = await Course.findById(courseId);
+  // Ownership is enforced by authorizeOwnership middleware (req.resource).
+  const course = req.resource || (await Course.findById(courseId));
   if (!course) {
     return next(new APIError("Course not found", 404));
-  }
-
-  // Check if user is the creator or admin (authorization)
-  if (req.user.role !== "admin" && course.createdBy.toString() !== req.user._id.toString()) {
-    logger.warn(`Unauthorized course update attempt by user: ${req.user._id}`);
-    return next(
-      new APIError("You are not authorized to update this course", 403)
-    );
   }
 
   // Update fields (URLs from frontend)

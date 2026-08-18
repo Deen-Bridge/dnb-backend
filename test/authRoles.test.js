@@ -9,6 +9,8 @@ import Space from "../src/models/Space.js";
 import Course from "../src/models/Course.js";
 import "../src/jobs/handlers.js";
 import { protect, authorize, restrictTo } from "../src/middlewares/authMiddleware.js";
+import { authorizeOwnership } from "../src/middlewares/authorize.js";
+import { errorHandler } from "../src/middlewares/errorHandler.js";
 import { registerUser } from "../src/controllers/authController.js";
 import { deleteBook } from "../src/controllers/books/bookController.js";
 import { deleteSpace, updateSpace } from "../src/controllers/spaceController.js";
@@ -393,11 +395,16 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
         req.user = studentUser;
         next();
       });
-      app.delete("/books/:id", deleteBook);
+      app.delete(
+        "/books/:id",
+        authorizeOwnership({ model: Book, ownerField: "author", resourceType: "Book" }),
+        deleteBook
+      );
+      app.use(errorHandler);
 
       const res = await request(app).delete(`/books/${testBook._id}`);
       expect(res.status).toBe(403);
-      expect(res.body.message).toContain("Not authorized to delete this book");
+      expect(res.body.message).toContain("not authorized to modify this book");
 
       // Verify book still exists
       const bookExists = await Book.findById(testBook._id);
@@ -447,8 +454,17 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
         req.user = studentUser;
         next();
       });
-      app.delete("/spaces/:id", deleteSpace);
-      app.put("/spaces/:id", updateSpace);
+      app.delete(
+        "/spaces/:id",
+        authorizeOwnership({ model: Space, ownerField: "host", resourceType: "Space" }),
+        deleteSpace
+      );
+      app.put(
+        "/spaces/:id",
+        authorizeOwnership({ model: Space, ownerField: "host", resourceType: "Space" }),
+        updateSpace
+      );
+      app.use(errorHandler);
 
       const resDelete = await request(app).delete(`/spaces/${testSpace._id}`);
       expect(resDelete.status).toBe(403);
