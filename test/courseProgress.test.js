@@ -15,6 +15,15 @@ describe("Course progress endpoints", () => {
   let learner;
 
   beforeAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 2000 });
+        return;
+      } catch (_err) {}
+    }
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
   });
@@ -113,4 +122,14 @@ describe("Course progress endpoints", () => {
     expect(res.body.courses).toHaveLength(1);
     expect(res.body.courses[0].percentComplete).toBe(50);
   });
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
+  });
 });
+

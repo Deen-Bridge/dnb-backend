@@ -42,6 +42,15 @@ describe("Payment Reconciliation Service", () => {
   let buyer, author, admin, book, course;
 
   beforeAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_reconciliation`, { serverSelectionTimeoutMS: 2000 });
+        return;
+      } catch (_err) {}
+    }
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
   }, 30000);

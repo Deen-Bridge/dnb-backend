@@ -41,14 +41,20 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
   let mongoServer;
 
   beforeAll(async () => {
-    if (process.env.MONGO_URI && !process.env.MONGO_URI.includes("localhost")) {
-      try {
-        await mongoose.connect(`${process.env.MONGO_URI}_refund`);
-        return;
-      } catch (_err) {}
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
     }
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_refund`, { serverSelectionTimeoutMS: 2000 });
+      } catch (_err) {
+        mongoServer = await MongoMemoryServer.create();
+        await mongoose.connect(mongoServer.getUri());
+      }
+    } else {
+      mongoServer = await MongoMemoryServer.create();
+      await mongoose.connect(mongoServer.getUri());
+    }
 
     // Mock Horizon Server
     jest.spyOn(server, "loadAccount").mockImplementation(async (publicKey) => {

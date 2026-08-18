@@ -23,6 +23,22 @@ describe("Media Upload Hardening", () => {
   let mongoServer;
 
   beforeAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 2000 });
+        // Mock cloudinary upload stream
+        jest.spyOn(cloudinary.uploader, "upload_stream").mockImplementation((options, cb) => {
+          const pass = new PassThrough();
+          pass.on('data', () => {}); // Consume data to prevent backpressure
+          pass.on('end', () => cb(null, { secure_url: "https://example.com/file", public_id: "mock_public_id" }));
+          return pass;
+        });
+        return;
+      } catch (_err) {}
+    }
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
 
@@ -149,4 +165,14 @@ describe("Media Upload Hardening", () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("https://example.com/signed-url");
   });
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
+  });
 });
+

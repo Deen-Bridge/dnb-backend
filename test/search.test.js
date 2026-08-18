@@ -12,9 +12,12 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 let mongoServer;
 
 beforeAll(async () => {
-  if (process.env.MONGO_URI && !process.env.MONGO_URI.includes("localhost")) {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+  }
+  if (process.env.MONGO_URI) {
     try {
-      await mongoose.connect(`${process.env.MONGO_URI}_search`);
+      await mongoose.connect(`${process.env.MONGO_URI}_search`, { serverSelectionTimeoutMS: 2000 });
       return;
     } catch (_err) {}
   }
@@ -24,7 +27,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (mongoose.connection.readyState !== 0) {
-    await mongoose.connection.close();
+    await mongoose.disconnect();
   }
   if (mongoServer) {
     await mongoServer.stop();

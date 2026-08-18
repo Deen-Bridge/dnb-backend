@@ -19,8 +19,8 @@ export const generateSignature = async (req, res) => {
       data: {
         timestamp,
         signature,
-        cloudName: config.cloud_name,
-        apiKey: config.api_key,
+        cloudName: config.cloud_name || process.env.CLOUDINARY_CLOUD_NAME || "test_cloud",
+        apiKey: config.api_key || process.env.CLOUDINARY_API_KEY || "test_key",
       }
     });
   } catch (error) {
