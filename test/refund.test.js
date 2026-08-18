@@ -41,15 +41,11 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
   let mongoServer;
 
   beforeAll(async () => {
-    const uri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/dnb-backend-test";
-
-    if (mongoose.connection.readyState === 0) {
+    if (process.env.MONGO_URI && !process.env.MONGO_URI.includes("localhost")) {
       try {
-        await mongoose.connect(uri, { serverSelectionTimeoutMS: 2000 });
-      } catch (_err) {
-        mongoServer = await MongoMemoryServer.create();
-        await mongoose.connect(mongoServer.getUri());
-      }
+        await mongoose.connect(`${process.env.MONGO_URI}_refund`);
+        return;
+      } catch (_err) {}
     }
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
@@ -395,5 +391,14 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
 
       expect(res.status).toBe(403);
     });
+  });
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
   });
 });
