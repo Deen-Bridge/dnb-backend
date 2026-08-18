@@ -16,12 +16,15 @@ export async function seedUserAndLogin(app, overrides = {}) {
   };
 
   const hashedPassword = await bcrypt.hash(creds.password, 12);
+  const twoFactor = creds.twoFactor || (creds.role === "admin" ? { enabled: true, secret: "MOCKSECRET", enrolledAt: new Date() } : { enabled: false });
+
   const user = await User.create({
     name: creds.name,
     email: creds.email,
     password: hashedPassword,
     role: creds.role,
     isVerified: true,
+    twoFactor,
   });
 
   const res = await request(app)

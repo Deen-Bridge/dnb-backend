@@ -9,8 +9,8 @@ import { computeReviewStats } from "../src/utils/reviewStats.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "1h" });
+const generateToken = (userId, role = "student", is2FAVerified = true) => {
+  return jwt.sign({ userId, role, is2FAVerified }, JWT_SECRET, { expiresIn: "1h" });
 };
 
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -92,8 +92,9 @@ describe("Reviews & Ratings API (Course and Book)", () => {
       password: "Qx7#vLmp92Zt",
       avatar: "https://example.com/avatar_admin.png",
       role: "admin",
+      twoFactor: { enabled: true, secret: "MOCKSECRET", enrolledAt: new Date() },
     });
-    adminToken = generateToken(adminUser._id);
+    adminToken = generateToken(adminUser._id, "admin", true);
 
     // Create Course
     course = await Course.create({
