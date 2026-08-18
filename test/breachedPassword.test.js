@@ -8,7 +8,7 @@
 import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import axios from "axios";
 import app from "../app.js";

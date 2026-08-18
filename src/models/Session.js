@@ -40,6 +40,10 @@ const sessionSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    is2FAVerified: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

@@ -73,6 +73,9 @@ describe("Request-Level Idempotency Layer (#93)", () => {
   let mockConcurrencyHandler;
 
   beforeAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
     process.env.DONATION_WALLET_PUBLIC_KEY =
       "GAAZI4TCR3TY5OJHCTJC2A4QSYRZPBTXFDVKT5GLA7IHQMMLVJSSZ26K";
 
@@ -283,4 +286,14 @@ describe("Request-Level Idempotency Layer (#93)", () => {
     );
     expect(ttlIndex).toBeDefined();
   });
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
+  });
 });
+

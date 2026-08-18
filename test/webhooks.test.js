@@ -547,12 +547,22 @@ const makeUser = async (role) =>
     email: `${role}_${new mongoose.Types.ObjectId()}@example.com`,
     password: "Qx7#vLmp92Zt",
     role,
+    twoFactor: role === "admin" ? { enabled: true, secret: "MOCKSECRET", enrolledAt: new Date() } : { enabled: false },
   });
 
 const tokenFor = (user) =>
-  jwt.sign({ userId: user._id, role: user.role, sessionId: "s1" }, JWT_SECRET, {
-    expiresIn: "15m",
-  });
+  jwt.sign(
+    {
+      userId: user._id,
+      role: user.role,
+      sessionId: "s1",
+      is2FAVerified: user.role === "admin" ? true : false,
+    },
+    JWT_SECRET,
+    {
+      expiresIn: "15m",
+    }
+  );
 
 describe("Management API", () => {
   let app;

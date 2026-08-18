@@ -17,9 +17,12 @@ import {
 let mongoServer;
 
 beforeAll(async () => {
-  if (process.env.MONGO_URI && !process.env.MONGO_URI.includes("localhost")) {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+  }
+  if (process.env.MONGO_URI) {
     try {
-      await mongoose.connect(process.env.MONGO_URI);
+      await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 2000 });
       return;
     } catch (_err) {
       // Fallback to MongoMemoryServer
