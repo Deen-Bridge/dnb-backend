@@ -53,6 +53,17 @@ const optionalEnvVars = [
   "SIGNING_KEY",
   "INGESTION_WORKER_ENABLED",
   "INGESTION_POLL_INTERVAL_MS",
+  // Outbound webhooks (issue #45). WEBHOOK_SECRET_ENCRYPTION_KEY is
+  // security-critical (fail-fast in production, see below); the rest are
+  // tunables with sensible defaults.
+  "WEBHOOK_SECRET_ENCRYPTION_KEY",
+  "WEBHOOK_WORKER_ENABLED",
+  "WEBHOOK_POLL_INTERVAL_MS",
+  "WEBHOOK_MAX_ATTEMPTS",
+  "WEBHOOK_AUTO_DISABLE_THRESHOLD",
+  "WEBHOOK_BACKOFF_JITTER_MS",
+  "WEBHOOK_HTTP_TIMEOUT_MS",
+  "WEBHOOK_API_VERSION",
   // Service-to-service auth keys for the AI service (dnb-ai). Required in
   // production (fail-fast below); optional in development/test.
   "AI_SERVICE_KEYS",
@@ -96,6 +107,16 @@ export const validateEnv = () => {
   // In development/test they stay optional.
   if (process.env.NODE_ENV === "production" && !process.env.AI_SERVICE_KEYS) {
     missing.push("AI_SERVICE_KEYS");
+  }
+
+  // Webhook signing secrets are stored encrypted at rest; the encryption key
+  // is security-critical, so a production deploy must set it explicitly rather
+  // than fall back to the built-in dev key.
+  if (
+    process.env.NODE_ENV === "production" &&
+    !process.env.WEBHOOK_SECRET_ENCRYPTION_KEY
+  ) {
+    missing.push("WEBHOOK_SECRET_ENCRYPTION_KEY");
   }
 
   if (missing.length > 0) {

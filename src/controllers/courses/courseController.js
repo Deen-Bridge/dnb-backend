@@ -4,6 +4,7 @@ import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
 import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 import { createNewCourseNotification } from "../notificationController.js";
+import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
 
 /**
  * Create a new course
@@ -148,6 +149,12 @@ export const enrollInCourse = async (req, res) => {
         await user.save();
       }
     }
+
+    await emitEvent(EVENT_TYPES.COURSE_ENROLLED, {
+      courseId: course._id.toString(),
+      itemTitle: course.title,
+      userId: req.user._id.toString(),
+    });
 
     res
       .status(200)

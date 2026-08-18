@@ -35,6 +35,7 @@ import {
 } from "../../config/metrics.js";
 import { recordAudit } from "../../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
+import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
 
 /**
  * Resolve the item, its creator, and the settlement destination wallet for a
@@ -541,6 +542,21 @@ export const initializePayment = async (req, res) => {
       },
     });
 
+    // Fire-and-forget: emit AFTER the txn has committed (never inside it).
+    await emitEvent(EVENT_TYPES.PAYMENT_INITIALIZED, {
+      transactionId: transaction._id.toString(),
+      itemType,
+      itemId: itemId.toString(),
+      itemTitle: item.title,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      network: transaction.network,
+      settlement: settlementMode,
+      buyerId: buyerId.toString(),
+      creatorId: creator._id.toString(),
+      status: "pending",
+    });
+
     res.status(200).json({
       success: true,
       transactionId: transaction._id,
@@ -650,6 +666,18 @@ export const submitPayment = async (req, res) => {
 
       logger.error(`Transaction ${transactionId} validation failed:`, validationError.message);
 
+      await emitEvent(EVENT_TYPES.PAYMENT_FAILED, {
+        transactionId: transaction._id.toString(),
+        itemType: transaction.itemType,
+        itemId: transaction.itemId?.toString(),
+        amount: transaction.amount,
+        currency: transaction.currency,
+        network: transaction.network,
+        buyerId: buyerId.toString(),
+        status: "failed",
+        failureReason: `validation_failed: ${validationError.message}`,
+      });
+
       return res.status(400).json({
         success: false,
         message: "Signed transaction does not match expected payment details",
@@ -675,6 +703,18 @@ export const submitPayment = async (req, res) => {
       paymentsFailed.inc({ type: "purchase", reason: "stellar_error" });
 
       logger.error(`Transaction ${transactionId} failed:`, stellarError);
+
+      await emitEvent(EVENT_TYPES.PAYMENT_FAILED, {
+        transactionId: transaction._id.toString(),
+        itemType: transaction.itemType,
+        itemId: transaction.itemId?.toString(),
+        amount: transaction.amount,
+        currency: transaction.currency,
+        network: transaction.network,
+        buyerId: buyerId.toString(),
+        status: "failed",
+        failureReason: stellarError.message,
+      });
 
       return res.status(400).json({
         success: false,
@@ -753,6 +793,19 @@ export const submitPayment = async (req, res) => {
         },
       });
 
+      await emitEvent(EVENT_TYPES.PAYMENT_FAILED, {
+        transactionId: transaction._id.toString(),
+        itemType: transaction.itemType,
+        itemId: transaction.itemId?.toString(),
+        amount: transaction.amount,
+        currency: transaction.currency,
+        network: transaction.network,
+        stellarTxHash: result.hash,
+        buyerId: buyerId.toString(),
+        status: "failed",
+        failureReason: `On-chain verification failed: ${verification.reason}`,
+      });
+
       return res.status(400).json({
         success: false,
         message: "Payment could not be verified on the Stellar network",
@@ -816,9 +869,26 @@ export const submitPayment = async (req, res) => {
         stellarLedger:  result.ledger,
         amount:         transaction.amount,
         itemType:       transaction.itemType,
-        itemId:         transaction.itemId.toString(),
+        itemId:         transaction.itemId?.toString(),
         settlementMode: transaction.settlement,
       },
+    });
+
+    // Fire-and-forget: emit AFTER the txn commit above.
+    await emitEvent(EVENT_TYPES.PAYMENT_CONFIRMED, {
+      transactionId: transaction._id.toString(),
+      itemType: transaction.itemType,
+      itemId: transaction.itemId?.toString(),
+      itemTitle: transaction.itemTitle,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      network: transaction.network,
+      settlement: transaction.settlement,
+      stellarTxHash: result.hash,
+      stellarLedger: result.ledger,
+      buyerId: buyerId.toString(),
+      creatorId: transaction.creator?.toString(),
+      status: "confirmed",
     });
 
     res.status(200).json({
@@ -1000,6 +1070,18 @@ export const cancelTransaction = async (req, res) => {
         amount:    transaction.amount,
         failureReason: "Cancelled by user",
       },
+    });
+
+    await emitEvent(EVENT_TYPES.PAYMENT_EXPIRED, {
+      transactionId: transaction._id.toString(),
+      itemType: transaction.itemType,
+      itemId: transaction.itemId?.toString(),
+      amount: transaction.amount,
+      currency: transaction.currency,
+      network: transaction.network,
+      buyerId: userId.toString(),
+      status: "expired",
+      failureReason: "Cancelled by user",
     });
 
     res.status(200).json({
