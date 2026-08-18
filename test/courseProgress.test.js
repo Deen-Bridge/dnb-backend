@@ -52,11 +52,6 @@ describe("Course progress endpoints", () => {
     learnerToken = jwt.sign({ userId: learner._id, sessionId: "l1" }, process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024");
   });
 
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-  });
-
   it("creates progress for a learner and computes percent completion idempotently", async () => {
     const course = await Course.create({
       title: "Course 1",
