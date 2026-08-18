@@ -19,7 +19,12 @@ import jwt from "jsonwebtoken";
 const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
 const mintToken = (user) =>
   jwt.sign(
-    { userId: user._id.toString(), role: user.role, sessionId: "sess-test" },
+    {
+      userId: user._id.toString(),
+      role: user.role,
+      sessionId: "sess-test",
+      is2FAVerified: user.role === "admin" ? true : false,
+    },
     JWT_SECRET,
     { expiresIn: "15m" }
   );
@@ -74,6 +79,7 @@ describe("Issue #92 — Educator Verification Pipeline + Content Gating", () => 
       email: "admin@example.com",
       password: "Qx7#vLmp92Zt",
       role: "admin",
+      twoFactor: { enabled: true, secret: "MOCKSECRET", enrolledAt: new Date() },
     });
     return { student, mentor, verifiedEducator, admin };
   };
