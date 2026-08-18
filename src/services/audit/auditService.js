@@ -75,6 +75,14 @@ const METADATA_ALLOWLIST = new Set([
   "serviceId",
   "kid",
   "scope",
+
+  // Outbound webhooks (issue #45)
+  "endpointId",
+  "deliveryId",
+  "eventType",
+  "url",
+  "events",
+  "disabledReason",
 ]);
 
 /**

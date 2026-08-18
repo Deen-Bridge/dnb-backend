@@ -59,6 +59,7 @@ import auditRoutes from "./src/routes/admin/auditRoutes.js";
 import educatorRoutes from "./src/routes/educatorRoutes.js";
 import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
 import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
+import webhookRoutes from "./src/routes/webhookRoutes.js";
 
 handleUncaughtException();
 validateEnv();
@@ -212,6 +213,9 @@ app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
 app.use("/api/stellar/payment", generousLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
+
+// Outbound webhook management API (admin-gated)
+app.use("/api/webhooks", standardLimiter, webhookRoutes);
 
 // Internal service-to-service (dnb-ai) — signed-request auth, no user JWTs
 app.use("/api/internal/ai", internalAiRoutes);

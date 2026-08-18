@@ -58,6 +58,15 @@ export const AUDIT_ACTIONS = Object.freeze({
   EDUCATOR_VERIFY_RESUBMIT: "educator_verify.resubmit",
   EDUCATOR_VERIFY_APPROVE:  "educator_verify.approve",
   EDUCATOR_VERIFY_REJECT:   "educator_verify.reject",
+
+  // Outbound webhooks (issue #45)
+  WEBHOOK_ENDPOINT_CREATED:  "webhook.endpoint.created",
+  WEBHOOK_ENDPOINT_UPDATED:  "webhook.endpoint.updated",
+  WEBHOOK_ENDPOINT_DELETED:  "webhook.endpoint.deleted",
+  WEBHOOK_ENDPOINT_DISABLED: "webhook.endpoint.disabled",
+  WEBHOOK_SECRET_ROTATED:    "webhook.secret.rotated",
+  WEBHOOK_DELIVERY_REDELIVERED: "webhook.delivery.redelivered",
+  WEBHOOK_PING:              "webhook.ping",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);

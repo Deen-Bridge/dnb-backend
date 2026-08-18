@@ -35,6 +35,19 @@ if (process.env.INGESTION_WORKER_ENABLED === "true") {
   );
 }
 
+// Start outbound webhook delivery worker if enabled
+let stopWebhookWorker;
+if (process.env.WEBHOOK_WORKER_ENABLED === "true") {
+  import("./src/services/webhooks/deliveryWorker.js").then(
+    ({ startDeliveryWorker, stopDeliveryWorker: stopFn }) => {
+      stopWebhookWorker = stopFn;
+      startDeliveryWorker().catch((err) =>
+        logger.error(err, "Webhook delivery worker startup failed")
+      );
+    }
+  );
+}
+
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
@@ -46,6 +59,10 @@ const gracefulShutdown = async (signal) => {
 
     if (stopIngestionWorker) {
       await stopIngestionWorker();
+    }
+
+    if (stopWebhookWorker) {
+      await stopWebhookWorker();
     }
 
     // Close Redis connection
