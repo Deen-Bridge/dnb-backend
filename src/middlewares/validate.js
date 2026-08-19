@@ -17,7 +17,7 @@ export const validate = (req, res, next) => {
         message: err.msg,
       }));
     logger.warn(
-      `Validation failed for ${req.originalUrl}:`,
+      `Validation failed for ${req.baseUrl}${req.path}:`,
       validationErrors.map(({ field, message }) => `${field}: ${message}`)
     );
 

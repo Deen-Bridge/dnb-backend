@@ -44,6 +44,7 @@ const sendErrorDev = (err, req, res) => {
     status: err.status,
     error: err,
     message: err.message,
+    data: null,
     ...(err.errors && { errors: err.errors }),
     stack: err.stack,
     reqId: req?.id,
@@ -60,6 +61,7 @@ const sendErrorProd = (err, req, res) => {
       success: false,
       status: err.status,
       message: err.message,
+      data: null,
       ...(err.errors && { errors: err.errors }),
       reqId: req?.id,
     });

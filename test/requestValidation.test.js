@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import mongoose from "mongoose";
 import { errorHandler } from "../src/middlewares/errorHandler.js";
+import logger from "../src/config/logger.js";
 
 const controller = (name) =>
   jest.fn((_req, res) => res.status(200).json({ handler: name }));
@@ -101,6 +102,7 @@ const expectValidationError = (res, expectedErrors) => {
     success: false,
     status: "fail",
     message: "Validation failed",
+    data: null,
   });
   expect(res.body.errors).toEqual(
     expect.arrayContaining(
@@ -153,15 +155,19 @@ describe("Request validation", () => {
   });
 
   it("rejects malformed login data before the controller runs", async () => {
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => {});
     const res = await request(mount("/auth", authRoutes))
-      .post("/auth/login")
+      .post("/auth/login?password=query-secret")
       .send({ email: "invalid", password: " " });
 
     expectValidationError(res, [
       ["email", "Email must be a valid email address"],
       ["password", "Password is required"],
     ]);
+    expect(JSON.stringify(warnSpy.mock.calls)).toContain("/auth/login");
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain("query-secret");
     expect(authHandlers.loginUser).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it("rejects invalid payment initialization fields before database access", async () => {
