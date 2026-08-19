@@ -2,21 +2,11 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import compression from "compression";
-import dotenv from "dotenv";
 import crypto from "crypto";
 import "./src/jobs/handlers.js";
 
-// Load env vars, except in tests where test/jest.setup.js has already loaded
-// (and stripped) secrets — re-loading .env here would leak SMTP/REDIS creds
-// back into the test process and cause real network calls.
-if (process.env.NODE_ENV !== "test") {
-  dotenv.config();
-}
-
-import connectDB from "./src/config/db.js";
-import validateEnv from "./src/config/validateEnv.js";
 import logger from "./src/config/logger.js";
-import { registry, metricsMiddleware, observeHttpDuration } from "./src/config/metrics.js";
+import { metricsMiddleware, observeHttpDuration } from "./src/config/metrics.js";
 
 import {
   helmetMiddleware,
@@ -31,8 +21,6 @@ import { sanitizeInput } from "./src/middlewares/validate.js";
 import {
   errorHandler,
   notFound,
-  handleUnhandledRejection,
-  handleUncaughtException,
 } from "./src/middlewares/errorHandler.js";
 
 import authRoutes from "./src/routes/authRoutes.js";
@@ -60,14 +48,6 @@ import educatorRoutes from "./src/routes/educatorRoutes.js";
 import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
 import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
 import webhookRoutes from "./src/routes/webhookRoutes.js";
-
-handleUncaughtException();
-validateEnv();
-
-// Connect to MongoDB (skip during tests as tests handle their own connections)
-if (process.env.NODE_ENV !== "test") {
-  connectDB();
-}
 
 const app = express();
 
@@ -231,7 +211,6 @@ app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
-handleUnhandledRejection();
 
 logger.info("DeenBridge API initialized");
 logger.info(`Logging enabled - Level: ${logger.level}`);

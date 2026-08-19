@@ -1,9 +1,22 @@
-import app from "./app.js";
+import dotenv from "dotenv";
 import logger from "./src/config/logger.js";
+import connectDB from "./src/config/db.js";
+import validateEnv from "./src/config/validateEnv.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
 import { startJobs, stopJobs } from "./src/jobs/queue.js";
+import {
+  handleUncaughtException,
+  handleUnhandledRejection,
+} from "./src/middlewares/errorHandler.js";
 import "./src/jobs/handlers.js";
 
+dotenv.config();
+handleUncaughtException();
+validateEnv();
+await connectDB();
+handleUnhandledRejection();
+
+const { default: app } = await import("./app.js");
 const PORT = process.env.PORT || 5000;
 
 // Initialize Redis

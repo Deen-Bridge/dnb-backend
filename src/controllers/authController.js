@@ -26,9 +26,16 @@ import {
   generateOtpauthUrl,
 } from "../utils/twoFactorCrypto.js";
 
-// Never fall back to a hardcoded default — that would sign tokens with a known
-// value. validateEnv() also enforces this at boot; refuse to start if missing.
-const JWT_SECRET = process.env.JWT_SECRET;
+// Runtime bootstrap validates this before serving traffic. Resolving it when a
+// token operation occurs keeps importing the Express app free of process-wide
+// configuration side effects for unit and integration tests.
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET is required to sign or verify auth tokens");
+  }
+  return secret;
+};
 
 // ── Progressive login lockout (issue #89) ───────────────────────────────────
 // After LOGIN_MAX_FAILED_ATTEMPTS consecutive failures, the account is locked
@@ -50,17 +57,6 @@ const lockoutDurationMs = (failedAttempts) =>
       LOGIN_LOCKOUT_MULTIPLIER **
         Math.max(0, failedAttempts - LOGIN_MAX_FAILED_ATTEMPTS)
   );
-
-// Log JWT configuration on startup and fail fast if the secret is missing.
-if (!JWT_SECRET) {
-  logger.error(
-    "❌ JWT_SECRET is required to sign auth tokens but is missing or empty. Refusing to start."
-  );
-  process.exit(1);
-}
-logger.info(
-  `✅ JWT_SECRET loaded from environment (length: ${JWT_SECRET.length})`
-);
 
 // Helper: parse duration string to ms (e.g. 15m, 30d)
 export const parseDurationToMs = (duration) => {
@@ -141,7 +137,7 @@ export const createSessionAndTokens = async (user, req, res, options = {}) => {
   const accessTokenTtl = process.env.ACCESS_TOKEN_TTL || "15m";
   const accessToken = jwt.sign(
     { userId: user._id, role: user.role, sessionId: session._id, is2FAVerified },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: accessTokenTtl }
   );
 
@@ -514,7 +510,7 @@ export const loginUser = catchAsync(async (req, res, next) => {
   if (user.twoFactor?.enabled) {
     const mfaToken = jwt.sign(
       { userId: user._id, type: "mfa_challenge" },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: "5m" }
     );
 
@@ -789,7 +785,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
   const accessTokenTtl = process.env.ACCESS_TOKEN_TTL || "15m";
   const accessToken = jwt.sign(
     { userId: session.user._id, role: session.user.role, sessionId: newSession._id, is2FAVerified },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: accessTokenTtl }
   );
 
@@ -1052,7 +1048,7 @@ export const verify2FA = catchAsync(async (req, res, next) => {
   if (mfaToken) {
     let decoded;
     try {
-      decoded = jwt.verify(mfaToken, JWT_SECRET);
+      decoded = jwt.verify(mfaToken, getJwtSecret());
     } catch (err) {
       return next(new APIError("Invalid or expired 2FA challenge token", 401));
     }
@@ -1270,4 +1266,3 @@ export const disable2FA = catchAsync(async (req, res, next) => {
     message: "Two-factor authentication disabled successfully",
   });
 });
-
