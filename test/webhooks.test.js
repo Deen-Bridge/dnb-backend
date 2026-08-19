@@ -38,6 +38,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   buildSep7Uri: jest.fn(),
   calculateFeeSplit: jest.fn(() => null),
   preflightPayment: jest.fn(),
+  PREFLIGHT_REASON_CODES: {},
   submitTransaction,
   verifyTransaction: jest.fn(),
   verifyPaymentOperations,

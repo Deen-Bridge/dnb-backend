@@ -10,6 +10,7 @@ import {
   buildSep7Uri,
   calculateFeeSplit,
   preflightPayment,
+  PREFLIGHT_REASON_CODES,
   submitTransaction,
   verifyTransaction,
   verifyPaymentOperations,
@@ -60,6 +61,9 @@ const resolvePaymentDestination = async ({ itemType, itemId, session }) => {
         error: {
           status: 400,
           message: "Creator has not connected their Stellar wallet yet",
+          // The buyer can still complete the purchase through the
+          // claimable-balance (gift) path instead of dead-ending.
+          fallback: "claimable_balance",
         },
       };
     }
@@ -253,6 +257,7 @@ export const getPaymentPreflight = async (req, res) => {
       return res.status(resolved.error.status).json({
         success: false,
         message: resolved.error.message,
+        ...(resolved.error.fallback && { fallback: resolved.error.fallback }),
       });
     }
 
@@ -286,9 +291,17 @@ export const getPaymentPreflight = async (req, res) => {
       assetCode,
     });
 
+    // A destination without the asset trustline is exactly the case the
+    // claimable-balance (gift) path fixes — surface it so the frontend can
+    // route the buyer there instead of dead-ending on op_no_trust.
+    const hasNoTrustline = preflight.reasons?.some(
+      (r) => r.code === PREFLIGHT_REASON_CODES.DESTINATION_NO_TRUSTLINE
+    );
+
     res.status(200).json({
       success: true,
       preflight,
+      ...(hasNoTrustline && { fallback: "claimable_balance" }),
     });
   } catch (error) {
     logger.error("Payment preflight error:", error);
@@ -344,6 +357,7 @@ export const initializePayment = async (req, res) => {
       return res.status(resolved.error.status).json({
         success: false,
         message: resolved.error.message,
+        ...(resolved.error.fallback && { fallback: resolved.error.fallback }),
       });
     }
 
