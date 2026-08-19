@@ -76,7 +76,8 @@ The API runs at `http://localhost:5000`.
 | `PORT` | Server port (default `5000`) |
 | `MONGO_URI` | MongoDB connection string |
 | `JWT_SECRET` | Secret for signing tokens (32+ chars) |
-| `STELLAR_NETWORK` | `testnet` or `mainnet` |
+| `STELLAR_NETWORK` | `testnet` or `mainnet` (`public` accepted; validated at boot) |
+| — | **Switching to mainnet? See [docs/MAINNET.md](docs/MAINNET.md)** — env changes, creator trustlines, smoke-test checklist |
 | `CLOUDINARY_*` | Cloudinary credentials for media uploads |
 | `QUEUE_DRIVER` | `mongo` (durable production default) or `inline` (tests/CI) |
 | `JOBS_ENABLED` | Start background workers; defaults to `true` |

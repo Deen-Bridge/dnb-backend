@@ -8,21 +8,23 @@ import {
   getDefaultAssetCode,
   getSupportedCodes,
 } from "../../config/assets.js";
+import { resolveStellarConfig } from "../../config/stellar.js";
 
 import { client } from "./horizonClient.js";
 
-const NETWORK = process.env.STELLAR_NETWORK || "testnet";
-const networkPassphrase =
-  NETWORK === "mainnet"
-    ? StellarSdk.Networks.PUBLIC
-    : StellarSdk.Networks.TESTNET;
+// Single source of truth for network identity (see config/stellar.js):
+// network name, network passphrase, Horizon URLs, and USDC issuer all
+// resolve here so a deployment can never mix testnet/mainnet settings.
+const {
+  network: NETWORK,
+  networkPassphrase,
+  usdcIssuer: USDC_ISSUER,
+} = resolveStellarConfig();
 
-// Back-compat: USDC / USDC_ISSUER are now derived from the registry
-// instead of being hardcoded, but keep the same exported shape so
-// existing callers (and the path-payment flow, out of scope for #60)
-// keep working unchanged.
-const USDC_CONFIG = getAssetConfig("USDC", NETWORK);
-const USDC_ISSUER = USDC_CONFIG.issuer;
+// Back-compat: USDC / USDC_ISSUER are derived from the registry via the
+// config module instead of being hardcoded, but keep the same exported
+// shape so existing callers (and the path-payment flow, out of scope for
+// #60) keep working unchanged.
 const USDC = new StellarSdk.Asset("USDC", USDC_ISSUER);
 
 const DEFAULT_ASSET_CODE = getDefaultAssetCode(NETWORK);
