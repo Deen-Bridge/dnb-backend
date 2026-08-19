@@ -1,5 +1,5 @@
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
 import hpp from "hpp";
 import logger from "../config/logger.js";
@@ -116,6 +116,31 @@ export const captchaGate = () => async (req, res, next) => {
   }
   next();
 };
+
+/**
+ * Per-USER throttle for the Stellar payment endpoints (initialize/submit).
+ * Keyed on the authenticated user id (falling back to the IP when
+ * unauthenticated) so one account cannot hammer payment routes from many IPs
+ * and one IP cannot hammer many accounts. Stricter than the global
+ * generousLimiter because these routes mutate money state. Like
+ * emailAuthLimiter it does NOT skip in the test env, so the burst behavior is
+ * asserted by the test suite.
+ *
+ * Env overrides: RATE_LIMIT_PAYMENT_MAX, RATE_LIMIT_PAYMENT_WINDOW_MS,
+ * RATE_LIMIT_PAYMENT_DISABLE.
+ */
+export const paymentLimiter = makeLimiter(
+  30,
+  15 * 60 * 1000,
+  "RATE_LIMIT_PAYMENT",
+  {
+    // Per-user key when authenticated; ipKeyGenerator for the unauthenticated
+    // fallback so IPv6 subnets are bucketed correctly (express-rate-limit v8
+    // validation requires the helper for any req.ip usage).
+    keyGenerator: (req) =>
+      `payment:${req.user?._id?.toString() || ipKeyGenerator(req.ip)}`,
+  },
+);
 
 /**
  * Moderate – for mutation endpoints (purchase, email, upload, payouts).

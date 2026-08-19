@@ -15,6 +15,13 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       index: true,
     },
+    // The unsigned XDR returned at initialize, persisted so a duplicate
+    // initialize for the same pending checkout can replay the exact same
+    // transaction to sign (idempotent initialize). Never used for
+    // verification — only for replay of the pending record.
+    unsignedXdr: {
+      type: String,
+    },
     memo: {
       type: String,
     },
