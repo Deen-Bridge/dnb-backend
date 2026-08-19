@@ -159,9 +159,16 @@ describe("Core auth, authorization, and wallet flows", () => {
       .send({ publicKey: "not-a-stellar-public-key" });
 
     expect(response.status).toBe(400);
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       success: false,
-      message: "Invalid Stellar public key",
+      message: "Validation failed",
+      data: null,
+      errors: [
+        {
+          field: "publicKey",
+          message: "publicKey must be a valid Stellar public key",
+        },
+      ],
     });
 
     const persisted = await User.findById(user._id).select("stellarWallet");
