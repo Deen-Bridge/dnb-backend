@@ -85,6 +85,7 @@ describe("Book deletion authorization", () => {
     expect(response.body).toEqual({
       success: true,
       message: "Book deleted",
+      data: null,
     });
     expect(await Book.exists({ _id: book._id })).toBeNull();
   });
