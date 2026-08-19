@@ -52,7 +52,6 @@ jobs:
           CLOUDINARY_CLOUD_NAME: ci_test_cloud
           CLOUDINARY_API_KEY: ci_test_key
           CLOUDINARY_API_SECRET: ci_test_secret_that_should_not_leak
-
   build:
     name: Syntax and Boot Check
     runs-on: ubuntu-latest
@@ -62,6 +61,10 @@ jobs:
         image: mongo:6.0
         ports:
           - 27017:27017
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
 
     steps:
       - name: Checkout code
@@ -84,6 +87,17 @@ jobs:
               break
             fi
             echo "Waiting for MongoDB..."
+            sleep 1
+          done
+
+      - name: Wait for Redis
+        run: |
+          for i in $(seq 1 30); do
+            if nc -z localhost 6379 2>/dev/null || (exec 6<>/dev/tcp/localhost/6379) 2>/dev/null; then
+              echo "Redis is listening on port 6379"
+              break
+            fi
+            echo "Waiting for Redis..."
             sleep 1
           done
 
@@ -116,3 +130,4 @@ jobs:
           CLOUDINARY_CLOUD_NAME: ci_test_cloud
           CLOUDINARY_API_KEY: ci_test_key
           CLOUDINARY_API_SECRET: ci_test_secret_that_should_not_leak
+          REDIS_URL: redis://localhost:6379

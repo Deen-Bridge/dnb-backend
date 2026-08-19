@@ -48,6 +48,7 @@ import educatorRoutes from "./src/routes/educatorRoutes.js";
 import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
 import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
 import webhookRoutes from "./src/routes/webhookRoutes.js";
+import { healthCheck, ping } from "./src/controllers/healthController.js";
 
 const app = express();
 
@@ -158,13 +159,8 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "pong",
-    timestamp: new Date().toISOString(),
-  });
-});
+app.get("/ping", ping);
+app.get("/health", healthCheck);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter
 app.use("/.well-known", wellKnownRoutes);

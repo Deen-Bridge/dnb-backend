@@ -450,7 +450,7 @@ paths:
   /health:
     get:
       tags: [Meta]
-      summary: Liveness probe used by CI and the host
+      summary: Readiness probe for critical dependencies
       security: []
       responses:
         "200":
@@ -461,8 +461,57 @@ paths:
                 type: object
                 properties:
                   success: { type: boolean }
-                  message: { type: string, examples: [pong] }
-                  timestamp: { type: string, format: date-time }
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, enum: [healthy] }
+                      timestamp: { type: string, format: date-time }
+                      uptime: { type: number }
+                      environment: { type: string }
+                      dependencies:
+                        type: object
+                        properties:
+                          mongodb:
+                            type: object
+                            properties:
+                              status: { type: string, enum: [up, down] }
+                              state: { type: string }
+                          redis:
+                            type: object
+                            properties:
+                              status: { type: string, enum: [up, down] }
+        "503":
+          description: One or more critical dependencies are unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, examples: [false] }
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, enum: [unhealthy] }
+                      timestamp: { type: string, format: date-time }
+                      uptime: { type: number }
+                      environment: { type: string }
+                      dependencies:
+                        type: object
+  /ping:
+    get:
+      tags: [Meta]
+      summary: Dependency free liveness probe
+      security: []
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: pong
   /metrics:
     get:
       tags: [Meta]
