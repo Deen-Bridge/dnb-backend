@@ -23,6 +23,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   STROOPS_PER_UNIT: 10000000n,
   toStroops: jest.fn(),
   fromStroops: jest.fn(),
+  resolveAsset: jest.fn(),
   applySlippage: jest.fn(),
   findPaymentPaths: jest.fn(),
   buildPathPaymentTransaction: jest.fn(),

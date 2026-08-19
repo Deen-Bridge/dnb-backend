@@ -50,6 +50,12 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   getExplorerUrl,
   USDC: "USDC",
   PLATFORM_WALLET_PUBLIC_KEY: "",
+  // Exports pulled in transitively via feeSponsorService (#30) — mirror them
+  // so the ESM mock still satisfies every named import in the graph.
+  toStroops: jest.fn(),
+  resolveAsset: jest.fn(),
+  getAccountBalance: jest.fn(),
+  networkPassphrase: "Test SDF Network ; September 2015",
 }));
 jest.unstable_mockModule("../src/services/payoutService.js", () => ({
   recordSaleEarnings,

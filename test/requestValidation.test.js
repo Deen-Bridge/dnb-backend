@@ -34,6 +34,7 @@ const paymentHandlers = {
   getTransactionHistory: controller("history"),
   getTransaction: controller("transaction"),
   cancelTransaction: controller("cancel"),
+  sponsorshipStatus: controller("sponsorshipStatus"),
 };
 
 const refundHandlers = {

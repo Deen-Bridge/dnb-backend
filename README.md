@@ -33,6 +33,7 @@ The platform is composed of three services:
 - 🎓 **Course Management** — create, enroll, review, and track courses
 - 📚 **Digital Library** — upload, purchase, and read Islamic books
 - ⭐ **Stellar Payments** — USDC payment initialize → sign → submit → on-chain verify flow
+- ⛽ **Fee Sponsorship** — optional platform-paid network fees via fee-bump, with a structural whitelist and spend caps ([docs](docs/fee-sponsorship.md))
 - 👛 **Wallet Management** — connect Freighter, xBull, or Albedo; balance and trustline checks
 - 💬 **Real-time** — Socket.io messaging and notifications
 - ☁️ **Media** — Cloudinary uploads for avatars, covers, books, and reels
@@ -83,6 +84,7 @@ The API runs at `http://localhost:5000`.
 | `JOBS_ENABLED` | Start background workers; defaults to `true` |
 | `JOBS_DASHBOARD_TOKEN` | Bearer token protecting `/admin/jobs` |
 | `STELLAR_PLATFORM_PUBLIC_KEY` | Public key published in `stellar.toml` `ACCOUNTS[]` |
+| `FEE_SPONSOR_ENABLED` | Turn on platform-paid network fees (fee-bump). Off by default; when on, `FEE_SPONSOR_SECRET` is validated at boot ([docs](docs/fee-sponsorship.md)) |
 
 See `.env.example` for the full list.
 

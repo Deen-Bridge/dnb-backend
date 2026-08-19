@@ -25,6 +25,13 @@ import {
 } from "../../services/stellar/stellarService.js";
 import { getAssetConfig, isAssetSupported, getSupportedCodes } from "../../config/assets.js";
 import * as StellarSdk from "@stellar/stellar-sdk";
+import {
+  isFeeSponsorEnabled,
+  prepareSponsoredSubmission,
+  recordSponsorshipSpend,
+  getSponsorshipStatus,
+  SponsorshipError,
+} from "../../services/stellar/feeSponsorService.js";
 import { recordSaleEarnings } from "../../services/payoutService.js";
 import { grantItemAccess } from "../../services/stellar/reconciliationService.js";
 import { enqueue } from "../../jobs/queue.js";
@@ -34,6 +41,8 @@ import {
   paymentsSubmitted,
   paymentsConfirmed,
   paymentsFailed,
+  sponsorshipsApproved,
+  sponsorshipsRejected,
 } from "../../config/metrics.js";
 import { recordAudit } from "../../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
@@ -634,7 +643,7 @@ export const submitPayment = async (req, res) => {
   session.startTransaction();
 
   try {
-    const { transactionId, signedXdr } = req.body;
+    const { transactionId, signedXdr, requestSponsorship } = req.body;
     const buyerId = req.user._id;
 
     if (!transactionId || !signedXdr) {
@@ -726,42 +735,86 @@ export const submitPayment = async (req, res) => {
           },
         ];
 
-    // Validate signed XDR contents (memo, payments, optional source)
-    try {
-      validateSignedPaymentXdr(
-        signedXdr,
-        expectedPayments,
-        transaction.memo,
-        transaction.buyerWallet,
-        true
-      );
-    } catch (validationError) {
-      transaction.status = "failed";
-      transaction.expiresAt = undefined;
-      transaction.failureReason = `validation_failed: ${validationError.message}`;
-      await transaction.save({ session });
-      await session.commitTransaction();
-      paymentsFailed.inc({ type: "purchase", reason: "validation_failed" });
+    // Fee-bump sponsorship (#30): only when the client opts in AND the master
+    // switch is on. With the flag off this is skipped entirely and the flow
+    // below is byte-for-byte the original unsponsored path.
+    const wantSponsor = requestSponsorship === true && isFeeSponsorEnabled();
+    let submissionXdr = signedXdr;
+    let sponsorship = null;
 
-      logger.error(`Transaction ${transactionId} validation failed:`, validationError.message);
+    if (wantSponsor) {
+      try {
+        // Structural whitelist + spend caps + fee-bump wrapping. This is a
+        // strict superset of validateSignedPaymentXdr, so it is not run again
+        // for the sponsored path.
+        sponsorship = await prepareSponsoredSubmission({
+          signedXdr,
+          transactionRow: transaction,
+          userId: buyerId,
+          session,
+        });
+        submissionXdr = sponsorship.feeBumpXdr;
+      } catch (sponsorError) {
+        if (sponsorError instanceof SponsorshipError) {
+          // Sponsorship-specific failure: DO NOT mark the row failed. Leave it
+          // pending so the client can retry unsponsored (user pays the fee).
+          await session.abortTransaction();
+          sponsorshipsRejected.inc({
+            type: "purchase",
+            reason: sponsorError.code,
+          });
+          logger.info(
+            `Sponsorship rejected for transaction ${transactionId}: ${sponsorError.code}`
+          );
+          return res.status(sponsorError.httpStatus).json({
+            success: false,
+            message: "Fee sponsorship was not applied; retry without sponsorship",
+            sponsorship: { approved: false, reason: sponsorError.code },
+            retryUnsponsored: true,
+          });
+        }
+        throw sponsorError;
+      }
+      sponsorshipsApproved.inc({ type: "purchase" });
+      logger.info(`Sponsorship approved for transaction ${transactionId}`);
+    } else {
+      // Validate signed XDR contents (memo, payments, optional source)
+      try {
+        validateSignedPaymentXdr(
+          signedXdr,
+          expectedPayments,
+          transaction.memo,
+          transaction.buyerWallet,
+          true
+        );
+      } catch (validationError) {
+        transaction.status = "failed";
+        transaction.expiresAt = undefined;
+        transaction.failureReason = `validation_failed: ${validationError.message}`;
+        await transaction.save({ session });
+        await session.commitTransaction();
+        paymentsFailed.inc({ type: "purchase", reason: "validation_failed" });
 
-      await emitEvent(EVENT_TYPES.PAYMENT_FAILED, {
-        transactionId: transaction._id.toString(),
-        itemType: transaction.itemType,
-        itemId: transaction.itemId?.toString(),
-        amount: transaction.amount,
-        currency: transaction.currency,
-        network: transaction.network,
-        buyerId: buyerId.toString(),
-        status: "failed",
-        failureReason: `validation_failed: ${validationError.message}`,
-      });
+        logger.error(`Transaction ${transactionId} validation failed:`, validationError.message);
 
-      return res.status(400).json({
-        success: false,
-        message: "Signed transaction does not match expected payment details",
-        error: validationError.message,
-      });
+        await emitEvent(EVENT_TYPES.PAYMENT_FAILED, {
+          transactionId: transaction._id.toString(),
+          itemType: transaction.itemType,
+          itemId: transaction.itemId?.toString(),
+          amount: transaction.amount,
+          currency: transaction.currency,
+          network: transaction.network,
+          buyerId: buyerId.toString(),
+          status: "failed",
+          failureReason: `validation_failed: ${validationError.message}`,
+        });
+
+        return res.status(400).json({
+          success: false,
+          message: "Signed transaction does not match expected payment details",
+          error: validationError.message,
+        });
+      }
     }
 
     // Update status to submitted after validation
@@ -772,7 +825,7 @@ export const submitPayment = async (req, res) => {
 
     let result;
     try {
-      result = await submitTransaction(signedXdr);
+      result = await submitTransaction(submissionXdr);
     } catch (stellarError) {
       transaction.status = "failed";
       transaction.expiresAt = undefined;
@@ -802,18 +855,52 @@ export const submitPayment = async (req, res) => {
       });
     }
 
+    // Sponsored submits: the platform's fee-bump has landed, so account the
+    // spend (with the real fee_charged) and stamp the sponsorship fields. The
+    // inner-transaction hash is what the payment operations verify against and
+    // what matches `expectedHash`; the fee-bump (outer) hash is kept alongside.
+    if (sponsorship) {
+      transaction.sponsored = true;
+      transaction.feeBumpTxHash = sponsorship.outerHash;
+      transaction.sponsorFeeCharged =
+        result.feeCharged != null
+          ? String(result.feeCharged)
+          : String(sponsorship.maxFeeStroops);
+      try {
+        await recordSponsorshipSpend({
+          userId: buyerId,
+          feeStroops:
+            result.feeCharged != null
+              ? Number(result.feeCharged)
+              : sponsorship.maxFeeStroops,
+          session,
+        });
+      } catch (spendErr) {
+        // Accounting must never sink an on-chain-successful payment; a sweep
+        // can reconcile spend later from the sponsored rows.
+        logger.error(
+          `Failed to record sponsorship spend for transaction ${transactionId}:`,
+          spendErr
+        );
+      }
+    }
+
+    // The hash the payment operations settle under: the inner tx for a
+    // sponsored submit, otherwise the submitted tx itself.
+    const settledHash = sponsorship ? sponsorship.innerHash : result.hash;
+
     // Verify on-chain that the creator (and platform, when a fee was applied)
     // actually received the expected USDC amounts
     // (expectedPayments already defined above for pre-submission validation)
 
     const verification = await verifyPaymentOperations(
-      result.hash,
+      settledHash,
       expectedPayments,
       transaction.currency || "USDC"
     );
 
     if (!verification.verified) {
-      transaction.stellarTxHash = result.hash;
+      transaction.stellarTxHash = settledHash;
       if (verification.transient) {
         transaction.status = "retrying";
         transaction.failureReason = verification.reason;
@@ -825,7 +912,7 @@ export const submitPayment = async (req, res) => {
             {
               attempts: 5,
               backoffMs: 1000,
-              idempotencyKey: `verify:${result.hash}`,
+              idempotencyKey: `verify:${settledHash}`,
               session,
             }
           );
@@ -843,8 +930,9 @@ export const submitPayment = async (req, res) => {
           success: true,
           message: "Payment submitted; confirmation is in progress",
           transactionId: transaction._id,
-          txHash: result.hash,
+          txHash: settledHash,
           status: "retrying",
+          ...(sponsorship && { sponsored: true }),
         });
       }
       transaction.status = "failed";
@@ -867,7 +955,7 @@ export const submitPayment = async (req, res) => {
         status:     "failure",
         metadata:   {
           transactionId,
-          stellarTxHash: result.hash,
+          stellarTxHash: settledHash,
           failureReason:  `On-chain verification failed: ${verification.reason}`,
         },
       });
@@ -879,7 +967,7 @@ export const submitPayment = async (req, res) => {
         amount: transaction.amount,
         currency: transaction.currency,
         network: transaction.network,
-        stellarTxHash: result.hash,
+        stellarTxHash: settledHash,
         buyerId: buyerId.toString(),
         status: "failed",
         failureReason: `On-chain verification failed: ${verification.reason}`,
@@ -892,7 +980,7 @@ export const submitPayment = async (req, res) => {
       });
     }
 
-    transaction.stellarTxHash = result.hash;
+    transaction.stellarTxHash = settledHash;
     transaction.stellarLedger = result.ledger;
     transaction.status = "confirmed";
     transaction.confirmedAt = new Date();
@@ -951,7 +1039,7 @@ export const submitPayment = async (req, res) => {
         {
           attempts: 5,
           backoffMs: 1000,
-          idempotencyKey: `receipt:${result.hash}`,
+          idempotencyKey: `receipt:${settledHash}`,
           session,
         }
       );
@@ -967,7 +1055,7 @@ export const submitPayment = async (req, res) => {
     await session.commitTransaction();
 
     logger.info(
-      `Payment successful: ${transactionId}, Stellar TX: ${result.hash}`
+      `Payment successful: ${transactionId}, Stellar TX: ${settledHash}${sponsorship ? " (sponsored)" : ""}`
     );
 
     recordAudit({
@@ -979,12 +1067,13 @@ export const submitPayment = async (req, res) => {
       status:     "success",
       metadata:   {
         transactionId,
-        stellarTxHash:  result.hash,
+        stellarTxHash:  settledHash,
         stellarLedger:  result.ledger,
         amount:         transaction.amount,
         itemType:       transaction.itemType,
         itemId:         transaction.itemId?.toString(),
         settlementMode: transaction.settlement,
+        sponsored:      !!sponsorship,
       },
     });
 
@@ -998,11 +1087,12 @@ export const submitPayment = async (req, res) => {
       currency: transaction.currency,
       network: transaction.network,
       settlement: transaction.settlement,
-      stellarTxHash: result.hash,
+      stellarTxHash: settledHash,
       stellarLedger: result.ledger,
       buyerId: buyerId.toString(),
       creatorId: transaction.creator?.toString(),
       status: "confirmed",
+      sponsored: !!sponsorship,
     });
 
     res.status(200).json({
@@ -1010,11 +1100,16 @@ export const submitPayment = async (req, res) => {
       message: "Payment successful!",
       transaction: {
         id: transaction._id,
-        hash: result.hash,
+        hash: settledHash,
         ledger: result.ledger,
         itemTitle: transaction.itemTitle,
         amount: transaction.amount,
-        explorerUrl: getExplorerUrl(result.hash),
+        explorerUrl: getExplorerUrl(settledHash),
+        ...(sponsorship && {
+          sponsored: true,
+          feeBumpTxHash: sponsorship.outerHash,
+          sponsorFeeCharged: transaction.sponsorFeeCharged,
+        }),
       },
     });
   } catch (error) {
@@ -1207,6 +1302,26 @@ export const cancelTransaction = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to cancel transaction",
+    });
+  }
+};
+
+/**
+ * Fee-bump sponsorship status (#30) — auth-protected ops view. Exposes whether
+ * sponsorship is enabled, the sponsor account's public key and live XLM float,
+ * the configured caps, and today's spend so the float can be topped up before
+ * it runs dry. The sponsor secret is never read here and never returned.
+ * GET /api/stellar/payment/sponsorship/status
+ */
+export const sponsorshipStatus = async (req, res) => {
+  try {
+    const status = await getSponsorshipStatus();
+    res.status(200).json({ success: true, sponsorship: status });
+  } catch (error) {
+    logger.error("Sponsorship status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch sponsorship status",
     });
   }
 };

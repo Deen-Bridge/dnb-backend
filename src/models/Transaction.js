@@ -128,6 +128,25 @@ const transactionSchema = new mongoose.Schema(
       default: "direct",
       index: true,
     },
+    // Fee-bump sponsorship (#30): set only when the platform paid this
+    // transaction's network fee via a fee-bump wrapper. Absent/false means the
+    // user paid their own fee (the default, unchanged flow).
+    sponsored: {
+      type: Boolean,
+      default: false,
+    },
+    // Actual XLM fee (in stroops) the sponsor account paid, taken from the
+    // Horizon submit response `fee_charged`. Stored as a string to stay
+    // consistent with the precision-preserving `amount` field.
+    sponsorFeeCharged: {
+      type: String,
+    },
+    // Horizon returns the fee-bump (outer) transaction hash; `stellarTxHash`
+    // continues to hold the inner-transaction hash (which matches
+    // `expectedHash` from initialize), so both are recorded for a sponsored row.
+    feeBumpTxHash: {
+      type: String,
+    },
     // Status tracking
     status: {
       type: String,

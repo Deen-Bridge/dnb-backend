@@ -13,6 +13,12 @@ import {
   NETWORK,
   DONATION_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
+import {
+  isFeeSponsorEnabled,
+  prepareSponsoredSubmission,
+  recordSponsorshipSpend,
+  SponsorshipError,
+} from "../../services/stellar/feeSponsorService.js";
 import logger from "../../config/logger.js";
 import { enqueue } from "../../jobs/queue.js";
 import {
@@ -20,6 +26,8 @@ import {
   paymentsSubmitted,
   paymentsConfirmed,
   paymentsFailed,
+  sponsorshipsApproved,
+  sponsorshipsRejected,
 } from "../../config/metrics.js";
 
 const DONATION_MEMO = "DNB-SADAQAH";
@@ -134,7 +142,7 @@ export const submitDonation = async (req, res) => {
   session.startTransaction();
 
   try {
-    const { donationId, signedXdr } = req.body;
+    const { donationId, signedXdr, requestSponsorship } = req.body;
     const donorId = req.user._id;
 
     if (!donationId || !signedXdr) {
@@ -169,30 +177,71 @@ export const submitDonation = async (req, res) => {
       },
     ];
 
-    // Validate signed XDR contents (memo, payments, optional source)
-    try {
-      validateSignedPaymentXdr(
-        signedXdr,
-        expectedPayments,
-        donation.memo,
-        donation.buyerWallet,
-        true
-      );
-    } catch (validationError) {
-      donation.status = "failed";
-      donation.expiresAt = undefined;
-      donation.failureReason = `validation_failed: ${validationError.message}`;
-      await donation.save({ session });
-      await session.commitTransaction();
-      paymentsFailed.inc({ type: "donation", reason: "validation_failed" });
+    // Fee-bump sponsorship (#30): opt-in and only when the master switch is on.
+    // Skipped entirely with the flag off — the donation submit path below is
+    // then byte-for-byte the original unsponsored flow.
+    const wantSponsor = requestSponsorship === true && isFeeSponsorEnabled();
+    let submissionXdr = signedXdr;
+    let sponsorship = null;
 
-      logger.error(`Donation ${donationId} validation failed:`, validationError.message);
+    if (wantSponsor) {
+      try {
+        sponsorship = await prepareSponsoredSubmission({
+          signedXdr,
+          transactionRow: donation,
+          userId: donorId,
+          session,
+        });
+        submissionXdr = sponsorship.feeBumpXdr;
+      } catch (sponsorError) {
+        if (sponsorError instanceof SponsorshipError) {
+          // Sponsorship-specific failure: leave the donation pending so the
+          // client can retry unsponsored; never mark it failed.
+          await session.abortTransaction();
+          sponsorshipsRejected.inc({
+            type: "donation",
+            reason: sponsorError.code,
+          });
+          logger.info(
+            `Sponsorship rejected for donation ${donationId}: ${sponsorError.code}`
+          );
+          return res.status(sponsorError.httpStatus).json({
+            success: false,
+            message: "Fee sponsorship was not applied; retry without sponsorship",
+            sponsorship: { approved: false, reason: sponsorError.code },
+            retryUnsponsored: true,
+          });
+        }
+        throw sponsorError;
+      }
+      sponsorshipsApproved.inc({ type: "donation" });
+      logger.info(`Sponsorship approved for donation ${donationId}`);
+    } else {
+      // Validate signed XDR contents (memo, payments, optional source)
+      try {
+        validateSignedPaymentXdr(
+          signedXdr,
+          expectedPayments,
+          donation.memo,
+          donation.buyerWallet,
+          true
+        );
+      } catch (validationError) {
+        donation.status = "failed";
+        donation.expiresAt = undefined;
+        donation.failureReason = `validation_failed: ${validationError.message}`;
+        await donation.save({ session });
+        await session.commitTransaction();
+        paymentsFailed.inc({ type: "donation", reason: "validation_failed" });
 
-      return res.status(400).json({
-        success: false,
-        message: "Signed transaction does not match expected payment details",
-        error: validationError.message,
-      });
+        logger.error(`Donation ${donationId} validation failed:`, validationError.message);
+
+        return res.status(400).json({
+          success: false,
+          message: "Signed transaction does not match expected payment details",
+          error: validationError.message,
+        });
+      }
     }
 
     // Update status to submitted after validation
@@ -204,7 +253,7 @@ export const submitDonation = async (req, res) => {
     // Submit to Stellar network
     let result;
     try {
-      result = await submitTransaction(signedXdr);
+      result = await submitTransaction(submissionXdr);
     } catch (stellarError) {
       donation.status = "failed";
       donation.expiresAt = undefined;
@@ -222,12 +271,42 @@ export const submitDonation = async (req, res) => {
       });
     }
 
+    // Sponsored submits: the fee-bump has landed, so account the spend (with
+    // the real fee_charged) and stamp the sponsorship fields. Verification and
+    // the stored hash use the inner-transaction hash (which matches
+    // `expectedHash`); the fee-bump (outer) hash is kept alongside.
+    if (sponsorship) {
+      donation.sponsored = true;
+      donation.feeBumpTxHash = sponsorship.outerHash;
+      donation.sponsorFeeCharged =
+        result.feeCharged != null
+          ? String(result.feeCharged)
+          : String(sponsorship.maxFeeStroops);
+      try {
+        await recordSponsorshipSpend({
+          userId: donorId,
+          feeStroops:
+            result.feeCharged != null
+              ? Number(result.feeCharged)
+              : sponsorship.maxFeeStroops,
+          session,
+        });
+      } catch (spendErr) {
+        logger.error(
+          `Failed to record sponsorship spend for donation ${donationId}:`,
+          spendErr
+        );
+      }
+    }
+
+    const settledHash = sponsorship ? sponsorship.innerHash : result.hash;
+
     // Verify on-chain that the donation actually paid the fund (amount, destination, asset)
     // (expectedPayments already defined above for pre-submission validation)
-    const verification = await verifyPaymentOperations(result.hash, expectedPayments);
+    const verification = await verifyPaymentOperations(settledHash, expectedPayments);
 
     if (!verification.verified) {
-      donation.stellarTxHash = result.hash;
+      donation.stellarTxHash = settledHash;
       if (verification.transient) {
         donation.status = "retrying";
         donation.failureReason = verification.reason;
@@ -238,7 +317,7 @@ export const submitDonation = async (req, res) => {
           {
             attempts: 5,
             backoffMs: 1000,
-            idempotencyKey: `verify:${result.hash}`,
+            idempotencyKey: `verify:${settledHash}`,
             session,
           }
         );
@@ -247,8 +326,9 @@ export const submitDonation = async (req, res) => {
           success: true,
           message: "Donation submitted; confirmation is in progress",
           donationId: donation._id,
-          txHash: result.hash,
+          txHash: settledHash,
           status: "retrying",
+          ...(sponsorship && { sponsored: true }),
         });
       }
       donation.status = "failed";
@@ -270,7 +350,7 @@ export const submitDonation = async (req, res) => {
     }
 
     // Mark confirmed
-    donation.stellarTxHash = result.hash;
+    donation.stellarTxHash = settledHash;
     donation.stellarLedger = result.ledger;
     donation.status = "confirmed";
     donation.confirmedAt = new Date();
@@ -282,7 +362,7 @@ export const submitDonation = async (req, res) => {
       {
         attempts: 5,
         backoffMs: 1000,
-        idempotencyKey: `receipt:${result.hash}`,
+        idempotencyKey: `receipt:${settledHash}`,
         session,
       }
     );
@@ -290,14 +370,19 @@ export const submitDonation = async (req, res) => {
     paymentsConfirmed.inc({ type: "donation" });
 
     logger.info(
-      `Donation successful: ${donationId}, Stellar TX: ${result.hash}`
+      `Donation successful: ${donationId}, Stellar TX: ${settledHash}${sponsorship ? " (sponsored)" : ""}`
     );
 
     res.status(200).json({
       success: true,
       message: "JazakAllah khair! Your sadaqah has been received.",
-      txHash: result.hash,
-      explorerUrl: getExplorerUrl(result.hash),
+      txHash: settledHash,
+      explorerUrl: getExplorerUrl(settledHash),
+      ...(sponsorship && {
+        sponsored: true,
+        feeBumpTxHash: sponsorship.outerHash,
+        sponsorFeeCharged: donation.sponsorFeeCharged,
+      }),
     });
   } catch (error) {
     await session.abortTransaction();

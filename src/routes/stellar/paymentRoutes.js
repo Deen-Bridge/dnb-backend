@@ -10,6 +10,7 @@ import {
   getTransactionHistory,
   getTransaction,
   cancelTransaction,
+  sponsorshipStatus,
 } from "../../controllers/stellar/paymentController.js";
 import {
   requestRefund,
@@ -71,6 +72,13 @@ router.get(
   "/reconciliation/status",
   authorizeRoles("admin"),
   reconciliationStatus
+);
+
+// Fee-bump sponsorship status (admin) — sponsor float + today's spend (#30)
+router.get(
+  "/sponsorship/status",
+  authorizeRoles("admin"),
+  sponsorshipStatus
 );
 
 export default router;
