@@ -37,6 +37,7 @@ import callRoutes from "./src/routes/callRoutes.js";
 import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
+import stellarGiftRoutes from "./src/routes/stellar/giftRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js";
@@ -192,6 +193,7 @@ app.use("/api/educator-verification", standardLimiter, educatorVerificationRoute
 app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
 app.use("/api/stellar/payment", generousLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
+app.use("/api/stellar/gifts", generousLimiter, stellarGiftRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
 
 // Outbound webhook management API (admin-gated)
