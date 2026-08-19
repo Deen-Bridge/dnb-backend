@@ -1,11 +1,12 @@
 import logger from "../config/logger.js";
 
 export class APIError extends Error {
-  constructor(message, statusCode = 500, isOperational = true) {
+  constructor(message, statusCode = 500, isOperational = true, errors) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = isOperational;
     this.status = `${statusCode}`.startsWith("4") ? "fail" : "error";
+    if (errors) this.errors = errors;
     Error.captureStackTrace(this, this.constructor);
   }
 }
@@ -43,6 +44,7 @@ const sendErrorDev = (err, req, res) => {
     status: err.status,
     error: err,
     message: err.message,
+    ...(err.errors && { errors: err.errors }),
     stack: err.stack,
     reqId: req?.id,
   });
@@ -58,6 +60,7 @@ const sendErrorProd = (err, req, res) => {
       success: false,
       status: err.status,
       message: err.message,
+      ...(err.errors && { errors: err.errors }),
       reqId: req?.id,
     });
   } else {

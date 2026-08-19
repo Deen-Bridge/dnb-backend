@@ -28,6 +28,11 @@ import {
   emailAuthLimiter,
   captchaGate,
 } from "../middlewares/security.js";
+import { validate } from "../middlewares/validate.js";
+import {
+  registerValidation,
+  loginValidation,
+} from "../validators/requestValidators.js";
 
 const router = express.Router();
 
@@ -35,8 +40,15 @@ const router = express.Router();
 // /register and /resend-verification also carry a per-EMAIL limiter (survives
 // IP rotation) plus a pluggable captcha gate (no-op when unconfigured) —
 // see issue #89.
-router.post("/register", emailAuthLimiter, captchaGate(), registerUser);
-router.post("/login", loginUser);
+router.post(
+  "/register",
+  emailAuthLimiter,
+  captchaGate(),
+  registerValidation,
+  validate,
+  registerUser
+);
+router.post("/login", loginValidation, validate, loginUser);
 router.post("/request-password-reset", requestPasswordReset);
 router.post("/reset-password", resetPassword);
 router.get("/verify-email/:token", verifyEmail);

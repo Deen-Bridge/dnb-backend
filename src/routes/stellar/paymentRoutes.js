@@ -20,6 +20,11 @@ import {
   arbitrateDispute,
 } from "../../controllers/stellar/refundController.js";
 import { reconciliationStatus } from "../../controllers/stellar/reconciliationController.js";
+import { validate } from "../../middlewares/validate.js";
+import {
+  initializePaymentValidation,
+  submitPaymentValidation,
+} from "../../validators/requestValidators.js";
 
 const router = express.Router();
 
@@ -29,8 +34,20 @@ router.use(protect);
 // Payment flow
 router.post("/quote", getQuote);
 router.post("/preflight", getPaymentPreflight);
-router.post("/initialize", idempotency(), initializePayment);
-router.post("/submit", idempotency(), submitPayment);
+router.post(
+  "/initialize",
+  initializePaymentValidation,
+  validate,
+  idempotency(),
+  initializePayment
+);
+router.post(
+  "/submit",
+  submitPaymentValidation,
+  validate,
+  idempotency(),
+  submitPayment
+);
 
 // Transaction management
 router.get("/transactions", getTransactionHistory);
