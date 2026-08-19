@@ -1,5 +1,6 @@
 import logger from "./logger.js";
 import { validateStellarConfig, resolveStellarConfig } from "./stellar.js";
+import { validateFeeSponsorBootConfig } from "../services/stellar/feeSponsorService.js";
 
 /**
  * Validate required environment variables
@@ -68,6 +69,14 @@ const optionalEnvVars = [
   // Service-to-service auth keys for the AI service (dnb-ai). Required in
   // production (fail-fast below); optional in development/test.
   "AI_SERVICE_KEYS",
+  // Fee-bump sponsorship (#30). All optional — a boot with none of these set
+  // (the default) is unchanged. When FEE_SPONSOR_ENABLED=true, the secret is
+  // validated below and a bad/missing secret fails fast.
+  "FEE_SPONSOR_ENABLED",
+  "FEE_SPONSOR_SECRET",
+  "FEE_SPONSOR_MAX_FEE_STROOPS",
+  "FEE_SPONSOR_DAILY_CAP_STROOPS",
+  "FEE_SPONSOR_PER_USER_DAILY_LIMIT",
 ];
 
 export const validateEnv = () => {
@@ -141,6 +150,15 @@ export const validateEnv = () => {
     logger.error(
       "Please check your .env file and ensure all required variables are set."
     );
+    process.exit(1);
+  }
+
+  // Fee-bump sponsorship (#30): when the master switch is on, a missing or
+  // invalid sponsor secret is a hard boot failure so a misconfigured deploy
+  // never silently disables sponsorship or ships an unusable key.
+  const feeSponsor = validateFeeSponsorBootConfig();
+  if (!feeSponsor.ok) {
+    logger.error(`❌ Fee sponsorship misconfigured: ${feeSponsor.message}`);
     process.exit(1);
   }
 

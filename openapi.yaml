@@ -1732,6 +1732,12 @@ paths:
     post:
       tags: [Payments]
       summary: Submit a signed transaction and verify it on chain
+      description: >
+        Submits the buyer-signed transaction and verifies it on chain. When
+        `requestSponsorship: true` and fee sponsorship is enabled, the platform
+        pays the network fee via a fee-bump wrapper (see docs/fee-sponsorship.md).
+        Sponsorship-specific failures return a distinct non-fatal 4xx/503 with
+        `retryUnsponsored: true` and never mark the transaction failed.
       requestBody:
         required: true
         content:
@@ -1741,12 +1747,17 @@ paths:
               properties:
                 signedXdr: { type: string }
                 transactionId: { $ref: "#/components/schemas/ObjectId" }
+                requestSponsorship:
+                  type: boolean
+                  description: Opt in to platform-paid network fees (fee-bump). Ignored when sponsorship is disabled.
               required: [signedXdr]
       responses:
         "200": { $ref: "#/components/responses/Ok" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/BadRequest" }
   /api/stellar/payment/transactions:
     get:
       tags: [Payments]
@@ -1940,6 +1951,18 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /api/stellar/payment/sponsorship/status:
+    get:
+      tags: [Payments]
+      summary: Fee-bump sponsorship status (admin)
+      description: >
+        Admin-only. Returns whether fee sponsorship is enabled, the sponsor
+        account public key (never the secret) and live XLM float, the configured
+        caps, and today's spend. See docs/fee-sponsorship.md.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /api/stellar/donation/stats:
     get:
       tags: [Donations]
@@ -1970,6 +1993,10 @@ paths:
     post:
       tags: [Donations]
       summary: Submit a signed donation transaction
+      description: >
+        Submits the donor-signed transaction and verifies it on chain. Supports
+        the same optional `requestSponsorship: true` fee-bump flow as the payment
+        submit endpoint (see docs/fee-sponsorship.md).
       requestBody:
         required: true
         content:
@@ -1978,11 +2005,17 @@ paths:
               type: object
               properties:
                 signedXdr: { type: string }
+                donationId: { $ref: "#/components/schemas/ObjectId" }
+                requestSponsorship:
+                  type: boolean
+                  description: Opt in to platform-paid network fees (fee-bump). Ignored when sponsorship is disabled.
               required: [signedXdr]
       responses:
         "200": { $ref: "#/components/responses/Ok" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/BadRequest" }
   /api/payouts/me/balance:
     get:
       tags: [Payouts]

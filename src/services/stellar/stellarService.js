@@ -616,6 +616,10 @@ export const submitTransaction = async (signedXdr) => {
       hash: result.hash,
       ledger: result.ledger,
       successful: result.successful,
+      // `fee_charged` is the actual fee the network took. For a fee-bump
+      // submission (#30) this is what the sponsor account paid; undefined for
+      // transactions where the response omits it (e.g. the verifyFn dedupe path).
+      feeCharged: result.fee_charged,
     };
   } catch (error) {
     logger.error("Error submitting transaction:", error);
