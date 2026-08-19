@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import compression from "compression";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import mongoose from "mongoose";
 import "./src/jobs/handlers.js";
 
 // Load env vars, except in tests where test/jest.setup.js has already loaded
@@ -17,6 +18,7 @@ import connectDB from "./src/config/db.js";
 import validateEnv from "./src/config/validateEnv.js";
 import logger from "./src/config/logger.js";
 import { registry, metricsMiddleware, observeHttpDuration } from "./src/config/metrics.js";
+import { isRedisReady } from "./src/config/redis.js";
 
 import {
   helmetMiddleware,
@@ -66,6 +68,27 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 const app = express();
+
+// ========================================
+// READINESS STATE
+// ========================================
+
+let isReady = true;
+
+/**
+ * Set readiness state for the application
+ * Called during shutdown to signal to load balancers to stop sending new requests
+ */
+export const setReadiness = (ready) => {
+  isReady = ready;
+};
+
+/**
+ * Get current readiness state
+ */
+export const getReadiness = () => {
+  return isReady;
+};
 
 app.set("trust proxy", 1);
 
@@ -164,12 +187,60 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "pong",
+// ========================================
+// HEALTH CHECK ENDPOINTS
+// ========================================
+
+/**
+ * Liveness probe — cheap, just proves event loop is alive
+ * Should return 200 as long as the process hasn't crashed
+ * Even during shutdown, this should remain responsive
+ */
+app.get("/livez", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * Readiness probe — checks real dependency state
+ * Returns 200 only when ready to accept traffic
+ * Returns 503 during shutdown or when dependencies are down
+ */
+app.get("/readyz", async (req, res) => {
+  // Check readiness flag (set to false during shutdown)
+  if (!isReady) {
+    return res.status(503).json({
+      status: "not_ready",
+      reason: "shutting_down",
+      dependencies: {
+        mongo: "unknown",
+        redis: "unknown",
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Check MongoDB readyState: 1 = connected
+  const mongoReady = mongoose.connection.readyState === 1;
+
+  // Check Redis using existing isRedisReady()
+  const redisReady = isRedisReady();
+
+  const allReady = mongoReady && redisReady;
+
+  const status = {
+    status: allReady ? "ready" : "not_ready",
+    dependencies: {
+      mongo: mongoReady ? "up" : "down",
+      redis: redisReady ? "up" : "down",
+    },
+    timestamp: new Date().toISOString(),
+  };
+
+  return res.status(allReady ? 200 : 503).json(status);
 });
 
 // SEP-1 stellar.toml — must be outside /api rate limiter

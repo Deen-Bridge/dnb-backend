@@ -52,6 +52,11 @@ jobs:
         ports:
           - 27017:27017
 
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,21 +75,8 @@ jobs:
           find . -name "*.js" -not -path "./node_modules/*" -print0 \
             | xargs -0 -n1 node --check
 
-      - name: Boot server and hit /health
-        run: |
-          node server.js &
-          SERVER_PID=$!
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:5000/health > /dev/null; then
-              echo "Server is up and healthy"
-              kill $SERVER_PID
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Server failed to become healthy in time"
-          kill $SERVER_PID || true
-          exit 1
+      - name: Start server
+        run: node server.js &
         env:
           NODE_ENV: test
           PORT: 5000
@@ -94,3 +86,23 @@ jobs:
           CLOUDINARY_CLOUD_NAME: ci_test_cloud
           CLOUDINARY_API_KEY: ci_test_key
           CLOUDINARY_API_SECRET: ci_test_secret_that_should_not_leak
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+
+      - name: Wait for readiness
+        run: |
+          for i in {1..30}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/readyz)
+            if [ "$STATUS" = "200" ]; then
+              echo "Server is ready"
+              exit 0
+            fi
+            echo "Attempt $i: /readyz returned $STATUS, waiting..."
+            sleep 2
+          done
+          echo "Server failed to become ready"
+          curl -v http://localhost:5000/readyz
+          exit 1
+
+      - name: Assert liveness still works
+        run: curl -sf http://localhost:5000/livez
