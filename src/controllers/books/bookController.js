@@ -1,10 +1,12 @@
 import axios from "axios";
+import mongoose from "mongoose";
 import Book from "../../models/Book.js";
 import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
 import logger from "../../config/logger.js";
 import { validateMagicBytes } from "../../utils/fileValidation.js";
 import { createNewBookNotification } from "../notificationController.js";
+import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
 
 //cretae a book
 export const createBook = async (req, res) => {
@@ -124,20 +126,33 @@ export const getBooksByAuthor = async (req, res) => {
 };
 
 // delete book by id
-export const deleteBook = async (req, res) => {
-  try {
-    // Ownership is enforced by authorizeOwnership middleware (req.resource).
-    const book = req.resource || (await Book.findById(req.params.id));
-    if (!book) {
-      return res.status(404).json({ success: false, message: "Book not found" });
-    }
+export const deleteBook = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
 
-    await Book.findByIdAndDelete(req.params.id);
-    res.json({ success: true, message: "Book deleted" });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return next(new APIError("Invalid book id", 400));
   }
-};
+
+  const book = req.resource || (await Book.findById(id));
+  if (!book) {
+    return next(new APIError("Book not found", 404));
+  }
+
+  const isOwner =
+    req.user?._id && book.author?.toString() === req.user._id.toString();
+  const isAdmin = req.user?.role === "admin";
+  if (!isOwner && !isAdmin) {
+    return next(
+      new APIError("You are not authorized to delete this book", 403)
+    );
+  }
+
+  await Book.findByIdAndDelete(book._id);
+  res.status(200).json({
+    success: true,
+    message: "Book deleted",
+  });
+});
 
 // review books
 
