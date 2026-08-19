@@ -56,10 +56,34 @@ describe("DeenBridge API", () => {
     expect(res.text).toContain("Welcome to DeenBridge API");
   });
 
-  it("should respond to GET /health", async () => {
+  it("should report degraded readiness when Redis is unavailable", async () => {
     const res = await request(app).get("/health");
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({
+      success: false,
+      data: {
+        status: "unhealthy",
+        environment: "test",
+        dependencies: {
+          mongodb: {
+            status: "up",
+            state: "connected",
+          },
+          redis: {
+            status: "down",
+          },
+        },
+      },
+    });
+    expect(res.body.data.uptime).toEqual(expect.any(Number));
+    expect(Number.isNaN(Date.parse(res.body.data.timestamp))).toBe(false);
+  });
+
+  it("should respond to GET /ping without checking dependencies", async () => {
+    const res = await request(app).get("/ping");
+
     expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty("success", true);
+    expect(res.text).toBe("pong");
   });
 
   it("should respond to GET /api/courses", async () => {
