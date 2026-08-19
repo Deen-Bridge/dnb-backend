@@ -13,6 +13,7 @@ import {
   standardLimiter,
   generousLimiter,
   authLimiter,
+  paymentLimiter,
   mongoSanitizeMiddleware,
   hppMiddleware,
   customSecurityHeaders,
@@ -190,7 +191,8 @@ app.use("/api/calls", generousLimiter, callRoutes);
 app.use("/api/educators", generousLimiter, educatorRoutes);
 app.use("/api/educator-verification", standardLimiter, educatorVerificationRoutes);
 app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
-app.use("/api/stellar/payment", generousLimiter, stellarPaymentRoutes);
+// Payment routes mutate money state — stricter per-user limiter (issue #4).
+app.use("/api/stellar/payment", paymentLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
 

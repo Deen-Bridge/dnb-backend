@@ -45,6 +45,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   findPaymentPaths: jest.fn(),
   applySlippage: jest.fn(),
   NETWORK: "testnet",
+  networkPassphrase: "Test SDF Network ; September 2015",
   getExplorerUrl,
   USDC: "USDC",
   PLATFORM_WALLET_PUBLIC_KEY: "",

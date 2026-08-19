@@ -17,6 +17,7 @@ import {
   findPaymentPaths,
   applySlippage,
   NETWORK,
+  networkPassphrase,
   getExplorerUrl,
   USDC,
   PLATFORM_WALLET_PUBLIC_KEY,
@@ -389,11 +390,26 @@ export const initializePayment = async (req, res) => {
     }).session(session);
 
     if (existingTx) {
+      // Idempotent initialize: a double-click or client retry while a
+      // pending checkout already exists must not pile up duplicate pending
+      // records. Return the existing record (with its original unsigned XDR
+      // when one was persisted) so the frontend can resume the same
+      // checkout; stale pending records are reaped by the TTL index on
+      // `expiresAt` (pending-only partial index).
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "You have a pending transaction for this item",
+      return res.status(200).json({
+        success: true,
+        alreadyPending: true,
         transactionId: existingTx._id,
+        message:
+          "You already have a pending transaction for this item; returning it",
+        payment: existingTx.unsignedXdr
+          ? {
+              xdr: existingTx.unsignedXdr,
+              networkPassphrase,
+              expectedHash: existingTx.expectedHash,
+            }
+          : null,
       });
     }
 
@@ -502,6 +518,7 @@ export const initializePayment = async (req, res) => {
       status: "pending",
       settlement: settlementMode,
       expectedHash: paymentTx.hash,
+      unsignedXdr: paymentTx.xdr,
       memo,
       ...(sendAssetInput && {
         sendAsset: sendAssetInput,
@@ -612,6 +629,54 @@ export const submitPayment = async (req, res) => {
         success: false,
         message: "Transaction ID and signed XDR are required",
       });
+    }
+
+    // Derive the deterministic on-chain hash of the submitted transaction.
+    // A replayed submission of the same signed XDR produces the same hash,
+    // which is what makes submit naturally idempotent per transaction hash.
+    // Parse failures are deliberately ignored here — the XDR is validated in
+    // full below (validateSignedPaymentXdr), which keeps the error shape for
+    // malformed XDRs unchanged.
+    let signedTx = null;
+    try {
+      signedTx = StellarSdk.TransactionBuilder.fromXDR(
+        signedXdr,
+        networkPassphrase
+      );
+    } catch {
+      // fall through — validation below reports the malformed XDR
+    }
+    const signedTxHash = signedTx?.hash().toString("hex") || null;
+
+    // Idempotent submit: if this exact on-chain transaction hash was already
+    // processed (access granted, earnings recorded, receipt queued), return
+    // the original success response instead of re-processing — a double-click
+    // or a client retry after a timeout must never grant access twice. The
+    // unique index on stellarTxHash is the database-level backstop for the
+    // concurrent case (handled below on E11000).
+    if (signedTxHash) {
+      const alreadyProcessed = await Transaction.findOne({
+        buyer: buyerId,
+        stellarTxHash: signedTxHash,
+        status: "confirmed",
+      }).session(session);
+
+      if (alreadyProcessed?.status === "confirmed") {
+        await session.commitTransaction();
+        return res.status(200).json({
+          success: true,
+          replay: true,
+          message: "Payment already processed",
+          transaction: {
+            id: alreadyProcessed._id,
+            hash: alreadyProcessed.stellarTxHash,
+            ledger: alreadyProcessed.stellarLedger,
+            itemTitle: alreadyProcessed.itemTitle,
+            amount: alreadyProcessed.amount,
+            explorerUrl: getExplorerUrl(alreadyProcessed.stellarTxHash),
+          },
+        });
+      }
     }
 
     const transaction = await Transaction.findOne({
@@ -818,7 +883,42 @@ export const submitPayment = async (req, res) => {
     transaction.status = "confirmed";
     transaction.confirmedAt = new Date();
     transaction.expiresAt = undefined; // terminal state — never TTL-reapable
-    await transaction.save({ session });
+    try {
+      await transaction.save({ session });
+    } catch (saveError) {
+      // Idempotency backstop at the database layer: the unique index on
+      // stellarTxHash means a concurrent request already confirmed this exact
+      // on-chain hash. Roll back this session's writes (including the
+      // "submitted" status) and return the original success response.
+      if (saveError?.code === 11000) {
+        const concurrentConfirmed = await Transaction.findOne({
+          buyer: buyerId,
+          stellarTxHash: result.hash,
+          status: "confirmed",
+        }).session(session);
+
+        if (concurrentConfirmed) {
+          await session.abortTransaction();
+          logger.info(
+            `Transaction ${transactionId} already confirmed by a concurrent request (${result.hash}); returning existing result`
+          );
+          return res.status(200).json({
+            success: true,
+            replay: true,
+            message: "Payment already processed",
+            transaction: {
+              id: concurrentConfirmed._id,
+              hash: concurrentConfirmed.stellarTxHash,
+              ledger: concurrentConfirmed.stellarLedger,
+              itemTitle: concurrentConfirmed.itemTitle,
+              amount: concurrentConfirmed.amount,
+              explorerUrl: getExplorerUrl(concurrentConfirmed.stellarTxHash),
+            },
+          });
+        }
+      }
+      throw saveError;
+    }
     paymentsConfirmed.inc({ type: "purchase" });
 
     await recordSaleEarnings(transaction, { session });
