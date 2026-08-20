@@ -14,8 +14,20 @@ describe("Upload Routes", () => {
   let testUserId;
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_upload`, { serverSelectionTimeoutMS: 2000 });
+      } catch (_err) {
+        mongoServer = await MongoMemoryServer.create();
+        await mongoose.connect(mongoServer.getUri());
+      }
+    } else {
+      mongoServer = await MongoMemoryServer.create();
+      await mongoose.connect(mongoServer.getUri());
+    }
 
     const { token: authToken, user } = await seedUserAndLogin(app, {
       name: "Uploader",
