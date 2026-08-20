@@ -145,3 +145,6 @@ Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow, coding standa
 - 🌐 Website: [dnb-frontend.vercel.app](https://dnb-frontend.vercel.app)
 - 🐦 X/Twitter: [@deen_bridge](https://x.com/deen_bridge)
 - 🏢 Organization: [github.com/Deen-Bridge](https://github.com/Deen-Bridge)
+# Course categories
+
+Seed the curated Islamic-discipline taxonomy with `npm run seed:categories`. Existing free-text course and book categories can be linked without removing their legacy string values by running `npm run migrate:categories`. Both commands are idempotent and require `MONGO_URI`.

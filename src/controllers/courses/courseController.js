@@ -5,6 +5,7 @@ import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
 import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 import { createNewCourseNotification } from "../notificationController.js";
 import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
+import { categoryValidationError, resolveActiveCategory } from "../../services/categoryService.js";
 
 /**
  * Create a new course
@@ -22,12 +23,15 @@ export const createCourse = catchAsync(async (req, res, next) => {
       new APIError("Title, description, and category are required", 400)
     );
   }
+  const categoryDoc = await resolveActiveCategory(category);
+  if (!categoryDoc) return next(new APIError(await categoryValidationError(), 400));
 
   // Create course with URLs from frontend
   const course = await Course.create({
     title,
     description,
-    category,
+    category: categoryDoc.name,
+    categoryRef: categoryDoc._id,
     price: price || 0,
     createdBy: req.user._id,
     thumbnail: thumbnail || null, // URL from frontend
@@ -49,9 +53,15 @@ export const createCourse = catchAsync(async (req, res, next) => {
 });
 
 // 📚 Get all courses
-export const getCourses = async (_req, res) => {
+export const getCourses = async (req, res) => {
   try {
-    const courses = await Course.find().populate(
+    const filter = {};
+    if (req.query.category) {
+      const categoryDoc = await resolveActiveCategory(req.query.category);
+      if (!categoryDoc) return res.status(404).json({ success: false, message: "Category not found" });
+      filter.categoryRef = categoryDoc._id;
+    }
+    const courses = await Course.find(filter).populate(
       "createdBy",
       "name email avatar"
     );
@@ -185,7 +195,12 @@ export const updateCourse = catchAsync(async (req, res, next) => {
   // Update fields (URLs from frontend)
   course.title = title || course.title;
   course.description = description || course.description;
-  course.category = category || course.category;
+  if (category) {
+    const categoryDoc = await resolveActiveCategory(category);
+    if (!categoryDoc) return next(new APIError(await categoryValidationError(), 400));
+    course.category = categoryDoc.name;
+    course.categoryRef = categoryDoc._id;
+  }
   course.price = price !== undefined ? price : course.price;
 
   // Update media URLs if provided
