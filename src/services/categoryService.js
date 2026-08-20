@@ -38,6 +38,8 @@ export const resolveActiveCategory = async (value) => {
 export const getValidCategorySlugs = async () =>
   Category.find({ isActive: true }).sort({ order: 1, name: 1 }).distinct("slug");
 
+export const categoryTaxonomyExists = async () => Boolean(await Category.exists({}));
+
 export const categoryValidationError = async () => {
   const validSlugs = await getValidCategorySlugs();
   return `Unknown or inactive category. Valid slugs: ${validSlugs.join(", ")}`;

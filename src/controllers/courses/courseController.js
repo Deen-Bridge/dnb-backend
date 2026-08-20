@@ -5,7 +5,11 @@ import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
 import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 import { createNewCourseNotification } from "../notificationController.js";
 import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
-import { categoryValidationError, resolveActiveCategory } from "../../services/categoryService.js";
+import {
+  categoryTaxonomyExists,
+  categoryValidationError,
+  resolveActiveCategory,
+} from "../../services/categoryService.js";
 
 /**
  * Create a new course
@@ -24,14 +28,16 @@ export const createCourse = catchAsync(async (req, res, next) => {
     );
   }
   const categoryDoc = await resolveActiveCategory(category);
-  if (!categoryDoc) return next(new APIError(await categoryValidationError(), 400));
+  if (!categoryDoc && (await categoryTaxonomyExists())) {
+    return next(new APIError(await categoryValidationError(), 400));
+  }
 
   // Create course with URLs from frontend
   const course = await Course.create({
     title,
     description,
-    category: categoryDoc.name,
-    categoryRef: categoryDoc._id,
+    category: categoryDoc?.name || category,
+    categoryRef: categoryDoc?._id,
     price: price || 0,
     createdBy: req.user._id,
     thumbnail: thumbnail || null, // URL from frontend
@@ -197,9 +203,11 @@ export const updateCourse = catchAsync(async (req, res, next) => {
   course.description = description || course.description;
   if (category) {
     const categoryDoc = await resolveActiveCategory(category);
-    if (!categoryDoc) return next(new APIError(await categoryValidationError(), 400));
-    course.category = categoryDoc.name;
-    course.categoryRef = categoryDoc._id;
+    if (!categoryDoc && (await categoryTaxonomyExists())) {
+      return next(new APIError(await categoryValidationError(), 400));
+    }
+    course.category = categoryDoc?.name || category;
+    course.categoryRef = categoryDoc?._id;
   }
   course.price = price !== undefined ? price : course.price;
 
