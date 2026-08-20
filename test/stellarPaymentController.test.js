@@ -23,6 +23,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   STROOPS_PER_UNIT: 10000000n,
   toStroops: jest.fn(),
   fromStroops: jest.fn(),
+  resolveAsset: jest.fn(),
   applySlippage: jest.fn(),
   findPaymentPaths: jest.fn(),
   buildPathPaymentTransaction: jest.fn(),
@@ -39,6 +40,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   submitTransaction,
   verifyTransaction: jest.fn(),
   verifyPaymentOperations,
+  validateSignedPaymentXdr: jest.fn(),
   hasUsdcTrustline: jest.fn(),
   getExplorerUrl,
   getAccountExplorerUrl: jest.fn(),
@@ -201,7 +203,9 @@ describe("Stellar payment controller", () => {
       creator: creatorId,
       creatorWallet,
       status: "pending",
-      stellarTxHash: "expected-hash",
+      // #18: the pre-computed hash is stored as expectedHash at init for later
+      // XDR validation; stellarTxHash is only set after actual submission.
+      expectedHash: "expected-hash",
     });
     expect(session.commitTransaction).toHaveBeenCalledTimes(1);
     expect(session.abortTransaction).not.toHaveBeenCalled();
@@ -331,6 +335,9 @@ describe("Stellar payment controller", () => {
       { session }
     );
     expect(tx.status).toBe("confirmed");
+    // Terminal state — the submit confirm path must leave the row without an
+    // expiry so the TTL reaper can never delete it.
+    expect(tx.expiresAt).toBeUndefined();
     expect(session.commitTransaction).toHaveBeenCalledTimes(1);
     expect(session.abortTransaction).not.toHaveBeenCalled();
   });

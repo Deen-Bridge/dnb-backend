@@ -19,6 +19,15 @@ describe("Notification System & Event Wiring", () => {
   let mongoServer;
 
   beforeAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_notification`, { serverSelectionTimeoutMS: 2000 });
+        return;
+      } catch (_err) {}
+    }
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
     await mongoose.connect(mongoUri);
