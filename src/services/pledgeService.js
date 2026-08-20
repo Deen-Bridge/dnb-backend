@@ -1,6 +1,11 @@
 import Pledge from "../models/Pledge.js";
 import PledgeCycle from "../models/PledgeCycle.js";
-import { toStroops } from "./stellar/stellarService.js";
+
+const STROOPS_PER_UNIT = 10000000n;
+const toStroops = (amount) => {
+  const [whole, fraction = ""] = amount.toString().split(".");
+  return BigInt(whole || "0") * STROOPS_PER_UNIT + BigInt((fraction + "0000000").slice(0, 7));
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

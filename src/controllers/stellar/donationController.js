@@ -302,7 +302,9 @@ export const submitDonation = async (req, res) => {
     );
     await session.commitTransaction();
     paymentsConfirmed.inc({ type: "donation" });
-    await markPledgeTransactionPaid(donation, donation.confirmedAt);
+    markPledgeTransactionPaid(donation, donation.confirmedAt).catch((error) =>
+      logger.error({ donationId, error: error.message }, "Failed to update pledge statistics")
+    );
 
     logger.info(
       `Donation successful: ${donationId}, Stellar TX: ${settledHash}${sponsorship ? " (sponsored)" : ""}`
