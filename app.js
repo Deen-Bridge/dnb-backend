@@ -38,6 +38,7 @@ import callRoutes from "./src/routes/callRoutes.js";
 import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
+import stellarPledgeRoutes from "./src/routes/stellar/pledgeRoutes.js";
 import stellarGiftRoutes from "./src/routes/stellar/giftRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
@@ -191,6 +192,7 @@ app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
 // Payment routes mutate money state — stricter per-user limiter (issue #4).
 app.use("/api/stellar/payment", paymentLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
+app.use("/api/stellar/pledges", generousLimiter, stellarPledgeRoutes);
 app.use("/api/stellar/gifts", generousLimiter, stellarGiftRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
 

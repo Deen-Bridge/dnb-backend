@@ -2,17 +2,15 @@
 import mongoose from "mongoose";
 import Transaction from "../../models/Transaction.js";
 import {
-  isValidPublicKey,
   getAccountBalance,
-  buildPaymentTransaction,
-  buildSep7Uri,
   submitTransaction,
   verifyPaymentOperations,
   validateSignedPaymentXdr,
   getExplorerUrl,
-  NETWORK,
   DONATION_WALLET_PUBLIC_KEY,
 } from "../../services/stellar/stellarService.js";
+import { createDonationIntent } from "../../services/stellar/donationIntentService.js";
+import { markPledgeTransactionPaid } from "../../services/pledgeService.js";
 import {
   isFeeSponsorEnabled,
   prepareSponsoredSubmission,
@@ -30,8 +28,6 @@ import {
   sponsorshipsRejected,
 } from "../../config/metrics.js";
 
-const DONATION_MEMO = "DNB-SADAQAH";
-
 /**
  * Initialize a sadaqah donation - creates pending record and returns XDR to sign
  * POST /api/stellar/donation/initialize
@@ -43,70 +39,8 @@ export const initializeDonation = async (req, res) => {
   try {
     const donorId = req.user._id;
     const { amount, publicKey } = req.body;
-
-    // Donation wallet must be configured on the server
-    if (!DONATION_WALLET_PUBLIC_KEY) {
-      await session.abortTransaction();
-      return res.status(503).json({
-        success: false,
-        message: "Donations are not available right now. Please try again later.",
-      });
-    }
-
-    // Validate donor public key
-    if (!publicKey || !isValidPublicKey(publicKey)) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Stellar public key",
-      });
-    }
-
-    // Validate amount (positive, max 7 decimal places)
-    const parsedAmount = Number(amount);
-    if (
-      !amount ||
-      !Number.isFinite(parsedAmount) ||
-      parsedAmount <= 0 ||
-      !/^\d+(\.\d{1,7})?$/.test(amount.toString())
-    ) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid amount. Must be a positive number with at most 7 decimal places",
-      });
-    }
-
-    // Build the donation payment transaction (donor -> donation fund)
-    const paymentTx = await buildPaymentTransaction({
-      sourcePublicKey: publicKey,
-      destinationPublicKey: DONATION_WALLET_PUBLIC_KEY,
-      amount: amount.toString(),
-      memo: DONATION_MEMO,
-    });
-
-    // SEP-7 URI so wallets can deep-link the same payment
-    const sep7Uri = buildSep7Uri({
-      destination: DONATION_WALLET_PUBLIC_KEY,
-      amount: amount.toString(),
-      memo: DONATION_MEMO,
-    });
-
-    // Create pending donation record
-    const donation = new Transaction({
-      type: "donation",
-      buyer: donorId,
-      buyerWallet: publicKey,
-      creatorWallet: DONATION_WALLET_PUBLIC_KEY,
-      amount: amount.toString(),
-      network: NETWORK,
-      status: "pending",
-      expectedHash: paymentTx.hash,
-      memo: DONATION_MEMO,
-    });
-
-    await donation.save({ session });
+    const { transaction: donation, transactionXdr, sep7Uri, networkPassphrase } =
+      await createDonationIntent({ donorId, publicKey, amount, session });
     await session.commitTransaction();
     paymentsInitialized.inc({ type: "donation" });
 
@@ -115,16 +49,16 @@ export const initializeDonation = async (req, res) => {
     res.status(200).json({
       success: true,
       donationId: donation._id,
-      transactionXdr: paymentTx.xdr,
+      transactionXdr,
       sep7Uri,
-      networkPassphrase: paymentTx.networkPassphrase,
+      networkPassphrase,
     });
   } catch (error) {
     await session.abortTransaction();
     logger.error("Initialize donation error:", error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
-      message: "Failed to initialize donation",
+      message: error.statusCode ? error.message : "Failed to initialize donation",
       error:
         process.env.NODE_ENV === "development" ? error.message : undefined,
     });
@@ -368,6 +302,7 @@ export const submitDonation = async (req, res) => {
     );
     await session.commitTransaction();
     paymentsConfirmed.inc({ type: "donation" });
+    await markPledgeTransactionPaid(donation, donation.confirmedAt);
 
     logger.info(
       `Donation successful: ${donationId}, Stellar TX: ${settledHash}${sponsorship ? " (sponsored)" : ""}`

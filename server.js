@@ -61,6 +61,18 @@ if (process.env.WEBHOOK_WORKER_ENABLED === "true") {
   );
 }
 
+let stopPledgeScheduler;
+if (process.env.PLEDGE_SCHEDULER_ENABLED === "true") {
+  import("./src/workers/pledgeScheduler.js").then(
+    ({ startPledgeScheduler, stopPledgeScheduler: stopFn }) => {
+      stopPledgeScheduler = stopFn;
+      startPledgeScheduler().catch((err) =>
+        logger.error(err, "Pledge scheduler startup failed")
+      );
+    }
+  );
+}
+
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
@@ -76,6 +88,10 @@ const gracefulShutdown = async (signal) => {
 
     if (stopWebhookWorker) {
       await stopWebhookWorker();
+    }
+
+    if (stopPledgeScheduler) {
+      await stopPledgeScheduler();
     }
 
     // Close Redis connection
