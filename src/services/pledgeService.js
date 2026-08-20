@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 import Pledge from "../models/Pledge.js";
 import PledgeCycle from "../models/PledgeCycle.js";
 
@@ -37,6 +39,7 @@ export const firstDueAt = ({ cadence, anchorDay, anchorDate, startAt = new Date(
 };
 
 export const markPledgeTransactionPaid = async (transaction, paidAt = new Date()) => {
+  if (!mongoose.Types.ObjectId.isValid(transaction?._id)) return null;
   const cycle = await PledgeCycle.findOne({ transaction: transaction._id, status: { $ne: "paid" } });
   if (!cycle) return null;
   cycle.status = "paid";
