@@ -33,6 +33,7 @@ The platform is composed of three services:
 - 🎓 **Course Management** — create, enroll, review, and track courses
 - 📚 **Digital Library** — upload, purchase, and read Islamic books
 - ⭐ **Stellar Payments** — USDC payment initialize → sign → submit → on-chain verify flow
+- ⛽ **Fee Sponsorship** — optional platform-paid network fees via fee-bump, with a structural whitelist and spend caps ([docs](docs/fee-sponsorship.md))
 - 👛 **Wallet Management** — connect Freighter, xBull, or Albedo; balance and trustline checks
 - 💬 **Real-time** — Socket.io messaging and notifications
 - ☁️ **Media** — Cloudinary uploads for avatars, covers, books, and reels
@@ -76,12 +77,14 @@ The API runs at `http://localhost:5000`.
 | `PORT` | Server port (default `5000`) |
 | `MONGO_URI` | MongoDB connection string |
 | `JWT_SECRET` | Secret for signing tokens (32+ chars) |
-| `STELLAR_NETWORK` | `testnet` or `mainnet` |
+| `STELLAR_NETWORK` | `testnet` or `mainnet` (`public` accepted; validated at boot) |
+| — | **Switching to mainnet? See [docs/MAINNET.md](docs/MAINNET.md)** — env changes, creator trustlines, smoke-test checklist |
 | `CLOUDINARY_*` | Cloudinary credentials for media uploads |
 | `QUEUE_DRIVER` | `mongo` (durable production default) or `inline` (tests/CI) |
 | `JOBS_ENABLED` | Start background workers; defaults to `true` |
 | `JOBS_DASHBOARD_TOKEN` | Bearer token protecting `/admin/jobs` |
 | `STELLAR_PLATFORM_PUBLIC_KEY` | Public key published in `stellar.toml` `ACCOUNTS[]` |
+| `FEE_SPONSOR_ENABLED` | Turn on platform-paid network fees (fee-bump). Off by default; when on, `FEE_SPONSOR_SECRET` is validated at boot ([docs](docs/fee-sponsorship.md)) |
 
 See `.env.example` for the full list.
 
@@ -142,3 +145,6 @@ Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow, coding standa
 - 🌐 Website: [dnb-frontend.vercel.app](https://dnb-frontend.vercel.app)
 - 🐦 X/Twitter: [@deen_bridge](https://x.com/deen_bridge)
 - 🏢 Organization: [github.com/Deen-Bridge](https://github.com/Deen-Bridge)
+# Course categories
+
+Seed the curated Islamic-discipline taxonomy with `npm run seed:categories`. Existing free-text course and book categories can be linked without removing their legacy string values by running `npm run migrate:categories`. Both commands are idempotent and require `MONGO_URI`.

@@ -172,9 +172,7 @@ export const updateReviewHandler = (Model, itemType) =>
       return next(new APIError("Review not found", 404));
     }
 
-    if (review.user.toString() !== req.user._id.toString()) {
-      return next(new APIError("Not authorized to update this review", 403));
-    }
+    // Ownership is enforced by authorizeReviewOwnership middleware.
 
     if (comment !== undefined) {
       if (typeof comment !== "string" || comment.trim() === "") {
@@ -229,13 +227,7 @@ export const deleteReviewHandler = (Model, itemType) =>
       return next(new APIError("Review not found", 404));
     }
 
-    const review = item.reviews[reviewIndex];
-
-    const isOwner = review.user.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === "admin";
-    if (!isOwner && !isAdmin) {
-      return next(new APIError("Not authorized to delete this review", 403));
-    }
+    // Ownership is enforced by authorizeReviewOwnership middleware.
 
     item.reviews.splice(reviewIndex, 1);
     await recomputeReviewStats(item);

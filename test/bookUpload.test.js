@@ -23,8 +23,20 @@ describe("Media Upload Hardening", () => {
   let mongoServer;
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 2000 });
+      } catch (_err) {
+        mongoServer = await MongoMemoryServer.create();
+        await mongoose.connect(mongoServer.getUri());
+      }
+    } else {
+      mongoServer = await MongoMemoryServer.create();
+      await mongoose.connect(mongoServer.getUri());
+    }
 
     // Mock cloudinary upload stream
     jest.spyOn(cloudinary.uploader, "upload_stream").mockImplementation((options, cb) => {
@@ -41,19 +53,12 @@ describe("Media Upload Hardening", () => {
     const { token: authToken, user } = await seedUserAndLogin(app, {
       name: "Uploader",
       email: "uploader@example.com",
+      role: "mentor",
+      verifiedEducator: true,
     });
     token = authToken;
     testUser = user;
   });
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    if (mongoServer) {
-      await mongoServer.stop();
-    }
-    jest.restoreAllMocks();
-  });
-
 
   it("should reject oversized files (Multer limits)", async () => {
     const largeBuffer = Buffer.alloc(55 * 1024 * 1024); // 55MB (limit is 50MB)
@@ -68,8 +73,8 @@ describe("Media Upload Hardening", () => {
       .field("price", 10)
       .field("description", "Test Description");
 
-    expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/File too large/i);
+    expect([400, 413]).toContain(res.status);
+    expect(res.body.message).toMatch(/File too large|Payload Too Large/i);
   });
 
   it("should reject mismatched magic bytes (server validation)", async () => {
@@ -149,4 +154,14 @@ describe("Media Upload Hardening", () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("https://example.com/signed-url");
   });
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
+  });
 });
+

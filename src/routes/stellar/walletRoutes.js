@@ -8,11 +8,19 @@ import {
   getMyWallet,
   checkUserWallet,
 } from "../../controllers/stellar/walletController.js";
+import { validate } from "../../middlewares/validate.js";
+import { connectWalletValidation } from "../../validators/requestValidators.js";
 
 const router = express.Router();
 
 // Protected routes (require authentication)
-router.post("/connect", protect, connectWallet);
+router.post(
+  "/connect",
+  protect,
+  connectWalletValidation,
+  validate,
+  connectWallet
+);
 router.delete("/disconnect", protect, disconnectWallet);
 router.get("/me", protect, getMyWallet);
 

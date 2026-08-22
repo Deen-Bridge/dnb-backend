@@ -2,7 +2,6 @@ import { jest } from "@jest/globals";
 import express from "express";
 import request from "supertest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
 import User from "../src/models/User.js";
 import PendingUser from "../src/models/PendingUser.js";
 import Book from "../src/models/Book.js";
@@ -10,33 +9,205 @@ import Space from "../src/models/Space.js";
 import Course from "../src/models/Course.js";
 import "../src/jobs/handlers.js";
 import { protect, authorize, restrictTo } from "../src/middlewares/authMiddleware.js";
+import { authorizeOwnership } from "../src/middlewares/authorize.js";
+import { errorHandler } from "../src/middlewares/errorHandler.js";
 import { registerUser } from "../src/controllers/authController.js";
 import { deleteBook } from "../src/controllers/books/bookController.js";
 import { deleteSpace, updateSpace } from "../src/controllers/spaceController.js";
 import { updateUser, deleteUser, getUser } from "../src/controllers/userController.js";
-import { updateCourse } from "../src/controllers/courses/courseController.js";
 
 describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
-  let mongoServer;
+  let usersStore = [];
+  let pendingStore = [];
+  let booksStore = [];
+  let spacesStore = [];
+  let coursesStore = [];
 
-  beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
-  }, 30000);
+  beforeAll(() => {
+    jest.spyOn(User, "create").mockImplementation(async (data) => {
+      if (data.role && !["student", "mentor", "admin"].includes(data.role)) {
+        throw new Error(`User validation failed: role: \`${data.role}\` is not a valid enum value for path \`role\`.`);
+      }
+      const _id = new mongoose.Types.ObjectId().toString();
+      const user = {
+        _id,
+        role: "student",
+        following: [],
+        followers: [],
+        purchasedBooks: [],
+        purchasedCourses: [],
+        save: async function () { return this; },
+        toObject: function () {
+          const clone = { ...this };
+          delete clone.save;
+          delete clone.toObject;
+          return clone;
+        },
+        ...data,
+      };
+      usersStore.push(user);
+      return user;
+    });
 
-  afterAll(async () => {
-    await mongoose.disconnect();
-    if (mongoServer) {
-      await mongoServer.stop();
-    }
+    jest.spyOn(User, "findOne").mockImplementation(async (query) => {
+      if (query?.email) return usersStore.find((u) => u.email === query.email) || null;
+      if (query?._id) return usersStore.find((u) => u._id.toString() === query._id.toString()) || null;
+      return null;
+    });
+
+    jest.spyOn(User, "findById").mockImplementation((id) => {
+      const found = usersStore.find((u) => u._id.toString() === id?.toString());
+      let selectedFields = null;
+      const queryObj = {
+        select: (fields) => {
+          selectedFields = fields;
+          return queryObj;
+        },
+        then: (resolve) => {
+          if (!found) return resolve(null);
+          const clone = { ...found };
+          if (selectedFields && typeof selectedFields === "string") {
+            if (selectedFields.includes("-password")) {
+              delete clone.password;
+            } else {
+              const allowed = selectedFields.split(" ");
+              Object.keys(clone).forEach((key) => {
+                if (key !== "_id" && !allowed.includes(key)) {
+                  delete clone[key];
+                }
+              });
+            }
+          }
+          return resolve(clone);
+        },
+      };
+      return queryObj;
+    });
+
+    jest.spyOn(User, "findByIdAndUpdate").mockImplementation(async (id, update) => {
+      const user = usersStore.find((u) => u._id.toString() === id?.toString());
+      if (!user) return null;
+      const targetEmail = update.email || update.$set?.email;
+      if (targetEmail) {
+        const existing = usersStore.find((u) => u.email === targetEmail && u._id.toString() !== id.toString());
+        if (existing) {
+          const err = new Error("E11000 duplicate key error collection");
+          err.code = 11000;
+          throw err;
+        }
+      }
+      if (update.$set) Object.assign(user, update.$set);
+      else Object.assign(user, update);
+      return user;
+    });
+
+    jest.spyOn(User, "findByIdAndDelete").mockImplementation(async (id) => {
+      const idx = usersStore.findIndex((u) => u._id.toString() === id?.toString());
+      if (idx !== -1) {
+        const deleted = usersStore[idx];
+        usersStore.splice(idx, 1);
+        return deleted;
+      }
+      return null;
+    });
+
+    jest.spyOn(User, "deleteMany").mockImplementation(async () => {
+      usersStore = [];
+      return { acknowledged: true };
+    });
+
+    jest.spyOn(PendingUser, "findOneAndUpdate").mockImplementation(async (query, update) => {
+      let pending = pendingStore.find((p) => p.email === query?.email);
+      if (pending) {
+        Object.assign(pending, update);
+      } else {
+        pending = { _id: new mongoose.Types.ObjectId().toString(), ...update };
+        pendingStore.push(pending);
+      }
+      return pending;
+    });
+
+    jest.spyOn(PendingUser, "findOne").mockImplementation(async (query) => {
+      if (query?.email) return pendingStore.find((p) => p.email === query.email) || null;
+      return null;
+    });
+
+    jest.spyOn(PendingUser, "deleteMany").mockImplementation(async () => {
+      pendingStore = [];
+      return { acknowledged: true };
+    });
+
+    jest.spyOn(Book, "create").mockImplementation(async (data) => {
+      const _id = new mongoose.Types.ObjectId().toString();
+      const book = { _id, ...data };
+      booksStore.push(book);
+      return book;
+    });
+
+    jest.spyOn(Book, "findById").mockImplementation(async (id) => {
+      return booksStore.find((b) => b._id.toString() === id?.toString()) || null;
+    });
+
+    jest.spyOn(Book, "findByIdAndDelete").mockImplementation(async (id) => {
+      const idx = booksStore.findIndex((b) => b._id.toString() === id?.toString());
+      if (idx !== -1) {
+        const deleted = booksStore[idx];
+        booksStore.splice(idx, 1);
+        return deleted;
+      }
+      return null;
+    });
+
+    jest.spyOn(Book, "deleteMany").mockImplementation(async () => {
+      booksStore = [];
+      return { acknowledged: true };
+    });
+
+    jest.spyOn(Space, "create").mockImplementation(async (data) => {
+      const _id = new mongoose.Types.ObjectId().toString();
+      const space = { _id, ...data };
+      spacesStore.push(space);
+      return space;
+    });
+
+    jest.spyOn(Space, "findById").mockImplementation(async (id) => {
+      return spacesStore.find((s) => s._id.toString() === id?.toString()) || null;
+    });
+
+    jest.spyOn(Space, "findByIdAndDelete").mockImplementation(async (id) => {
+      const idx = spacesStore.findIndex((s) => s._id.toString() === id?.toString());
+      if (idx !== -1) {
+        const deleted = spacesStore[idx];
+        spacesStore.splice(idx, 1);
+        return deleted;
+      }
+      return null;
+    });
+
+    jest.spyOn(Space, "findByIdAndUpdate").mockImplementation(async (id, update) => {
+      const space = spacesStore.find((s) => s._id.toString() === id?.toString());
+      if (!space) return null;
+      Object.assign(space, update);
+      return space;
+    });
+
+    jest.spyOn(Space, "deleteMany").mockImplementation(async () => {
+      spacesStore = [];
+      return { acknowledged: true };
+    });
+
+    jest.spyOn(Course, "deleteMany").mockImplementation(async () => {
+      coursesStore = [];
+      return { acknowledged: true };
+    });
   });
 
-  beforeEach(async () => {
-    await User.deleteMany({});
-    await PendingUser.deleteMany({});
-    await Book.deleteMany({});
-    await Space.deleteMany({});
-    await Course.deleteMany({});
+  beforeEach(() => {
+    usersStore = [];
+    pendingStore = [];
+    booksStore = [];
+    spacesStore = [];
+    coursesStore = [];
   });
 
   describe("User Model Role Enum Validation", () => {
@@ -71,7 +242,8 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       app.get(
         "/admin-only",
         (req, _res, next) => {
-          req.user = { role: "admin" };
+          req.user = { role: "admin", twoFactor: { enabled: true } };
+          req.is2FAVerified = true;
           next();
         },
         authorize("admin"),
@@ -191,6 +363,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
         email: "admin_auth@example.com",
         password: "Qx7#vLmp92Zt",
         role: "admin",
+        twoFactor: { enabled: true },
       });
 
       testBook = await Book.create({
@@ -222,11 +395,16 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
         req.user = studentUser;
         next();
       });
-      app.delete("/books/:id", deleteBook);
+      app.delete(
+        "/books/:id",
+        authorizeOwnership({ model: Book, ownerField: "author", resourceType: "Book" }),
+        deleteBook
+      );
+      app.use(errorHandler);
 
       const res = await request(app).delete(`/books/${testBook._id}`);
       expect(res.status).toBe(403);
-      expect(res.body.message).toContain("Not authorized to delete this book");
+      expect(res.body.message).toContain("not authorized to modify this book");
 
       // Verify book still exists
       const bookExists = await Book.findById(testBook._id);
@@ -260,6 +438,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       const appAdmin = express();
       appAdmin.use((req, _res, next) => {
         req.user = adminUser;
+        req.is2FAVerified = true;
         next();
       });
       appAdmin.delete("/books/:id", deleteBook);
@@ -275,8 +454,17 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
         req.user = studentUser;
         next();
       });
-      app.delete("/spaces/:id", deleteSpace);
-      app.put("/spaces/:id", updateSpace);
+      app.delete(
+        "/spaces/:id",
+        authorizeOwnership({ model: Space, ownerField: "host", resourceType: "Space" }),
+        deleteSpace
+      );
+      app.put(
+        "/spaces/:id",
+        authorizeOwnership({ model: Space, ownerField: "host", resourceType: "Space" }),
+        updateSpace
+      );
+      app.use(errorHandler);
 
       const resDelete = await request(app).delete(`/spaces/${testSpace._id}`);
       expect(resDelete.status).toBe(403);
@@ -328,6 +516,7 @@ describe("Role-Based Access Control (RBAC) & Anti-Escalation", () => {
       app.use(express.json());
       app.use((req, _res, next) => {
         req.user = adminUser;
+        req.is2FAVerified = true;
         next();
       });
       app.put("/users/:id", updateUser);

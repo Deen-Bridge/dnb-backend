@@ -1,0 +1,37 @@
+name: Contracts CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts.yml"
+  push:
+    branches: [main, dev]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts.yml"
+
+jobs:
+  rust:
+    name: Rust contract checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path contracts/Cargo.toml -- --check
+
+      - name: Run clippy
+        run: cargo clippy --manifest-path contracts/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run contract tests
+        run: cargo test --manifest-path contracts/Cargo.toml

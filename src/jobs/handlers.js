@@ -5,6 +5,7 @@ import { sendOtpEmail, sendReceiptEmail } from "../../services/emails/sendMail.j
 import { verifyPaymentOperations, getExplorerUrl } from "../services/stellar/stellarService.js";
 import { recordSaleEarnings } from "../services/payoutService.js";
 import { registerJob, enqueue } from "./queue.js";
+import { markPledgeTransactionPaid } from "../services/pledgeService.js";
 
 const expectedPaymentsFor = (transaction) =>
   transaction.type === "donation"
@@ -48,6 +49,7 @@ registerJob("verifyPaymentOnChain", async ({ transactionId }, context) => {
       throw new Error(verification.reason);
     }
     transaction.status = "failed";
+    transaction.expiresAt = undefined; // terminal state — never TTL-reapable
     transaction.failureReason = `On-chain verification failed: ${verification.reason}`;
     await transaction.save();
     return;
@@ -55,8 +57,13 @@ registerJob("verifyPaymentOnChain", async ({ transactionId }, context) => {
 
   transaction.status = "confirmed";
   transaction.confirmedAt = new Date();
+  transaction.expiresAt = undefined; // terminal state — never TTL-reapable
   transaction.failureReason = undefined;
   await transaction.save();
+
+  if (transaction.type === "donation") {
+    await markPledgeTransactionPaid(transaction, transaction.confirmedAt);
+  }
 
   if (transaction.type === "purchase") {
     await recordSaleEarnings(transaction);

@@ -1,4 +1,6 @@
 import logger from "./logger.js";
+import { validateStellarConfig, resolveStellarConfig } from "./stellar.js";
+import { validateFeeSponsorBootConfig } from "../services/stellar/feeSponsorService.js";
 
 /**
  * Validate required environment variables
@@ -53,25 +55,68 @@ const optionalEnvVars = [
   "SIGNING_KEY",
   "INGESTION_WORKER_ENABLED",
   "INGESTION_POLL_INTERVAL_MS",
+  // Outbound webhooks (issue #45). WEBHOOK_SECRET_ENCRYPTION_KEY is
+  // security-critical (fail-fast in production, see below); the rest are
+  // tunables with sensible defaults.
+  "WEBHOOK_SECRET_ENCRYPTION_KEY",
+  "WEBHOOK_WORKER_ENABLED",
+  "WEBHOOK_POLL_INTERVAL_MS",
+  "WEBHOOK_MAX_ATTEMPTS",
+  "WEBHOOK_AUTO_DISABLE_THRESHOLD",
+  "WEBHOOK_BACKOFF_JITTER_MS",
+  "WEBHOOK_HTTP_TIMEOUT_MS",
+  "WEBHOOK_API_VERSION",
+  // Service-to-service auth keys for the AI service (dnb-ai). Required in
+  // production (fail-fast below); optional in development/test.
+  "AI_SERVICE_KEYS",
+  // Fee-bump sponsorship (#30). All optional — a boot with none of these set
+  // (the default) is unchanged. When FEE_SPONSOR_ENABLED=true, the secret is
+  // validated below and a bad/missing secret fails fast.
+  "FEE_SPONSOR_ENABLED",
+  "FEE_SPONSOR_SECRET",
+  "FEE_SPONSOR_MAX_FEE_STROOPS",
+  "FEE_SPONSOR_DAILY_CAP_STROOPS",
+  "FEE_SPONSOR_PER_USER_DAILY_LIMIT",
 ];
 
 export const validateEnv = () => {
+  // Test mode: provide defaults for development of tests
+  if (process.env.NODE_ENV === "test") {
+    process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-key-at-least-32-characters-long";
+    process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://test-db:27017/dnb-test";
+    process.env.PORT = process.env.PORT || "5000";
+  }
+
   // Default values for TTLs if not provided
   process.env.ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
   process.env.REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || "30d";
 
-  // Default values for Horizon resilient client if not provided
-  const network = process.env.STELLAR_NETWORK || "testnet";
+  // Default values for Horizon resilient client if not provided. The
+  // network-aware default comes from the single source of truth
+  // (config/stellar.js), so the env var always reflects what the app will
+  // actually use after boot.
   if (!process.env.HORIZON_URLS) {
-    process.env.HORIZON_URLS =
-      network === "mainnet"
-        ? "https://horizon.stellar.org"
-        : "https://horizon-testnet.stellar.org";
+    process.env.HORIZON_URLS = resolveStellarConfig().horizonUrls.join(",");
   }
   process.env.HORIZON_TIMEOUT_MS = process.env.HORIZON_TIMEOUT_MS || "10000";
   process.env.HORIZON_MAX_RETRIES = process.env.HORIZON_MAX_RETRIES || "3";
   process.env.HORIZON_CB_THRESHOLD = process.env.HORIZON_CB_THRESHOLD || "5";
   process.env.HORIZON_CB_COOLDOWN_MS = process.env.HORIZON_CB_COOLDOWN_MS || "30000";
+
+  // Fail fast on a misconfigured Stellar setup (bad STELLAR_NETWORK value,
+  // mainnet flag with testnet Horizon/issuer, etc.) instead of failing at
+  // request time on the first Horizon call.
+  const stellarValidation = validateStellarConfig();
+  if (!stellarValidation.valid) {
+    for (const problem of stellarValidation.problems) {
+      logger.error(`❌ Stellar configuration error: ${problem}`);
+    }
+    logger.error(
+      "Stellar configuration is invalid — fix the issues above before starting. " +
+        "See docs/MAINNET.md for the mainnet checklist."
+    );
+    process.exit(1);
+  }
 
   const missing = [];
 
@@ -81,6 +126,23 @@ export const validateEnv = () => {
     }
   });
 
+  // Service-to-service auth keys are REQUIRED in production so a misconfigured
+  // deploy fails fast rather than leaving the AI channel open/unauthenticated.
+  // In development/test they stay optional.
+  if (process.env.NODE_ENV === "production" && !process.env.AI_SERVICE_KEYS) {
+    missing.push("AI_SERVICE_KEYS");
+  }
+
+  // Webhook signing secrets are stored encrypted at rest; the encryption key
+  // is security-critical, so a production deploy must set it explicitly rather
+  // than fall back to the built-in dev key.
+  if (
+    process.env.NODE_ENV === "production" &&
+    !process.env.WEBHOOK_SECRET_ENCRYPTION_KEY
+  ) {
+    missing.push("WEBHOOK_SECRET_ENCRYPTION_KEY");
+  }
+
   if (missing.length > 0) {
     logger.error(
       `❌ Missing required environment variables: ${missing.join(", ")}`
@@ -88,6 +150,15 @@ export const validateEnv = () => {
     logger.error(
       "Please check your .env file and ensure all required variables are set."
     );
+    process.exit(1);
+  }
+
+  // Fee-bump sponsorship (#30): when the master switch is on, a missing or
+  // invalid sponsor secret is a hard boot failure so a misconfigured deploy
+  // never silently disables sponsorship or ships an unusable key.
+  const feeSponsor = validateFeeSponsorBootConfig();
+  if (!feeSponsor.ok) {
+    logger.error(`❌ Fee sponsorship misconfigured: ${feeSponsor.message}`);
     process.exit(1);
   }
 

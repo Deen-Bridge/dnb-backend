@@ -8,6 +8,7 @@ import {
 import logger from "../../config/logger.js";
 import { recordAudit } from "../../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
+import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
 
 /**
  * Connect Stellar wallet to user profile
@@ -84,6 +85,12 @@ export const connectWallet = async (req, res) => {
       metadata:   { publicKey, network: NETWORK },
     });
 
+    await emitEvent(EVENT_TYPES.WALLET_CONNECTED, {
+      userId: userId.toString(),
+      publicKey,
+      network: NETWORK,
+    });
+
     res.status(200).json({
       success: true,
       message: "Wallet connected successfully",
@@ -130,6 +137,11 @@ export const disconnectWallet = async (req, res) => {
       targetId:   previousPublicKey,
       status:     "success",
       metadata:   { previousPublicKey },
+    });
+
+    await emitEvent(EVENT_TYPES.WALLET_DISCONNECTED, {
+      userId: userId.toString(),
+      publicKey: previousPublicKey,
     });
 
     res.status(200).json({

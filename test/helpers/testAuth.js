@@ -1,5 +1,5 @@
 import request from "supertest";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import User from "../../src/models/User.js";
 
 // Registration is email-verification-first, so POST /api/auth/register no longer
@@ -16,12 +16,14 @@ export async function seedUserAndLogin(app, overrides = {}) {
   };
 
   const hashedPassword = await bcrypt.hash(creds.password, 12);
+  const { name, email, role, password, ...extraFields } = creds;
   const user = await User.create({
-    name: creds.name,
-    email: creds.email,
+    name,
+    email,
     password: hashedPassword,
-    role: creds.role,
+    role,
     isVerified: true,
+    ...extraFields,
   });
 
   const res = await request(app)

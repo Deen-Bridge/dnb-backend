@@ -8,21 +8,23 @@ import {
   getDefaultAssetCode,
   getSupportedCodes,
 } from "../../config/assets.js";
+import { resolveStellarConfig } from "../../config/stellar.js";
 
 import { client } from "./horizonClient.js";
 
-const NETWORK = process.env.STELLAR_NETWORK || "testnet";
-const networkPassphrase =
-  NETWORK === "mainnet"
-    ? StellarSdk.Networks.PUBLIC
-    : StellarSdk.Networks.TESTNET;
+// Single source of truth for network identity (see config/stellar.js):
+// network name, network passphrase, Horizon URLs, and USDC issuer all
+// resolve here so a deployment can never mix testnet/mainnet settings.
+const {
+  network: NETWORK,
+  networkPassphrase,
+  usdcIssuer: USDC_ISSUER,
+} = resolveStellarConfig();
 
-// Back-compat: USDC / USDC_ISSUER are now derived from the registry
-// instead of being hardcoded, but keep the same exported shape so
-// existing callers (and the path-payment flow, out of scope for #60)
-// keep working unchanged.
-const USDC_CONFIG = getAssetConfig("USDC", NETWORK);
-const USDC_ISSUER = USDC_CONFIG.issuer;
+// Back-compat: USDC / USDC_ISSUER are derived from the registry via the
+// config module instead of being hardcoded, but keep the same exported
+// shape so existing callers (and the path-payment flow, out of scope for
+// #60) keep working unchanged.
 const USDC = new StellarSdk.Asset("USDC", USDC_ISSUER);
 
 const DEFAULT_ASSET_CODE = getDefaultAssetCode(NETWORK);
@@ -614,6 +616,10 @@ export const submitTransaction = async (signedXdr) => {
       hash: result.hash,
       ledger: result.ledger,
       successful: result.successful,
+      // `fee_charged` is the actual fee the network took. For a fee-bump
+      // submission (#30) this is what the sponsor account paid; undefined for
+      // transactions where the response omits it (e.g. the verifyFn dedupe path).
+      feeCharged: result.fee_charged,
     };
   } catch (error) {
     logger.error("Error submitting transaction:", error);
@@ -644,6 +650,71 @@ export const submitTransaction = async (signedXdr) => {
 
     throw error;
   }
+};
+
+/**
+ * Validate a signed transaction XDR against expected payments and memo/source
+ * @param {string} signedXdr
+ * @param {Array<{destination:string, amount:string}>} expectedPayments
+ * @param {string} expectedMemo
+ * @param {string} expectedSource
+ * @param {boolean} requireSource
+ */
+export const validateSignedPaymentXdr = (
+  signedXdr,
+  expectedPayments = [],
+  expectedMemo,
+  expectedSource,
+  requireSource = true
+) => {
+  const tx = StellarSdk.TransactionBuilder.fromXDR(
+    signedXdr,
+    networkPassphrase
+  );
+
+  // Memo check
+  if (expectedMemo) {
+    const memo = tx.memo;
+    let memoText = null;
+    if (memo && memo._type === "text") {
+      const val = memo._value;
+      memoText = Buffer.isBuffer(val) ? val.toString() : String(val);
+    }
+    if (memoText !== expectedMemo) {
+      throw new Error("Memo mismatch");
+    }
+  }
+
+  // Source check
+  if (requireSource && expectedSource) {
+    if (tx.source !== expectedSource) {
+      throw new Error("Source account mismatch");
+    }
+  }
+
+  // Payment operations check
+  const paymentOps = tx.operations.filter((op) => op.type === "payment");
+
+  for (const expected of expectedPayments) {
+    const match = paymentOps.find((op) => {
+      const assetMatches =
+        (op.asset && op.asset.code === "USDC" && op.asset.issuer === USDC_ISSUER) ||
+        (op.asset_type === "credit_alphanum4" && op.asset?.code === "USDC" && op.asset?.issuer === USDC_ISSUER);
+
+      const amountMatches = toStroops(op.amount) === toStroops(expected.amount);
+      const destMatches = op.destination === expected.destination;
+
+      return assetMatches && amountMatches && destMatches;
+    });
+
+    if (!match) {
+      throw new Error(
+        `Signed XDR missing expected USDC payment of ${expected.amount} to ${expected.destination}`
+      );
+    }
+  }
+
+  return tx;
 };
 
 export const verifyTransaction = async (txHash) => {

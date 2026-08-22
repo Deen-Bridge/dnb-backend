@@ -55,6 +55,7 @@ const promoteTransaction = async (transaction, paymentRecord) => {
   transaction.stellarLedger = paymentRecord.ledger || undefined;
   transaction.status = "confirmed";
   transaction.confirmedAt = new Date();
+  transaction.expiresAt = undefined; // terminal state — never TTL-reapable
   await transaction.save();
 
   await recordSaleEarnings(transaction);
@@ -86,6 +87,10 @@ const createConfirmedDonation = async ({ sourceAccount, amount, hash, memo }) =>
     status: "confirmed",
     stellarTxHash: hash,
     confirmedAt: new Date(),
+    // Terminal state: the conditional schema default omits expiresAt, and the
+    // pre-save hook enforces it — an already-confirmed row must never carry a
+    // TTL deadline.
+    expiresAt: undefined,
   });
 
   await donation.save();
@@ -130,6 +135,10 @@ const createConfirmedPurchase = async ({ sourceAccount, amount, hash, memo, item
     status: "confirmed",
     stellarTxHash: hash,
     confirmedAt: new Date(),
+    // Terminal state: the conditional schema default omits expiresAt, and the
+    // pre-save hook enforces it — an already-confirmed row must never carry a
+    // TTL deadline.
+    expiresAt: undefined,
   });
 
   await purchase.save();
