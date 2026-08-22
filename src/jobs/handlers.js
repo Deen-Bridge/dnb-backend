@@ -5,6 +5,7 @@ import { sendOtpEmail, sendReceiptEmail } from "../../services/emails/sendMail.j
 import { verifyPaymentOperations, getExplorerUrl } from "../services/stellar/stellarService.js";
 import { recordSaleEarnings } from "../services/payoutService.js";
 import { registerJob, enqueue } from "./queue.js";
+import { markPledgeTransactionPaid } from "../services/pledgeService.js";
 
 const expectedPaymentsFor = (transaction) =>
   transaction.type === "donation"
@@ -59,6 +60,10 @@ registerJob("verifyPaymentOnChain", async ({ transactionId }, context) => {
   transaction.expiresAt = undefined; // terminal state — never TTL-reapable
   transaction.failureReason = undefined;
   await transaction.save();
+
+  if (transaction.type === "donation") {
+    await markPledgeTransactionPaid(transaction, transaction.confirmedAt);
+  }
 
   if (transaction.type === "purchase") {
     await recordSaleEarnings(transaction);
