@@ -50,6 +50,7 @@ import educatorRoutes from "./src/routes/educatorRoutes.js";
 import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
 import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
 import webhookRoutes from "./src/routes/webhookRoutes.js";
+import categoryRoutes from "./src/routes/categoryRoutes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 
 const app = express();
@@ -178,6 +179,7 @@ app.use("/api/payouts", standardLimiter, payoutRoutes);
 
 // Read-heavy & content routes — generous limiter
 app.use("/api/courses", generousLimiter, courseRoutes);
+app.use("/api/categories", generousLimiter, categoryRoutes);
 app.use("/api/reels", generousLimiter, reelsRoute);
 app.use("/api/books", generousLimiter, bookRoutes);
 app.use("/api/books", generousLimiter, recommendedBooksRoutes);

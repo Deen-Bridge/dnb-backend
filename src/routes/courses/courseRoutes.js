@@ -37,7 +37,7 @@ import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 const router = express.Router();
 
 // Cache key generators
-const coursesListCacheKey = () => `${CACHE_KEYS.COURSES}list`;
+const coursesListCacheKey = (req) => `${CACHE_KEYS.COURSES}list:${req.query.category || "all"}`;
 const courseDetailCacheKey = (req) => `${CACHE_KEYS.COURSE}${req.params.id}`;
 const coursesByUserCacheKey = (req) =>
   `${CACHE_KEYS.COURSES}user:${req.query.createdBy}`;
@@ -144,4 +144,3 @@ router.put(
 );
 
 export default router;
-

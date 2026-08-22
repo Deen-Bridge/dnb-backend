@@ -7,6 +7,8 @@
     "start": "node --import dotenv/config server.js",
     "dev": "nodemon --import dotenv/config server.js",
     "seed": "node src/scripts/seedDatabase.js",
+    "seed:categories": "node src/scripts/seedCategories.js",
+    "migrate:categories": "node src/scripts/migrateCategories.js",
     "migrate:review-stats": "node src/migrations/backfillReviewStats.js",
     "test-redis": "node test-redis.js",
     "payouts:audit": "node src/scripts/auditPayouts.js",
