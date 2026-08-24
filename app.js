@@ -46,6 +46,7 @@ import notificationRoutes from "./src/routes/notificationRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
 import internalAiRoutes from "./src/routes/internal/aiRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
+import apiDocsRoutes from "./src/routes/api-docs.js";
 import auditRoutes from "./src/routes/admin/auditRoutes.js";
 import educatorRoutes from "./src/routes/educatorRoutes.js";
 import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
@@ -168,6 +169,9 @@ app.get("/health", healthCheck);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter
 app.use("/.well-known", wellKnownRoutes);
+
+// Interactive API documentation (Swagger UI) — served from openapi.yaml
+app.use("/api-docs", apiDocsRoutes);
 
 // Auth routes — strict
 app.use("/api/auth", authLimiter, authRoutes);
