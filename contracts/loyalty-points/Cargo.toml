@@ -1,0 +1,15 @@
+[package]
+name = "loyalty-points"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Deen Bridge loyalty points: earn, redeem and transfer platform reward points on Soroban"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = "=27.0.6"
+
+[dev-dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["testutils"] }
