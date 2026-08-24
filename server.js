@@ -1,8 +1,10 @@
 import dotenv from "dotenv";
+import http from "http";
 import logger from "./src/config/logger.js";
 import connectDB from "./src/config/db.js";
 import validateEnv from "./src/config/validateEnv.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
+import { initSockets, closeSockets } from "./src/sockets/index.js";
 import { startJobs, stopJobs } from "./src/jobs/queue.js";
 import {
   handleUncaughtException,
@@ -27,7 +29,11 @@ initRedis().catch((err) => {
   );
 });
 
-const server = app.listen(PORT, () => {
+// Real-time payment notifications (Socket.io) share the HTTP server.
+const server = http.createServer(app);
+initSockets(server);
+
+server.listen(PORT, () => {
   logger.info(`🚀🕌 DeenBridge API running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV}`);
   logger.info(`Process ID: ${process.pid}`);
@@ -95,6 +101,7 @@ const gracefulShutdown = async (signal) => {
     }
 
     // Close Redis connection
+    await closeSockets();
     await closeRedis();
 
     process.exit(0);

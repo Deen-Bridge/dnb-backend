@@ -1,6 +1,7 @@
 // models/Transaction.js
 import mongoose from "mongoose";
 import { getSupportedCodes } from "../config/assets.js";
+import { notifyPaymentStatus } from "../sockets/paymentNotifier.js";
 
 const transactionSchema = new mongoose.Schema(
   {
@@ -197,6 +198,23 @@ const TERMINAL_STATUSES = ["confirmed", "failed", "expired", "refunded", "disput
 transactionSchema.pre("save", function (next) {
   if (TERMINAL_STATUSES.includes(this.status)) {
     this.expiresAt = undefined;
+  }
+
+  // Remember whether this save is worth a realtime push (creation or any
+  // status transition). Read back by the post-save hook below; mongoose
+  // clears its modified-path tracking after save completes, so the flag is
+  // captured here while it is still reliable.
+  this.$locals.__statusChanged = this.isNew || this.isModified("status");
+  next();
+});
+
+// Realtime payment notifications: push status transitions to subscribed
+// websocket clients (see src/sockets/). Best-effort — a gateway outage must
+// never fail a save. Covers every code path that persists through `save()`
+// (donation controller, reconciliation service, ingestion worker).
+transactionSchema.post("save", function (doc, next) {
+  if (doc.$locals?.__statusChanged) {
+    Promise.resolve(notifyPaymentStatus(doc)).catch(() => {});
   }
   next();
 });
