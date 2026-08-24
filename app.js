@@ -26,6 +26,7 @@ import {
 
 import authRoutes from "./src/routes/authRoutes.js";
 import courseRoutes from "./src/routes/courses/courseRoutes.js";
+import courseAnalyticsRoutes from "./src/routes/courses/analyticsRoutes.js";
 import reelsRoute from "./src/routes/reelsRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
 import bookRoutes from "./src/routes/books/bookRoutes.js";
@@ -179,6 +180,9 @@ app.use("/api/uploads", standardLimiter, uploadRoutes);
 app.use("/api/payouts", standardLimiter, payoutRoutes);
 
 // Read-heavy & content routes — generous limiter
+// Creator analytics is mounted before the generic course routes so the static
+// "/analytics" segment is not captured by the courseRoutes "/:id" matcher.
+app.use("/api/courses/analytics", generousLimiter, courseAnalyticsRoutes);
 app.use("/api/courses", generousLimiter, courseRoutes);
 app.use("/api/categories", generousLimiter, categoryRoutes);
 app.use("/api/reels", generousLimiter, reelsRoute);
