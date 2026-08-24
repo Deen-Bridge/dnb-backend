@@ -86,6 +86,12 @@ export const getCourseById = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Course not found" });
 
+    // Track a course view for creator analytics (fire-and-forget so a failed
+    // metric write never blocks or fails the detail response).
+    Course.updateOne({ _id: course._id }, { $inc: { views: 1 } }).catch((err) =>
+      logger.error("Failed to increment course view count:", err)
+    );
+
     res.status(200).json({ success: true, course });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
