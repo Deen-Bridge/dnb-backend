@@ -1,7 +1,18 @@
 import express from "express";
+import crypto from "crypto";
 import Job from "../models/Job.js";
 
 const router = express.Router();
+
+// Constant-time bearer-token comparison. timingSafeEqual throws on unequal
+// lengths, so guard first — a length mismatch is simply a non-match and must
+// not short-circuit through a timing side channel.
+const safeTokenEqual = (a, b) => {
+  const bufA = Buffer.from(String(a), "utf8");
+  const bufB = Buffer.from(String(b), "utf8");
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+};
 const escapeHtml = (value) =>
   String(value)
     .replaceAll("&", "&amp;")
@@ -13,7 +24,8 @@ const escapeHtml = (value) =>
 router.use((req, res, next) => {
   const token = process.env.JOBS_DASHBOARD_TOKEN;
   if (!token) return res.status(404).json({ success: false, message: "Not found" });
-  if (req.headers.authorization !== `Bearer ${token}`) {
+  const provided = req.headers.authorization || "";
+  if (!safeTokenEqual(provided, `Bearer ${token}`)) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
   next();

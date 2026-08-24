@@ -10,11 +10,19 @@ export const validate = (req, res, next) => {
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
-    const errorMessages = errors.array().map((err) => err.msg);
-    logger.warn(`Validation failed for ${req.originalUrl}:`, errorMessages);
+    const validationErrors = errors
+      .array({ onlyFirstError: true })
+      .map((err) => ({
+        field: err.path || err.param || "request",
+        message: err.msg,
+      }));
+    logger.warn(
+      `Validation failed for ${req.baseUrl}${req.path}:`,
+      validationErrors.map(({ field, message }) => `${field}: ${message}`)
+    );
 
     return next(
-      new APIError(`Validation Error: ${errorMessages.join(", ")}`, 400)
+      new APIError("Validation failed", 400, true, validationErrors)
     );
   }
 
@@ -60,8 +68,13 @@ export const requireFields = (fields) => {
       logger.warn(`Missing required fields: ${missingFields.join(", ")}`);
       return next(
         new APIError(
-          `Missing required fields: ${missingFields.join(", ")}`,
-          400
+          "Validation failed",
+          400,
+          true,
+          missingFields.map((field) => ({
+            field,
+            message: `${field} is required`,
+          }))
         )
       );
     }

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 /**
  * Generate a cryptographically secure 6-digit numeric OTP.

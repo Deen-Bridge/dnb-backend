@@ -76,6 +76,12 @@ const primaryButton = (href, label) => `
   </table>
 `;
 
+// Test-only in-memory outbox. Populated ONLY when the email transport is
+// unavailable AND NODE_ENV === "test" (the CI/unit scenario) so tests can
+// assert on rendered bodies — including OTP codes and verification links —
+// without those secrets ever reaching a log stream. Never logged.
+export const testOutbox = [];
+
 const sendMail = async ({
   to,
   subject,
@@ -85,25 +91,33 @@ const sendMail = async ({
   cc,
   bcc,
   attachments,
+  template = "generic",
 }) => {
   const apiKey = process.env.SENDLIB_API_KEY || "";
   const apiUrl = SENDLIB_API_URL();
   const from = getFrom();
 
-  // Security: never log the html body — it contains OTP codes / verification
-  // tokens. Log recipient + subject only.
+  // Security: never log the html/text body — it contains OTP codes and
+  // verification tokens. Log only non-sensitive metadata (recipient, subject,
+  // template id) and route it through structured fields so pino redaction
+  // applies to any object it serializes.
   if (!apiKey || !apiUrl) {
     logger.warn(
+      { template },
       "SENDLIB_API_KEY / SENDLIB_API_URL not set — email not sent"
     );
-    // Test env only (synthetic data): expose the body so tests can assert
-    // OTP/verification behavior. NEVER logged in dev/prod — bodies carry secrets.
     if (NODE_ENV() === "test") {
-      logger.info(`[EMAIL LOG] To: ${to} | Subject: ${subject} | Body: ${html}`);
-    } else {
-      logger.info(`[EMAIL SKIPPED] To: ${to} | Subject: ${subject}`);
+      // Test hook: expose the rendered message so tests can inspect
+      // OTP/token behavior. This is an in-memory array, not a log.
+      const rendered = { template, to, subject, html, text };
+      testOutbox.push(rendered);
+      return rendered;
     }
-    return;
+    logger.info(
+      { template, to, subject },
+      "[EMAIL SKIPPED] email not sent (transport unconfigured)"
+    );
+    return null;
   }
   if (!from) {
     logger.warn(
@@ -134,13 +148,13 @@ const sendMail = async ({
       );
     }
     const messageId = payload.messageId || payload.id;
-    logger.info(`Email sent to ${to}${messageId ? `: ${messageId}` : ""}`);
+    logger.info({ template, to, messageId }, "Email sent");
     return payload;
   } catch (error) {
-    logger.error("Failed to send email:", error.message);
+    logger.error({ template, to, err: error.message }, "Failed to send email");
     if (NODE_ENV() === "development") {
       // Subject only — never log the body (contains OTP/token).
-      logger.info(`[DEV FALLBACK] To: ${to} | Subject: ${subject}`);
+      logger.info({ template, to, subject }, "[DEV FALLBACK] email not sent");
       return;
     }
     throw error;
@@ -149,7 +163,7 @@ const sendMail = async ({
 
 export const sendOtpEmail = async (otp, email) => {
   if (!email || !otp) throw new Error("Email and OTP are required");
-  logger.info(`Sending OTP email to: ${email}`);
+  logger.info({ template: "otp", to: email }, "Sending OTP email");
 
   const content = `
     <h1 style="margin: 0 0 8px; color: #111827; font-size: 24px; font-weight: 700;">Password Reset</h1>
@@ -164,20 +178,21 @@ export const sendOtpEmail = async (otp, email) => {
     </p>
   `;
 
-  await sendMail({
+  return sendMail({
     to: email,
     subject: "Your Password Reset Code — DeenBridge",
     html: emailShell({
       content,
       preheader: "Use this code to reset your DeenBridge password.",
     }),
+    template: "otp",
   });
 };
 
 export const sendReceiptEmail = async (receipt) => {
   if (!receipt.email || !receipt.txHash)
     throw new Error("Receipt email and transaction hash are required");
-  logger.info(`Sending receipt for ${receipt.txHash} to: ${receipt.email}`);
+  logger.info({ template: "receipt", to: receipt.email }, "Sending receipt email");
 
   const content = `
     <h1 style="margin: 0 0 8px; color: #111827; font-size: 24px; font-weight: 700;">Payment Receipt</h1>
@@ -200,20 +215,21 @@ export const sendReceiptEmail = async (receipt) => {
     </p>
   `;
 
-  await sendMail({
+  return sendMail({
     to: receipt.email,
     subject: "Payment Receipt — DeenBridge",
     html: emailShell({
       content,
       preheader: "Thank you for your contribution to DeenBridge.",
     }),
+    template: "receipt",
   });
 };
 
 export const sendVerificationEmail = async (email, token) => {
   if (!email || !token) throw new Error("Email and token are required");
   const link = `${FRONTEND_URL()}/verify-email?token=${token}`;
-  logger.info(`Sending verification email to: ${email}`);
+  logger.info({ template: "verification", to: email }, "Sending verification email");
 
   const content = `
     <h1 style="margin: 0 0 8px; color: #111827; font-size: 24px; font-weight: 700;">Welcome to DeenBridge!</h1>
@@ -233,13 +249,14 @@ export const sendVerificationEmail = async (email, token) => {
     </p>
   `;
 
-  await sendMail({
+  return sendMail({
     to: email,
     subject: "Verify your email — DeenBridge",
     html: emailShell({
       content,
       preheader: "Click to verify your email and activate your DeenBridge account.",
     }),
+    template: "verification",
   });
 };
 

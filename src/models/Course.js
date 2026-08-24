@@ -16,6 +16,7 @@ const courseSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    categoryRef: { type: mongoose.Schema.Types.ObjectId, ref: "Category", index: true },
     thumbnail: {
       type: String, // image URL
     },
@@ -95,4 +96,3 @@ const courseSchema = new mongoose.Schema(
 courseSchema.index({ title: "text", description: "text", category: "text" }, { weights: { title: 5 } });
 courseSchema.index({ rating: -1 });
 export default mongoose.model("Course", courseSchema);
-

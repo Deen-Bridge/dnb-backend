@@ -36,6 +36,7 @@ export const CACHE_KEYS = {
   REEL: "reel:",
   SEARCH: "search:",
   EDUCATORS: "educators:",
+  CATEGORIES: "categories:",
 };
 
 /**

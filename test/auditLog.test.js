@@ -7,6 +7,7 @@
 import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
+import axios from "axios";
 import app from "../app.js";
 import AuditLog, { AUDIT_ACTIONS } from "../src/models/AuditLog.js";
 import User from "../src/models/User.js";
@@ -26,18 +27,23 @@ const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
 
 // Helper: mint a JWT for a user in usersStore
 const mintToken = (user) =>
-  jwt.sign({ userId: user._id, role: user.role, sessionId: "sess-1" }, JWT_SECRET, {
-    expiresIn: "15m",
-  });
+  jwt.sign(
+    { userId: user._id, role: user.role, sessionId: "sess-1", is2FAVerified: true },
+    JWT_SECRET,
+    { expiresIn: "15m" }
+  );
 
 // Helper: make a minimal user object
 const makeUser = (overrides = {}) => {
   const _id = new mongoose.Types.ObjectId().toString();
+  const role = overrides.role || "student";
+  const defaultTwoFactor = role === "admin" ? { enabled: true } : { enabled: false };
   return {
     _id,
     name:  "Test User",
     email: `user_${_id}@example.com`,
-    role:  "student",
+    role,
+    twoFactor: defaultTwoFactor,
     save:  async function () { return this; },
     ...overrides,
   };
@@ -47,6 +53,9 @@ const makeUser = (overrides = {}) => {
 // Global mock setup
 // ─────────────────────────────────────────────────────────────────────────────
 beforeAll(() => {
+  // Mock the HIBP breached-password range call (empty data => not breached).
+  jest.spyOn(axios, "get").mockResolvedValue({ status: 200, statusText: "OK", data: "" });
+
   // ── AuditLog mocks ──────────────────────────────────────────────────────
   jest.spyOn(AuditLog, "create").mockImplementation(async (data) => {
     const doc = {

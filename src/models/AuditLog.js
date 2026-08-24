@@ -21,10 +21,22 @@ export const AUDIT_ACTIONS = Object.freeze({
   AUTH_REGISTER_FAILURE: "auth.register.failure",
   AUTH_LOGIN_SUCCESS:    "auth.login.success",
   AUTH_LOGIN_FAILURE:    "auth.login.failure",
+  AUTH_ACCOUNT_LOCKED:   "auth.account_locked",
   AUTH_LOGOUT:           "auth.logout",
   AUTH_PASSWORD_RESET_REQUEST:  "auth.password_reset.request",
   AUTH_PASSWORD_RESET_COMPLETE: "auth.password_reset.complete",
   AUTH_PASSWORD_CHANGE:         "auth.password_change",
+
+  // 2FA
+  AUTH_2FA_SETUP_INITIATED: "auth.2fa.setup_initiated",
+  AUTH_2FA_ENABLE_SUCCESS:  "auth.2fa.enable.success",
+  AUTH_2FA_ENABLE_FAILURE:  "auth.2fa.enable.failure",
+  AUTH_2FA_LOGIN_CHALLENGE: "auth.2fa.login.challenge",
+  AUTH_2FA_LOGIN_SUCCESS:   "auth.2fa.login.success",
+  AUTH_2FA_LOGIN_FAILURE:   "auth.2fa.login.failure",
+  AUTH_2FA_DISABLE_SUCCESS: "auth.2fa.disable.success",
+  AUTH_2FA_DISABLE_FAILURE: "auth.2fa.disable.failure",
+  AUTH_2FA_RECOVERY_USED:   "auth.2fa.recovery_used",
 
   // Wallet
   WALLET_CONNECT_SUCCESS:   "wallet.connect.success",
@@ -41,10 +53,31 @@ export const AUDIT_ACTIONS = Object.freeze({
   // Entitlements (access grants)
   ENTITLEMENT_GRANT: "entitlement.grant",
 
+  // Authorization
+  AUTHZ_OWNERSHIP_DENIED: "authz.ownership.denied",
+
+  // Service-to-service auth (dnb-ai)
+  SERVICE_AUTH_DENIED: "service_auth.denied",
+
   // Extension points — to be instrumented with issue #20 / #28
   PAYOUT_BATCH_INITIATED: "payout.batch.initiated",
   PAYOUT_BATCH_CONFIRMED: "payout.batch.confirmed",
   ROLE_CHANGE:            "role.change",
+
+  // Educator verification pipeline (issue #92)
+  EDUCATOR_VERIFY_SUBMIT:   "educator_verify.submit",
+  EDUCATOR_VERIFY_RESUBMIT: "educator_verify.resubmit",
+  EDUCATOR_VERIFY_APPROVE:  "educator_verify.approve",
+  EDUCATOR_VERIFY_REJECT:   "educator_verify.reject",
+
+  // Outbound webhooks (issue #45)
+  WEBHOOK_ENDPOINT_CREATED:  "webhook.endpoint.created",
+  WEBHOOK_ENDPOINT_UPDATED:  "webhook.endpoint.updated",
+  WEBHOOK_ENDPOINT_DELETED:  "webhook.endpoint.deleted",
+  WEBHOOK_ENDPOINT_DISABLED: "webhook.endpoint.disabled",
+  WEBHOOK_SECRET_ROTATED:    "webhook.secret.rotated",
+  WEBHOOK_DELIVERY_REDELIVERED: "webhook.delivery.redelivered",
+  WEBHOOK_PING:              "webhook.ping",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);

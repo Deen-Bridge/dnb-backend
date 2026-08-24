@@ -1,12 +1,14 @@
 import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
+import axios from "axios";
 import app from "../app.js";
 import User from "../src/models/User.js";
 import PendingUser from "../src/models/PendingUser.js";
 import Session from "../src/models/Session.js";
 import logger from "../src/config/logger.js";
+import { testOutbox } from "../services/emails/sendMail.js";
 
 const testUser = {
   name: "Reset User",
@@ -23,8 +25,12 @@ describe("Password Reset Flow", () => {
   let loggerInfoSpy;
 
   beforeAll(() => {
-    // Capture the OTP code from the [EMAIL LOG] fallback (SMTP is unset in tests)
+    // Capture log output so we can assert OTPs/tokens never reach the logger.
     loggerInfoSpy = jest.spyOn(logger, "info");
+    jest.spyOn(logger, "warn");
+    jest.spyOn(logger, "error");
+    // Mock the HIBP breached-password range call (empty data => not breached).
+    jest.spyOn(axios, "get").mockResolvedValue({ status: 200, statusText: "OK", data: "" });
 
     // Mock User methods
     jest.spyOn(User, "findOne").mockImplementation((query) => {
@@ -104,6 +110,7 @@ describe("Password Reset Flow", () => {
   beforeEach(() => {
     usersStore = [];
     sessionsStore = [];
+    testOutbox.length = 0;
     if (loggerInfoSpy) loggerInfoSpy.mockClear();
   });
 
@@ -112,16 +119,23 @@ describe("Password Reset Flow", () => {
   });
 
   const getSentOtp = () => {
-    // Registration now also sends a verification email, so multiple [EMAIL LOG]
-    // entries exist. Pick the most recent one that actually carries an OTP span.
-    const otpLog = loggerInfoSpy.mock.calls
-      .map((call) => call[0])
-      .filter((msg) => typeof msg === "string" && msg.includes("[EMAIL LOG]"))
+    // sendMail captures rendered emails in its in-memory testOutbox (never in
+    // logs). Registration also sends a verification email, so pick the most
+    // recent outbox entry that actually carries an OTP span.
+    const otpMail = [...testOutbox]
       .reverse()
-      .find((msg) => /#166534;">(\d+)<\/span>/.test(msg));
-    const match = otpLog && otpLog.match(/#166534;">(\d+)<\/span>/);
+      .find((mail) => /#166534;">(\d+)<\/span>/.test(mail.html));
+    const match = otpMail && otpMail.html.match(/#166534;">(\d+)<\/span>/);
     return match ? match[1] : null;
   };
+
+  const capturedLogText = () =>
+    ["info", "warn", "error"]
+      .flatMap((method) => logger[method].mock.calls || [])
+      .map((call) =>
+        call.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" ")
+      )
+      .join("\n");
 
   it("should request password reset without exposing OTP in response body and include success: true", async () => {
     await request(app).post("/api/auth/register").send(testUser);
@@ -276,5 +290,28 @@ describe("Password Reset Flow", () => {
     expect(reuseRes.statusCode).toBe(400);
     expect(reuseRes.body.success).toBe(false);
     expect(reuseRes.body.message).toContain("Invalid or expired OTP");
+  });
+
+  it("never leaks the OTP or verification token into log output", async () => {
+    await request(app).post("/api/auth/register").send(testUser);
+
+    // Registration renders a verification email carrying a token link; the
+    // reset request renders an OTP email. Both must stay out of the logs.
+    const verificationMail = testOutbox.find((m) => m.template === "verification");
+    const tokenMatch = verificationMail && verificationMail.html.match(/token=([a-f0-9]{64})/);
+    expect(tokenMatch).not.toBeNull();
+
+    await request(app)
+      .post("/api/auth/request-password-reset")
+      .send({ email: testUser.email });
+
+    const otp = getSentOtp();
+    expect(otp).toBeDefined();
+
+    const logs = capturedLogText();
+    expect(logs).not.toContain(otp);
+    expect(logs).not.toContain(tokenMatch[1]);
+    expect(logs).not.toContain("token=");
+    expect(logs).not.toContain("<html");
   });
 });

@@ -1,5 +1,6 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 import logger from "../../config/logger.js";
+import { resolveStellarConfig } from "../../config/stellar.js";
 
 export class HorizonClient {
   constructor(urls, timeoutMs = 10000) {
@@ -184,15 +185,12 @@ export class HorizonClient {
   }
 }
 
-// Resolve Horizon endpoints from the environment. The default is network-aware
-// (mainnet vs testnet) so a mainnet deployment never silently falls back to
-// testnet Horizon when HORIZON_URLS is left unset.
+// Resolve Horizon endpoints from the single source of truth
+// (config/stellar.js). The default is network-aware (mainnet vs testnet) so
+// a mainnet deployment never silently falls back to testnet Horizon when
+// HORIZON_URLS is left unset.
 function resolveHorizonEndpoints() {
-  const fallback =
-    process.env.STELLAR_NETWORK === "mainnet"
-      ? "https://horizon.stellar.org"
-      : "https://horizon-testnet.stellar.org";
-  return (process.env.HORIZON_URLS || fallback).split(",").map((u) => u.trim());
+  return resolveStellarConfig().horizonUrls;
 }
 
 // Construct the client lazily on first use, so it reads HORIZON_URLS /

@@ -53,15 +53,51 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    verifiedEducator: {
+      type: Boolean,
+      default: false,
+    },
 
     lastLogin: {
       type: Date,
+    },
+    // Progressive login lockout (issue #89): consecutive failures increment
+    // failedLoginAttempts; after the env-configurable threshold the account is
+    // temporarily locked until lockUntil. Reset to 0 / null on successful login.
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lockUntil: {
+      type: Date,
+      default: null,
     },
     resetTokenHash: {
       type: String,
     },
     resetTokenExpiry: {
       type: Date,
+    },
+    twoFactor: {
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+      secret: {
+        type: String,
+        select: false,
+      },
+      pendingSecret: {
+        type: String,
+        select: false,
+      },
+      recoveryCodes: {
+        type: [String],
+        select: false,
+      },
+      enrolledAt: {
+        type: Date,
+      },
     },
     // Follow system
     following: [

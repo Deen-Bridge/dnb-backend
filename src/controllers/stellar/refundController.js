@@ -321,7 +321,10 @@ export const submitRefund = async (req, res) => {
 
       await Transaction.findByIdAndUpdate(
         refund.originalTransaction,
-        { status: "refunded", refund: refund._id }
+        {
+          $set: { status: "refunded", refund: refund._id },
+          $unset: { expiresAt: 1 }, // terminal state — never TTL-reapable
+        }
       );
 
       logger.info(`Refund confirmed and access revoked atomically for refund ${refund._id}`);
@@ -432,7 +435,8 @@ export const escalateDispute = async (req, res) => {
     await refund.save();
 
     await Transaction.findByIdAndUpdate(refund.originalTransaction, {
-      status: "disputed",
+      $set: { status: "disputed" },
+      $unset: { expiresAt: 1 }, // terminal state — never TTL-reapable
     });
 
     logger.info(`Refund ${refund._id} escalated to dispute by buyer ${buyerId}`);

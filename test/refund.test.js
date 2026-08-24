@@ -8,6 +8,7 @@ import express from "express";
 import request from "supertest";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import { MongoMemoryServer } from "mongodb-memory-server";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import User from "../src/models/User.js";
 import Book from "../src/models/Book.js";
@@ -16,17 +17,19 @@ import Transaction from "../src/models/Transaction.js";
 import Refund from "../src/models/Refund.js";
 import paymentRoutes from "../src/routes/stellar/paymentRoutes.js";
 import { server } from "../src/services/stellar/stellarService.js";
+import { errorHandler } from "../src/middlewares/errorHandler.js";
 
 jest.setTimeout(60000);
 
 const app = express();
 app.use(express.json());
 app.use("/api/stellar/payment", paymentRoutes);
+app.use(errorHandler);
 
 const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
 
-const generateToken = (userId, role = "student") => {
-  return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: "1h" });
+const generateToken = (userId, role = "student", is2FAVerified = true) => {
+  return jwt.sign({ userId, role, is2FAVerified }, JWT_SECRET, { expiresIn: "1h" });
 };
 
 describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
@@ -35,12 +38,22 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
   let buyerToken, educatorToken, otherToken, adminToken;
   let confirmedTx;
   let course;
+  let mongoServer;
 
   beforeAll(async () => {
-    const uri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/dnb-backend-test";
-
-    if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(uri);
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_refund`, { serverSelectionTimeoutMS: 2000 });
+      } catch (_err) {
+        mongoServer = await MongoMemoryServer.create();
+        await mongoose.connect(mongoServer.getUri());
+      }
+    } else {
+      mongoServer = await MongoMemoryServer.create();
+      await mongoose.connect(mongoServer.getUri());
     }
 
     // Mock Horizon Server
@@ -88,6 +101,9 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
     if (mongoose.connection.readyState !== 0) {
       await mongoose.disconnect();
     }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
   });
 
   beforeEach(async () => {
@@ -132,12 +148,13 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
       email: "admin@example.com",
       password: "Qx7#vLmp92Zt",
       role: "admin",
+      twoFactor: { enabled: true, secret: "MOCKSECRET", enrolledAt: new Date() },
     });
 
-    buyerToken = generateToken(buyer._id, "student");
-    educatorToken = generateToken(educator._id, "tutor");
-    otherToken = generateToken(otherUser._id, "student");
-    adminToken = generateToken(adminUser._id, "admin");
+    buyerToken = generateToken(buyer._id, "student", true);
+    educatorToken = generateToken(educator._id, "tutor", true);
+    otherToken = generateToken(otherUser._id, "student", true);
+    adminToken = generateToken(adminUser._id, "admin", true);
 
     // Create a purchased course and enroll buyer
     course = await Course.create({
@@ -380,5 +397,14 @@ describe("Non-Custodial Refund & Dispute Flow (#62)", () => {
 
       expect(res.status).toBe(403);
     });
+  });
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
   });
 });

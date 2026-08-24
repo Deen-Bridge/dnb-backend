@@ -7,9 +7,32 @@ import User from "../src/models/User.js";
 import Space from "../src/models/Space.js";
 import Reel from "../src/models/Reel.js";
 
+import { MongoMemoryServer } from "mongodb-memory-server";
+
+let mongoServer;
+
 beforeAll(async () => {
-  await mongoose.connect(`${process.env.MONGO_URI}_search`);
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+  }
+  if (process.env.MONGO_URI) {
+    try {
+      await mongoose.connect(`${process.env.MONGO_URI}_search`, { serverSelectionTimeoutMS: 2000 });
+      return;
+    } catch (_err) {}
+  }
+  mongoServer = await MongoMemoryServer.create();
+  await mongoose.connect(mongoServer.getUri());
 }, 60000);
+
+afterAll(async () => {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+  }
+  if (mongoServer) {
+    await mongoServer.stop();
+  }
+});
 
 beforeEach(async () => {
   // Clean db
