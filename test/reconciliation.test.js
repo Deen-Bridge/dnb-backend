@@ -42,6 +42,15 @@ describe("Payment Reconciliation Service", () => {
   let buyer, author, admin, book, course;
 
   beforeAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_reconciliation`, { serverSelectionTimeoutMS: 2000 });
+        return;
+      } catch (_err) {}
+    }
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
   }, 30000);
@@ -236,6 +245,9 @@ describe("Payment Reconciliation Service", () => {
       const updated = await Transaction.findById(tx._id);
       expect(updated.status).toBe("confirmed");
       expect(updated.confirmedAt).toBeDefined();
+      // Terminal state — the reconciliation confirm path must leave the row
+      // without an expiry so the TTL reaper can never delete it.
+      expect(updated.expiresAt).toBeUndefined();
       expect(mockRecordSaleEarnings).toHaveBeenCalled();
     });
 

@@ -30,6 +30,11 @@ const METADATA_ALLOWLIST = new Set([
   "assignedRole",
   "name",
 
+  // 2FA
+  "mfaRequired",
+  "recoveryCodeUsed",
+  "twoFactorEnabled",
+
   // Wallet
   "publicKey",
   "network",
@@ -59,9 +64,30 @@ const METADATA_ALLOWLIST = new Set([
   "newRole",
   "changedBy",
 
+  // Educator verification (issue #92)
+  "verificationId",
+  "previousStatus",
+  "newStatus",
+  "reviewedBy",
+  "reviewNotes",
+  "documentCount",
+
   // Generic error context
   "reason",
   "conflictUserId",
+
+  // Service-to-service auth (dnb-ai)
+  "serviceId",
+  "kid",
+  "scope",
+
+  // Outbound webhooks (issue #45)
+  "endpointId",
+  "deliveryId",
+  "eventType",
+  "url",
+  "events",
+  "disabledReason",
 ]);
 
 /**
@@ -105,8 +131,12 @@ export function recordAudit({
   status,
   metadata = null,
 }) {
-  // Schedule asynchronously — do not block caller
-  Promise.resolve()
+  // Schedule asynchronously so the caller is never blocked by the write.
+  // The chain is `return`ed (and its .catch always swallows errors) so that
+  // security-critical callers MAY `await recordAudit(...)` to guarantee the
+  // row is durable before responding — but awaiting is optional and never
+  // throws to the caller.
+  return Promise.resolve()
     .then(async () => {
       // If DB is not connected and AuditLog.create is not mocked (e.g. unit tests without DB),
       // skip write to prevent 10s Mongoose buffer timeouts.

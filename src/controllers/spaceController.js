@@ -90,16 +90,10 @@ export const updateSpace = async (req, res) => {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
 
-    const existingSpace = await Space.findById(id);
+    // Ownership is enforced by authorizeOwnership middleware (req.resource).
+    const existingSpace = req.resource || (await Space.findById(id));
     if (!existingSpace) {
       return res.status(404).json({ success: false, message: "Space not found" });
-    }
-
-    if (req.user.role !== "admin" && existingSpace.host.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to update this space",
-      });
     }
 
     const space = await Space.findByIdAndUpdate(id, updates, {
@@ -158,16 +152,10 @@ export const getSpacesByHost = async (req, res) => {
 export const deleteSpace = async (req, res) => {
   try {
     const { id } = req.params;
-    const space = await Space.findById(id);
+    // Ownership is enforced by authorizeOwnership middleware (req.resource).
+    const space = req.resource || (await Space.findById(id));
     if (!space) {
       return res.status(404).json({ success: false, message: "Space not found" });
-    }
-
-    if (req.user.role !== "admin" && space.host.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to delete this space",
-      });
     }
 
     await Space.findByIdAndDelete(id);

@@ -49,6 +49,22 @@ const paymentsFailed = new promClient.Counter({
   registers: [registry],
 });
 
+// Fee-bump sponsorship (#30): one increment per sponsorship decision so the
+// approve/reject ratio and rejection reasons are observable in Prometheus.
+const sponsorshipsApproved = new promClient.Counter({
+  name: "fee_sponsorships_approved_total",
+  help: "Total number of transactions approved for platform fee sponsorship",
+  labelNames: ["type"],
+  registers: [registry],
+});
+
+const sponsorshipsRejected = new promClient.Counter({
+  name: "fee_sponsorships_rejected_total",
+  help: "Total number of sponsorship requests rejected before submission",
+  labelNames: ["type", "reason"],
+  registers: [registry],
+});
+
 function observeHttpDuration(method, route, statusCode, durationMs) {
   httpRequestDuration.observe(
     { method, route: route || "unknown", status_code: String(statusCode) },
@@ -91,6 +107,8 @@ export {
   paymentsSubmitted,
   paymentsConfirmed,
   paymentsFailed,
+  sponsorshipsApproved,
+  sponsorshipsRejected,
   observeHttpDuration,
   observeHorizonDuration,
   metricsMiddleware,
