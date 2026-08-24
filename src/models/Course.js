@@ -32,6 +32,11 @@ const courseSchema = new mongoose.Schema(
       default: "USDC",
       enum: getSupportedCodes(),
     },
+    views: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     rating: {
       type: Number,
       default: 0,
