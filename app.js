@@ -19,6 +19,7 @@ import {
   customSecurityHeaders,
 } from "./src/middlewares/security.js";
 import { sanitizeInput } from "./src/middlewares/validate.js";
+import { rtlMiddleware } from "./src/middlewares/rtl.js";
 import {
   errorHandler,
   notFound,
@@ -160,6 +161,7 @@ app.use(compression());
 app.use(mongoSanitizeMiddleware);
 app.use(hppMiddleware);
 app.use(sanitizeInput);
+app.use(rtlMiddleware);
 
 // ======================
 // ROUTES
