@@ -14,15 +14,20 @@
  * ├── base/               ← shared repository base classes
  * │   └── BaseRepository.js
  * └── repositories/       ← model-specific repositories
+ *     ├── BookRepository.js
+ *     └── NotificationRepository.js
  *     └── EducatorBalanceRepository.js
  * ```
  *
- * Intended usage once model-specific repositories start landing:
+ * Intended usage:
  *
  * ```js
- * import { base } from "../mongo/index.js";
+ * import BaseRepository from "../mongo/base/BaseRepository.js";
  *
- * class CourseRepository extends base.BaseRepository {
+ * class CourseRepository extends BaseRepository {
+ *   constructor() {
+ *     super(Course);
+ *   }
  *   // thin, course-specific query helpers only
  * }
  * ```
