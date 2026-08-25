@@ -11,8 +11,10 @@
  * ```
  * mongo/
  * ├── index.js            ← you are here: re-exports everything below
- * └── base/               ← shared repository base classes
- *     └── BaseRepository.js   (lands with Deen-Bridge/dnb-backend#168)
+ * ├── base/               ← shared repository base classes
+ * │   └── BaseRepository.js
+ * └── repositories/       ← model-specific repositories
+ *     └── EducatorBalanceRepository.js
  * ```
  *
  * Intended usage once model-specific repositories start landing:
@@ -31,17 +33,19 @@
  *   - Every exported function/class carries complete JSDoc.
  */
 
+import BaseRepository from "./base/BaseRepository.js";
+
 /**
  * Namespace for shared repository base classes.
  *
- * Currently empty pending #168, which introduces `base.BaseRepository` — the
- * abstract CRUD/pagination/error-handling superclass every model-specific
- * repository extends. Kept as a stable, frozen object so consumers can start
- * importing `base` today without a breaking change when members land.
- *
- * @type {Readonly<{}>
+ * @type {{ BaseRepository: typeof BaseRepository }}
  */
-export const base = Object.freeze({});
+export const base = Object.freeze({ BaseRepository });
+
+/**
+ * Model-specific repositories.
+ */
+export { default as EducatorBalanceRepository } from "./repositories/EducatorBalanceRepository.js";
 
 /**
  * Default export mirrors the named exports for callers that prefer
