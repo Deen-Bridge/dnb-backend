@@ -54,7 +54,9 @@ import educatorRoutes from "./src/routes/educatorRoutes.js";
 import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
 import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
 import webhookRoutes from "./src/routes/webhookRoutes.js";
+import adminModerationRoutes from "./src/routes/admin/moderationRoutes.js";
 import categoryRoutes from "./src/routes/categoryRoutes.js";
+import readingGroupRoutes from "./src/routes/readingGroupRoutes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 
 const app = express();
@@ -190,6 +192,8 @@ app.use("/api/categories", generousLimiter, categoryRoutes);
 app.use("/api/reels", generousLimiter, reelsRoute);
 app.use("/api/books", generousLimiter, bookRoutes);
 app.use("/api/books", generousLimiter, recommendedBooksRoutes);
+app.use("/api/books/reading-groups", generousLimiter, readingGroupRoutes);
+app.use("/api/reading-groups", generousLimiter, readingGroupRoutes);
 app.use("/api/spaces", generousLimiter, spacesRoutes);
 app.use("/api/users", generousLimiter, userRoutes);
 app.use("/api/search", generousLimiter, searchRoutes);
@@ -216,6 +220,7 @@ app.use("/api/internal/ai", internalAiRoutes);
 app.use("/admin/jobs", jobsRoutes);
 app.use("/api/admin/audit", auditRoutes);
 app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
+app.use("/api/admin/moderation", adminModerationRoutes);
 
 // ======================
 // ERROR HANDLING

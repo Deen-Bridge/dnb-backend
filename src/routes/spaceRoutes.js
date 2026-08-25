@@ -84,4 +84,21 @@ router.delete(
   deleteSpace
 );
 
+import {
+  createPoll,
+  getSpacePolls,
+  getPollResults,
+  voteInPoll,
+  closePoll,
+  exportPollResults,
+} from "../controllers/space-poll.controller.js";
+
+// Poll Endpoints
+router.post("/:spaceId/polls", protect, createPoll);
+router.get("/:spaceId/polls", protect, getSpacePolls);
+router.get("/polls/:pollId", protect, getPollResults);
+router.post("/polls/:pollId/vote", protect, voteInPoll);
+router.patch("/polls/:pollId/close", protect, closePoll);
+router.get("/polls/:pollId/export", protect, exportPollResults);
+
 export default router;

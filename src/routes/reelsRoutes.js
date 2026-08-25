@@ -50,4 +50,8 @@ router.get(
   getReelDerivatives
 );
 
+import { flagReel } from "../controllers/moderation.controller.js";
+
+router.post("/:reelId/flag", protect, flagReel);
+
 export default router;
