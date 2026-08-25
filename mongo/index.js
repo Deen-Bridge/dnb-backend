@@ -15,6 +15,8 @@
  * │   └── BaseRepository.js
  * └── repositories/       ← model-specific repositories
  *     ├── BookRepository.js
+ *     ├── NotificationRepository.js
+ *     └── ReelRepository.js
  *     └── NotificationRepository.js
  *     └── EducatorBalanceRepository.js
  * ```
@@ -22,6 +24,12 @@
  * Intended usage:
  *
  * ```js
+ * import { base } from "../mongo/index.js";
+ * import Reel from "../../src/models/Reel.js";
+ *
+ * class CourseRepository extends base.BaseRepository {
+ *   constructor() {
+ *     super(Reel);
  * import BaseRepository from "../mongo/base/BaseRepository.js";
  *
  * class CourseRepository extends BaseRepository {
@@ -50,6 +58,9 @@ export const base = Object.freeze({ BaseRepository });
 /**
  * Model-specific repositories.
  */
+export { default as BookRepository } from "./repositories/BookRepository.js";
+export { default as NotificationRepository } from "./repositories/NotificationRepository.js";
+export { default as ReelRepository } from "./repositories/ReelRepository.js";
 export { default as EducatorBalanceRepository } from "./repositories/EducatorBalanceRepository.js";
 
 /**
