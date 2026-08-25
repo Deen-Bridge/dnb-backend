@@ -15,6 +15,7 @@ const commentSchema = new Schema(
 
 const reelSchema = new Schema(
   {
+    title: { type: String, trim: true },
     description: { type: String, required: true, trim: true, maxlength: 2000 },
     category: { type: String, trim: true },
     tags: [{ type: String, trim: true }],
@@ -22,6 +23,8 @@ const reelSchema = new Schema(
     videoPublicId: { type: String },
     thumbnail: { type: String },
     duration: { type: Number },
+    status: { type: String, enum: ["active", "pending", "removed"], default: "active" },
+    isRemoved: { type: Boolean, default: false },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
