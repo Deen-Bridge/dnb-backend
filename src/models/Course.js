@@ -98,6 +98,14 @@ const courseSchema = new mongoose.Schema(
         ],
       },
     ],
+    status: {
+      type: String,
+      enum: ["draft", "published", "archived"],
+      default: "draft",
+    },
+    publishedAt: {
+      type: Date,
+    },
   },
 
   { timestamps: true }
