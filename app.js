@@ -61,6 +61,7 @@ import readingGroupRoutes from "./src/routes/readingGroupRoutes.js";
 import courseBundleRoutes from "./src/routes/course-bundle.routes.js";
 import certificateRoutes from "./src/routes/certificate.routes.js";
 import badgeRoutes from "./src/routes/badge.routes.js";
+import messagingRoutes from "./src/routes/messaging.routes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
@@ -222,6 +223,7 @@ app.use("/api/stellar/onramp", generousLimiter, stellarOnrampRoutes);
 app.use("/api/stellar/pledges", generousLimiter, stellarPledgeRoutes);
 app.use("/api/stellar/gifts", generousLimiter, stellarGiftRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
+app.use("/api/messaging", generousLimiter, messagingRoutes);
 
 // Outbound webhook management API (admin-gated)
 app.use("/api/webhooks", standardLimiter, webhookRoutes);
