@@ -79,6 +79,11 @@ const courseSchema = new mongoose.Schema(
       required: true,
     },
     enrolledUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    // Courses a learner must COMPLETE before they can enroll in this course.
+    prerequisites: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Course" }],
+      default: [],
+    },
     sections: [
       {
         title: String,

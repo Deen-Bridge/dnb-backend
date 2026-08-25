@@ -17,6 +17,7 @@
  *     ├── BookRepository.js
  *     ├── NotificationRepository.js
  *     └── ReelRepository.js
+ *     └── EducatorBalanceRepository.js
  * ```
  *
  * Intended usage:
@@ -54,6 +55,7 @@ export const base = Object.freeze({ BaseRepository });
 export { default as BookRepository } from "./repositories/BookRepository.js";
 export { default as NotificationRepository } from "./repositories/NotificationRepository.js";
 export { default as ReelRepository } from "./repositories/ReelRepository.js";
+export { default as EducatorBalanceRepository } from "./repositories/EducatorBalanceRepository.js";
 
 /**
  * Default export mirrors the named exports for callers that prefer

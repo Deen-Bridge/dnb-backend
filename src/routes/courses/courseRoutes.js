@@ -32,6 +32,8 @@ import {
   cacheMiddleware,
   invalidateCacheMiddleware,
 } from "../../middlewares/cache.js";
+import { validate } from "../../middlewares/validate.js";
+import { prerequisitesValidation } from "../../validators/requestValidators.js";
 import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 
 const router = express.Router();
@@ -78,6 +80,8 @@ router.post(
   "/",
   protect,
   requireVerifiedEducator,
+  prerequisitesValidation,
+  validate,
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createCourse
 );
@@ -139,6 +143,8 @@ router.put(
   "/:id",
   protect,
   authorizeOwnership({ model: Course, ownerField: "createdBy", resourceType: "Course" }),
+  prerequisitesValidation,
+  validate,
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
   updateCourse
 );
