@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import logger from "./logger.js";
+import poolMetrics from "../../mongo/monitoring/poolMetrics.js";
 
 const SLOW_QUERY_MS = parseInt(process.env.SLOW_QUERY_MS || "200", 10);
 
@@ -61,6 +62,14 @@ const connectDB = async () => {
       logger.info("MongoDB connected successfully");
       logger.info(`Database: ${mongoose.connection.name}`);
       logger.info(`Host: ${mongoose.connection.host}`);
+
+      // Instrument the live connection pool (CMAP events). Best-effort: never
+      // let metrics wiring break a successful DB connection.
+      try {
+        poolMetrics.attach(mongoose.connection);
+      } catch (metricsErr) {
+        logger.warn(metricsErr, "Failed to attach pool metrics collector");
+      }
 
       mongoose.connection.on("error", (err) => {
         logger.error(err, "MongoDB connection error");

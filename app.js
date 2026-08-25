@@ -63,6 +63,7 @@ import certificateRoutes from "./src/routes/certificate.routes.js";
 import badgeRoutes from "./src/routes/badge.routes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
+import databaseMetricsRoutes from "./src/routes/metrics/database.js";
 
 const app = express();
 
@@ -227,6 +228,10 @@ app.use("/api/webhooks", standardLimiter, webhookRoutes);
 
 // Internal service-to-service (dnb-ai) — signed-request auth, no user JWTs
 app.use("/api/internal/ai", internalAiRoutes);
+
+// MongoDB connection-pool metrics (Prometheus text format) — see
+// docs/connection-pool-metrics.md for scrape config + Grafana panels.
+app.use("/metrics/database", databaseMetricsRoutes);
 
 // Admin — no rate limit
 app.use("/admin/jobs", jobsRoutes);
