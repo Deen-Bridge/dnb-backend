@@ -31,6 +31,7 @@ import reelsRoute from "./src/routes/reelsRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
 import bookRoutes from "./src/routes/books/bookRoutes.js";
 import recommendedBooksRoutes from "./src/routes/books/recommendedBooksRoutes.js";
+import readingProgressRoutes from "./src/routes/books/readingProgressRoutes.js";
 import spacesRoutes from "./src/routes/spaceRoutes.js";
 import emailRoutes from "./src/routes/emailRoutes.js";
 import purchaseRoutes from "./src/routes/books/purchaseBookRoutes.js";
@@ -201,6 +202,8 @@ app.use("/api/categories", generousLimiter, categoryRoutes);
 app.use("/api/reels", generousLimiter, reelsRoute);
 app.use("/api/books", generousLimiter, bookRoutes);
 app.use("/api/books", generousLimiter, recommendedBooksRoutes);
+// Reading progress sync (#203) — resume position, cross-device sync, library %.
+app.use("/api/books", generousLimiter, readingProgressRoutes);
 app.use("/api/books/reading-groups", generousLimiter, readingGroupRoutes);
 app.use("/api/reading-groups", generousLimiter, readingGroupRoutes);
 app.use("/api/spaces", generousLimiter, spacesRoutes);
