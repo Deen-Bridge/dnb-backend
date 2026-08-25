@@ -1,4 +1,5 @@
 import Course from "../../models/Course.js";
+import CourseProgress from "../../models/CourseProgress.js";
 import mongoose from "mongoose";
 import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
@@ -12,12 +13,36 @@ import {
 } from "../../services/categoryService.js";
 
 /**
+ * Normalize + defensively validate an optional prerequisites array of course
+ * ObjectIds. Returns { ids } on success or { error } (string) on failure.
+ * `selfId` (optional) guards against a course listing itself.
+ */
+const normalizePrerequisites = (prerequisites, selfId) => {
+  if (prerequisites === undefined) return { ids: undefined };
+  if (!Array.isArray(prerequisites)) {
+    return { error: "prerequisites must be an array" };
+  }
+  const ids = [];
+  for (const p of prerequisites) {
+    if (!mongoose.Types.ObjectId.isValid(p)) {
+      return { error: "Each prerequisite must be a valid Mongo ObjectId" };
+    }
+    if (selfId && String(p) === String(selfId)) {
+      return { error: "A course cannot list itself as a prerequisite" };
+    }
+    ids.push(p);
+  }
+  return { ids };
+};
+
+/**
  * Create a new course
  * Note: Files are uploaded from frontend directly to Cloudinary
  * Backend receives URLs instead of file buffers
  */
 export const createCourse = catchAsync(async (req, res, next) => {
-  const { title, description, category, price, thumbnail, video } = req.body;
+  const { title, description, category, price, thumbnail, video, prerequisites } =
+    req.body;
 
   logger.info(`Creating course: ${title} by user: ${req.user._id}`);
 
@@ -26,6 +51,12 @@ export const createCourse = catchAsync(async (req, res, next) => {
     return next(
       new APIError("Title, description, and category are required", 400)
     );
+  }
+
+  const { ids: prerequisiteIds, error: prerequisiteError } =
+    normalizePrerequisites(prerequisites);
+  if (prerequisiteError) {
+    return next(new APIError(prerequisiteError, 400));
   }
   const categoryDoc = await resolveActiveCategory(category);
   if (!categoryDoc && (await categoryTaxonomyExists())) {
@@ -42,6 +73,7 @@ export const createCourse = catchAsync(async (req, res, next) => {
     createdBy: req.user._id,
     thumbnail: thumbnail || null, // URL from frontend
     video: video || null, // URL from frontend
+    ...(prerequisiteIds !== undefined && { prerequisites: prerequisiteIds }),
   });
 
   logger.info(`✅ Course created successfully: ${course._id} - ${title}`);
@@ -80,7 +112,9 @@ export const getCourses = async (req, res) => {
 // 📘 Get a single course
 export const getCourseById = async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id).populate("createdBy", "name avatar bio");
+    const course = await Course.findById(req.params.id)
+      .populate("createdBy", "name avatar bio")
+      .populate("prerequisites", "title thumbnail");
     if (!course)
       return res
         .status(404)
@@ -152,6 +186,36 @@ export const enrollInCourse = async (req, res) => {
         .json({ success: false, message: "Already enrolled" });
     }
 
+    // Prerequisite gate: the learner must have COMPLETED every prerequisite
+    // course (a CourseProgress doc with completedAt set, or percentComplete>=100)
+    // before they can enroll in this (advanced) course.
+    if (Array.isArray(course.prerequisites) && course.prerequisites.length > 0) {
+      const completed = await CourseProgress.find({
+        user: req.user._id,
+        course: { $in: course.prerequisites },
+        $or: [
+          { completedAt: { $ne: null } },
+          { percentComplete: { $gte: 100 } },
+        ],
+      }).select("course");
+
+      const completedIds = new Set(completed.map((p) => p.course.toString()));
+      const missingIds = course.prerequisites.filter(
+        (p) => !completedIds.has(p.toString())
+      );
+
+      if (missingIds.length > 0) {
+        const missingCourses = await Course.find({
+          _id: { $in: missingIds },
+        }).select("title");
+        const titles = missingCourses.map((c) => c.title).join(", ");
+        return res.status(400).json({
+          success: false,
+          message: `Complete these prerequisites first: ${titles}`,
+        });
+      }
+    }
+
     // Add user to course's enrolledUsers
     course.enrolledUsers.push(req.user._id);
     await course.save();
@@ -193,7 +257,8 @@ export const enrollInCourse = async (req, res) => {
 
 // 📝 Edit/Update a course
 export const updateCourse = catchAsync(async (req, res, next) => {
-  const { title, description, category, price, thumbnail, video } = req.body;
+  const { title, description, category, price, thumbnail, video, prerequisites } =
+    req.body;
   const courseId = req.params.id;
 
   logger.info(`Updating course: ${courseId}`);
@@ -202,6 +267,12 @@ export const updateCourse = catchAsync(async (req, res, next) => {
   const course = req.resource || (await Course.findById(courseId));
   if (!course) {
     return next(new APIError("Course not found", 404));
+  }
+
+  const { ids: prerequisiteIds, error: prerequisiteError } =
+    normalizePrerequisites(prerequisites, courseId);
+  if (prerequisiteError) {
+    return next(new APIError(prerequisiteError, 400));
   }
 
   // Update fields (URLs from frontend)
@@ -220,6 +291,9 @@ export const updateCourse = catchAsync(async (req, res, next) => {
   // Update media URLs if provided
   if (thumbnail) course.thumbnail = thumbnail;
   if (video) course.video = video;
+
+  // Replace prerequisites only when explicitly provided (keeps update PATCH-like).
+  if (prerequisiteIds !== undefined) course.prerequisites = prerequisiteIds;
 
   await course.save();
 
