@@ -16,6 +16,7 @@
  * └── repositories/       ← model-specific repositories
  *     ├── BookRepository.js
  *     └── NotificationRepository.js
+ *     └── EducatorBalanceRepository.js
  * ```
  *
  * Intended usage:
@@ -45,6 +46,11 @@ import BaseRepository from "./base/BaseRepository.js";
  * @type {{ BaseRepository: typeof BaseRepository }}
  */
 export const base = Object.freeze({ BaseRepository });
+
+/**
+ * Model-specific repositories.
+ */
+export { default as EducatorBalanceRepository } from "./repositories/EducatorBalanceRepository.js";
 
 /**
  * Default export mirrors the named exports for callers that prefer
