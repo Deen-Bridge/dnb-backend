@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import logger from "../../config/logger.js";
 import Course from "../../models/Course.js";
 import CourseProgress from "../../models/CourseProgress.js";
+import certificateService from "../../services/certificate.service.js";
+import badgeService from "../../services/badge.service.js";
 
 const toObjectId = (value) => {
   if (!value) return null;

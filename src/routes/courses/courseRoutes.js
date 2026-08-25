@@ -22,6 +22,7 @@ import {
   getCourseProgress,
   updateCourseProgress,
 } from "../../controllers/analytics/analyticsController.js";
+import { getBundlesByCourse } from "../../controllers/course-bundle.controller.js";
 import { protect, requireVerifiedEducator } from "../../middlewares/authMiddleware.js";
 import {
   authorizeOwnership,
@@ -67,6 +68,7 @@ router.post("/:id/progress", protect, updateCourseProgress);
 
 // Review listing route
 router.get("/:id/reviews", getCourseReviews);
+router.get("/:courseId/bundles", getBundlesByCourse);
 
 // Dynamic routes - cached for 15 minutes
 router.get(

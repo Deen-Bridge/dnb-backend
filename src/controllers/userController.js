@@ -6,6 +6,7 @@ import logger from "../config/logger.js";
 import { validateMagicBytes } from "../utils/fileValidation.js";
 import CourseProgress from "../models/CourseProgress.js";
 import { createFollowNotification, createUnfollowNotification } from "./notificationController.js";
+import badgeService from "../services/badge.service.js";
 
 const PUBLIC_FIELDS = "name avatar bio role interests gender age country language";
 
@@ -130,9 +131,18 @@ export const getUser = async (req, res) => {
         message: "User not found",
       });
     }
+
+    const userObj = typeof user.toObject === "function" ? user.toObject() : { ...user };
+    try {
+      const badges = await badgeService.getUserBadges(user._id);
+      userObj.badges = badges;
+    } catch (_err) {
+      userObj.badges = [];
+    }
+
     res.status(200).json({
       success: true,
-      user,
+      user: userObj,
     });
   } catch (error) {
     logger.error("Get user error:", error);

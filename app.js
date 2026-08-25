@@ -57,7 +57,11 @@ import webhookRoutes from "./src/routes/webhookRoutes.js";
 import adminModerationRoutes from "./src/routes/admin/moderationRoutes.js";
 import categoryRoutes from "./src/routes/categoryRoutes.js";
 import readingGroupRoutes from "./src/routes/readingGroupRoutes.js";
+import courseBundleRoutes from "./src/routes/course-bundle.routes.js";
+import certificateRoutes from "./src/routes/certificate.routes.js";
+import badgeRoutes from "./src/routes/badge.routes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
+import databaseHealthRoutes from "./src/routes/health/database.js";
 
 const app = express();
 
@@ -170,6 +174,7 @@ app.get("/", (req, res) => {
 
 app.get("/ping", ping);
 app.get("/health", healthCheck);
+app.use("/health/database", databaseHealthRoutes);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter
 app.use("/.well-known", wellKnownRoutes);
@@ -187,6 +192,10 @@ app.use("/api/payouts", standardLimiter, payoutRoutes);
 // Creator analytics is mounted before the generic course routes so the static
 // "/analytics" segment is not captured by the courseRoutes "/:id" matcher.
 app.use("/api/courses/analytics", generousLimiter, courseAnalyticsRoutes);
+app.use("/api/course-bundles", generousLimiter, courseBundleRoutes);
+app.use("/api/courses/bundles", generousLimiter, courseBundleRoutes);
+app.use("/api/certificates", generousLimiter, certificateRoutes);
+app.use("/api/badges", generousLimiter, badgeRoutes);
 app.use("/api/courses", generousLimiter, courseRoutes);
 app.use("/api/categories", generousLimiter, categoryRoutes);
 app.use("/api/reels", generousLimiter, reelsRoute);
