@@ -17,6 +17,7 @@
  *     ├── BookRepository.js
  *     ├── NotificationRepository.js
  *     └── ReelRepository.js
+ *     └── NotificationRepository.js
  *     └── EducatorBalanceRepository.js
  * ```
  *
@@ -29,6 +30,11 @@
  * class CourseRepository extends base.BaseRepository {
  *   constructor() {
  *     super(Reel);
+ * import BaseRepository from "../mongo/base/BaseRepository.js";
+ *
+ * class CourseRepository extends BaseRepository {
+ *   constructor() {
+ *     super(Course);
  *   }
  *   // thin, course-specific query helpers only
  * }
