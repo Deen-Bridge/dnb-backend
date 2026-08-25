@@ -90,10 +90,14 @@ export const createCourse = catchAsync(async (req, res, next) => {
   });
 });
 
-// 📚 Get all courses
+// 📚 Get all courses (public: only published; admin/creator bypass via query)
 export const getCourses = async (req, res) => {
   try {
     const filter = {};
+    // Non-creators only see published courses
+    if (!req.query.createdBy) {
+      filter.status = "published";
+    }
     if (req.query.category) {
       const categoryDoc = await resolveActiveCategory(req.query.category);
       if (!categoryDoc) return res.status(404).json({ success: false, message: "Category not found" });
@@ -312,6 +316,42 @@ export {
   updateCourseReview,
   deleteCourseReview,
 } from "../reviewController.js";
+
+// Publish a course (draft -> published)
+export const publishCourse = catchAsync(async (req, res, next) => {
+  const course = req.resource || (await Course.findById(req.params.id));
+  if (!course) return next(new APIError("Course not found", 404));
+
+  if (course.status === "published") {
+    return next(new APIError("Course is already published", 400));
+  }
+
+  if (!course.title || !course.description || !course.category) {
+    return next(new APIError("Course must have title, description, and category before publishing", 400));
+  }
+
+  course.status = "published";
+  course.publishedAt = new Date();
+  await course.save();
+
+  res.status(200).json({ success: true, message: "Course published", course });
+});
+
+// Unpublish a course (published -> draft)
+export const unpublishCourse = catchAsync(async (req, res, next) => {
+  const course = req.resource || (await Course.findById(req.params.id));
+  if (!course) return next(new APIError("Course not found", 404));
+
+  if (course.status === "draft") {
+    return next(new APIError("Course is already a draft", 400));
+  }
+
+  course.status = "draft";
+  course.publishedAt = undefined;
+  await course.save();
+
+  res.status(200).json({ success: true, message: "Course unpublished", course });
+});
 
 
 // recommended courses for user based on their profile interest

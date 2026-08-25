@@ -6,6 +6,8 @@ import {
   enrollInCourse,
   getCoursesByUser,
   updateCourse,
+  publishCourse,
+  unpublishCourse,
   addCourseReview,
   getCourseReviews,
   updateCourseReview,
@@ -149,6 +151,20 @@ router.put(
   validate,
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
   updateCourse
+);
+router.patch(
+  "/:id/publish",
+  protect,
+  authorizeOwnership({ model: Course, ownerField: "createdBy", resourceType: "Course" }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
+  publishCourse
+);
+router.patch(
+  "/:id/unpublish",
+  protect,
+  authorizeOwnership({ model: Course, ownerField: "createdBy", resourceType: "Course" }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
+  unpublishCourse
 );
 
 export default router;
