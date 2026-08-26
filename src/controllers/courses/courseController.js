@@ -103,10 +103,47 @@ export const getCourses = async (req, res) => {
       if (!categoryDoc) return res.status(404).json({ success: false, message: "Category not found" });
       filter.categoryRef = categoryDoc._id;
     }
-    const courses = await Course.find(filter).populate(
-      "createdBy",
-      "name email avatar"
-    );
+
+    const pageParam = req.query.page ? parseInt(req.query.page, 10) : null;
+    const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const isPaginated = pageParam !== null || limitParam !== null;
+
+    const selectFields =
+      "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt";
+
+    if (isPaginated) {
+      const page = Math.max(pageParam || 1, 1);
+      const limit = Math.min(Math.max(limitParam || 20, 1), 100);
+      const skip = (page - 1) * limit;
+
+      const [courses, total] = await Promise.all([
+        Course.find(filter)
+          .select(selectFields)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate("createdBy", "name email avatar")
+          .lean(),
+        Course.countDocuments(filter),
+      ]);
+
+      const hasMore = skip + courses.length < total;
+      return res.status(200).json({
+        success: true,
+        page,
+        limit,
+        total,
+        hasMore,
+        courses,
+      });
+    }
+
+    const courses = await Course.find(filter)
+      .select(selectFields)
+      .sort({ createdAt: -1 })
+      .populate("createdBy", "name email avatar")
+      .lean();
+
     res.status(200).json({ success: true, courses });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -118,7 +155,8 @@ export const getCourseById = async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
       .populate("createdBy", "name avatar bio")
-      .populate("prerequisites", "title thumbnail");
+      .populate("prerequisites", "title thumbnail")
+      .lean();
     if (!course)
       return res
         .status(404)
@@ -160,7 +198,13 @@ export const getCoursesByUser = async (req, res) => {
     }
 
     logger.info("✅ Finding courses...");
-    const courses = await Course.find({ createdBy }).populate("createdBy", "name avatar bio");
+    const courses = await Course.find({ createdBy })
+      .select(
+        "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt"
+      )
+      .sort({ createdAt: -1 })
+      .populate("createdBy", "name avatar bio")
+      .lean();
 
     if (!courses || courses.length === 0) {
       return res

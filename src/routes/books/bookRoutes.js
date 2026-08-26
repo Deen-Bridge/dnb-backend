@@ -34,7 +34,10 @@ import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 const router = express.Router();
 
 // Cache key generators
-const booksListCacheKey = () => `${CACHE_KEYS.BOOKS}list`;
+const booksListCacheKey = (req) => {
+  const queryStr = new URLSearchParams(req.query).toString();
+  return `${CACHE_KEYS.BOOKS}list:${queryStr || "all"}`;
+};
 const bookDetailCacheKey = (req) => `${CACHE_KEYS.BOOK}${req.params.id}`;
 const booksByAuthorCacheKey = (req) =>
   `${CACHE_KEYS.BOOKS}author:${req.params.authorId}`;

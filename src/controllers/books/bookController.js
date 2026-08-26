@@ -91,15 +91,64 @@ export const createBook = async (req, res) => {
 
 // get all books in the store
 export const getBooks = async (req, res) => {
-  const books = await Book.find().populate("author", "name avatar bio").populate("reviews.user", "name avatar");
-  res.json({ success: true, books });
+  try {
+    const filter = {};
+    if (req.query.category) {
+      filter.category = req.query.category;
+    }
+
+    const pageParam = req.query.page ? parseInt(req.query.page, 10) : null;
+    const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const isPaginated = pageParam !== null || limitParam !== null;
+
+    const selectFields =
+      "_id title author category categoryRef price currency readCount rating numReviews description image createdAt updatedAt";
+
+    if (isPaginated) {
+      const page = Math.max(pageParam || 1, 1);
+      const limit = Math.min(Math.max(limitParam || 20, 1), 100);
+      const skip = (page - 1) * limit;
+
+      const [books, total] = await Promise.all([
+        Book.find(filter)
+          .select(selectFields)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate("author", "name avatar bio")
+          .lean(),
+        Book.countDocuments(filter),
+      ]);
+
+      const hasMore = skip + books.length < total;
+      return res.json({
+        success: true,
+        page,
+        limit,
+        total,
+        hasMore,
+        books,
+      });
+    }
+
+    const books = await Book.find(filter)
+      .select(selectFields)
+      .sort({ createdAt: -1 })
+      .populate("author", "name avatar bio")
+      .lean();
+
+    res.json({ success: true, books });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // get a particular book
 export const getBook = async (req, res) => {
   const book = await Book.findById(req.params.id)
     .populate("author", "name avatar bio")
-    .populate("reviews.user", "name avatar");
+    .populate("reviews.user", "name avatar")
+    .lean();
   if (!book) return res.status(404).json({ success: false, message: "Book not found" });
   res.json({ success: true, book });
 };
@@ -113,7 +162,13 @@ export const getBooksByAuthor = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing author id" });
     }
-    const books = await Book.find({ author: authorId }).populate("author", "name avatar bio");
+    const selectFields =
+      "_id title author category categoryRef price currency readCount rating numReviews description image createdAt updatedAt";
+    const books = await Book.find({ author: authorId })
+      .select(selectFields)
+      .sort({ createdAt: -1 })
+      .populate("author", "name avatar bio")
+      .lean();
     if (!books || books.length === 0) {
       return res
         .status(200)
@@ -167,10 +222,18 @@ export {
 // recommended books for user based on their profile interest
 export const fetchRecommendedBooks = async (req, res) => {
   try {
-    const { interests } = req.body;
-    const recommmended = await Book.find().$where(category === interests);
-    res.status(200).json({ success: true, recommmended });
-  } catch (e) {}
+    const { interests } = req.body || {};
+    const categories = Array.isArray(interests) ? interests : interests ? [interests] : [];
+    const filter = categories.length > 0 ? { category: { $in: categories } } : {};
+    const recommended = await Book.find(filter)
+      .select("_id title author category categoryRef price currency readCount rating numReviews description image createdAt")
+      .populate("author", "name avatar bio")
+      .limit(20)
+      .lean();
+    res.status(200).json({ success: true, recommended, recommmended: recommended });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 };
 
 export const streamBookPreview = async (req, res) => {

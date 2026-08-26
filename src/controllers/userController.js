@@ -117,11 +117,16 @@ export const updateUser = async (req, res) => {
 // Get user by ID
 export const getUser = async (req, res) => {
   try {
-    const isSelf = req.user._id.toString() === req.params.id;
-    const query = User.findById(req.params.id);
+    const isSelf = req.user?._id ? req.user._id.toString() === req.params.id : false;
+    let query = User.findById(req.params.id);
+    if (typeof query.lean === "function") {
+      query = query.lean();
+    }
 
     if (!isSelf) {
       query.select(PUBLIC_FIELDS);
+    } else {
+      query.select("-password -twoFactor.secret -twoFactor.pendingSecret -twoFactor.recoveryCodes -resetTokenHash");
     }
 
     const user = await query;
@@ -132,7 +137,7 @@ export const getUser = async (req, res) => {
       });
     }
 
-    const userObj = typeof user.toObject === "function" ? user.toObject() : { ...user };
+    const userObj = { ...user };
     try {
       const badges = await badgeService.getUserBadges(user._id);
       userObj.badges = badges;
@@ -597,7 +602,7 @@ export const getUserStats = async (req, res) => {
     const userId = req.params.id;
 
     // Get user
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select("_id createdAt purchasedBooks").lean();
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -605,15 +610,13 @@ export const getUserStats = async (req, res) => {
       });
     }
 
-    // Get courses enrolled
-    const coursesEnrolled = await Course.countDocuments({
-      enrolledUsers: userId,
-    });
+    // Parallelize counting courses enrolled and books read
+    const [coursesEnrolled, booksReadCount] = await Promise.all([
+      Course.countDocuments({ enrolledUsers: userId }),
+      Book.countDocuments({ purchasedBy: userId }),
+    ]);
 
-    // Get books purchased/read (assuming books have a similar enrolledUsers or purchasedBy field)
-    const booksRead = await Book.countDocuments({
-      purchasedBy: userId,
-    });
+    const booksRead = booksReadCount || (Array.isArray(user.purchasedBooks) ? user.purchasedBooks.length : 0);
 
     // Calculate total uptime (days since user joined)
     const accountCreatedDate = user.createdAt || new Date();
