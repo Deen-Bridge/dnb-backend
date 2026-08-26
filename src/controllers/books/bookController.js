@@ -167,10 +167,32 @@ export {
 // recommended books for user based on their profile interest
 export const fetchRecommendedBooks = async (req, res) => {
   try {
-    const { interests } = req.body;
-    const recommmended = await Book.find().$where(category === interests);
-    res.status(200).json({ success: true, recommmended });
-  } catch (e) {}
+    // GET /books/recom — prefer query interests; fall back to body for older clients.
+    const raw = req.query?.interests ?? req.body?.interests;
+    const interests = Array.isArray(raw)
+      ? raw
+      : typeof raw === "string" && raw.trim()
+        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+
+    const filter =
+      interests.length > 0
+        ? { category: { $in: interests } }
+        : {};
+
+    const recommended = await Book.find(filter)
+      .sort({ readCount: -1, createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    return res.status(200).json({ success: true, recommended });
+  } catch (e) {
+    logger.error("fetchRecommendedBooks failed", e);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch recommended books",
+    });
+  }
 };
 
 export const streamBookPreview = async (req, res) => {
