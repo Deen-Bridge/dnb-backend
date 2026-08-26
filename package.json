@@ -63,5 +63,11 @@
     "nodemon": "^3.1.10",
     "supertest": "^7.1.4"
   },
+  "config": {
+    "mongodbMemoryServer": {
+      "version": "7.0.14",
+      "checkMD5": false
+    }
+  },
   "type": "module"
 }
