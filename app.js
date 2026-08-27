@@ -66,6 +66,21 @@ import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
 
+// Issue #212 — Hashtag trending
+import hashtagRoutes from "./src/routes/hashtagRoutes.js";
+import { startTrendingHashtagsJob } from "./src/jobs/trendingHashtagsJob.js";
+
+// Issue #207 — Space recording & replay
+import spaceRecordingRoutes from "./src/routes/spaceRecordingRoutes.js";
+
+// Issue #215 — API versioning (v1 / v2)
+import v1Router from "./src/routes/api/v1/index.js";
+import v2Router from "./src/routes/api/v2/index.js";
+import { versionMiddleware } from "./src/middlewares/versionMiddleware.js";
+
+// Issue #224 — Developer documentation portal
+import docsRoutes from "./src/routes/docsRoutes.js";
+
 const app = express();
 
 app.set("trust proxy", 1);
@@ -240,6 +255,29 @@ app.use("/admin/jobs", jobsRoutes);
 app.use("/api/admin/audit", auditRoutes);
 app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
 app.use("/api/admin/moderation", adminModerationRoutes);
+
+// Issue #215 — Apply version detection middleware globally on /api paths.
+// Must come before versioned router mounts.
+app.use(versionMiddleware);
+
+// Issue #215 — Versioned API routers.
+// /api/v1/* and /api/v2/* let clients pin to a specific version.
+app.use("/api/v1", generousLimiter, v1Router);
+app.use("/api/v2", generousLimiter, v2Router);
+
+// Issue #212 — Hashtag trending endpoints.
+app.use("/api/hashtags", generousLimiter, hashtagRoutes);
+
+// Issue #207 — Space recording & replay.
+// Nested under /api/spaces/:spaceId/recordings.
+app.use("/api/spaces/:spaceId/recordings", generousLimiter, spaceRecordingRoutes);
+
+// Issue #224 — Developer documentation portal at /docs.
+// No auth or rate-limiting so the docs are always accessible.
+app.use("/docs", docsRoutes);
+
+// Start the hourly trending-hashtag score job (Issue #212).
+startTrendingHashtagsJob();
 
 // ======================
 // ERROR HANDLING

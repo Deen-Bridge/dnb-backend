@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeenBridge API Docs</title>
+    <meta
+      name="description"
+      content="Interactive REST API documentation for the DeenBridge platform — authentication, courses, books, spaces, reels, Stellar payments and more."
+    />
+
+    <!-- Redoc standalone bundle — no build step required -->
+    <script src="https://cdn.jsdelivr.net/npm/redoc@latest/bundles/redoc.standalone.js"></script>
+
+    <style>
+      /* ---------------------------------------------------------------
+         Layout
+      --------------------------------------------------------------- */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: "Inter", system-ui, sans-serif;
+      }
+
+      /* ---------------------------------------------------------------
+         Top bar
+      --------------------------------------------------------------- */
+      #topbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 0 24px;
+        height: 52px;
+        background: #1a2236;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+      }
+
+      #topbar img {
+        height: 28px;
+        width: auto;
+      }
+
+      #topbar span {
+        color: #fff;
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      #topbar a {
+        margin-left: auto;
+        color: #90caf9;
+        font-size: 13px;
+        text-decoration: none;
+      }
+
+      #topbar a:hover {
+        text-decoration: underline;
+      }
+
+      /* ---------------------------------------------------------------
+         Redoc container — offset for the fixed top bar
+      --------------------------------------------------------------- */
+      #redoc-container {
+        margin-top: 52px;
+      }
+
+      /* ---------------------------------------------------------------
+         Loading state
+      --------------------------------------------------------------- */
+      #loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: calc(100vh - 52px);
+        font-size: 15px;
+        color: #666;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Top navigation bar -->
+    <div id="topbar">
+      <span>DeenBridge API</span>
+      <a href="guides/" target="_blank" rel="noopener">Guides &amp; Tutorials</a>
+    </div>
+
+    <!-- Loading placeholder -->
+    <div id="loading">Loading API documentation&hellip;</div>
+
+    <!-- Redoc renders here -->
+    <div id="redoc-container"></div>
+
+    <script>
+      /**
+       * Redoc configuration.
+       *
+       * spec-url points to the openapi.yaml served by the /docs/spec endpoint.
+       * All configuration options:
+       *   https://redocly.com/docs/redoc/config/
+       */
+      Redoc.init(
+        "/docs/spec",
+        {
+          scrollYOffset: 52,            // account for our fixed top bar
+          hideDownloadButton: false,
+          disableSearch: false,
+          expandSingleSchemaField: true,
+          jsonSampleExpandLevel: 2,
+          theme: {
+            colors: {
+              primary: { main: "#1976d2" },
+            },
+            typography: {
+              fontFamily: "'Inter', system-ui, sans-serif",
+              headings: { fontFamily: "'Inter', system-ui, sans-serif" },
+              code: { fontFamily: "'JetBrains Mono', monospace" },
+            },
+            sidebar: {
+              backgroundColor: "#f5f7fa",
+              width: "270px",
+            },
+          },
+        },
+        document.getElementById("redoc-container"),
+        () => {
+          // Hide loading placeholder once Redoc is ready.
+          document.getElementById("loading").style.display = "none";
+        }
+      );
+    </script>
+  </body>
+</html>
