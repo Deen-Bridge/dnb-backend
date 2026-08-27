@@ -25,6 +25,7 @@ import {
   updateCourseProgress,
 } from "../../controllers/analytics/analyticsController.js";
 import { getBundlesByCourse } from "../../controllers/course-bundle.controller.js";
+import { generateCertificateController } from "../../controllers/certificate.controller.js";
 import { protect, requireVerifiedEducator } from "../../middlewares/authMiddleware.js";
 import {
   authorizeOwnership,
@@ -166,5 +167,8 @@ router.patch(
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
   unpublishCourse
 );
+
+// Course Certificate generation (Issue #125)
+router.post("/:id/certificate", protect, generateCertificateController);
 
 export default router;

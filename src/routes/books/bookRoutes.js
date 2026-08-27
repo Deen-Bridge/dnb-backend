@@ -58,9 +58,15 @@ router.get("/", cacheMiddleware(CACHE_TTL.BOOKS, booksListCacheKey), getBooks);
 // get recommended books for user - cached for 5 minutes
 router.get(
   "/recom",
-  cacheMiddleware(CACHE_TTL.SHORT, () => `${CACHE_KEYS.BOOKS}recommended`),
+  cacheMiddleware(CACHE_TTL.SHORT, (req) => {
+    const interests = req.query?.interests;
+    return interests
+      ? `${CACHE_KEYS.BOOKS}recommended:${interests}`
+      : `${CACHE_KEYS.BOOKS}recommended:popular`;
+  }),
   fetchRecommendedBooks
 );
+router.post("/recom", fetchRecommendedBooks);
 
 // Bookmarks (must come before dynamic :id routes)
 router.get("/bookmarks", protect, getBookmarkedBooks);

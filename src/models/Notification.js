@@ -27,6 +27,9 @@ const notificationSchema = new mongoose.Schema(
         "welcome", // Welcome notification
         "recommendation", // New recommendation
         "pledge_due", // Recurring sadaqah cycle ready to sign
+        "course_update", // Course update or announcement
+        "course_announcement",
+        "bulk",
       ],
       required: true,
     },
