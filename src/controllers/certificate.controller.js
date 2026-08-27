@@ -2,7 +2,7 @@ import certificateService from "../services/certificate.service.js";
 
 export const generateCertificateController = async (req, res) => {
   try {
-    const { courseId } = req.body;
+    const courseId = req.params?.id || req.body?.courseId || req.body?.course_id;
     const userId = req.user._id;
 
     if (!courseId) {
@@ -13,8 +13,10 @@ export const generateCertificateController = async (req, res) => {
     }
 
     const certificate = await certificateService.generateCertificate({ userId, courseId });
+    const verification = certificateService.formatVerificationResponse(certificate);
     res.status(201).json({
       success: true,
+      ...verification,
       data: certificate,
     });
   } catch (error) {
@@ -28,13 +30,16 @@ export const generateCertificateController = async (req, res) => {
 export const getCertificateByIdController = async (req, res) => {
   try {
     const certificate = await certificateService.getCertificateById(req.params.id);
+    const verification = certificateService.formatVerificationResponse(certificate);
     res.status(200).json({
       success: true,
+      ...verification,
       data: certificate,
     });
   } catch (error) {
     res.status(404).json({
       success: false,
+      valid: false,
       message: error.message,
     });
   }

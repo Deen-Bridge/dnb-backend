@@ -44,6 +44,17 @@ const certificateSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    certificateHash: {
+      type: String,
+      index: true,
+    },
+    stellarTx: {
+      type: String,
+      default: null,
+    },
+    verificationUrl: {
+      type: String,
+    },
   },
   { timestamps: true }
 );

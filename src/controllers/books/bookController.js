@@ -167,10 +167,62 @@ export {
 // recommended books for user based on their profile interest
 export const fetchRecommendedBooks = async (req, res) => {
   try {
-    const { interests } = req.body;
-    const recommmended = await Book.find().$where(category === interests);
-    res.status(200).json({ success: true, recommmended });
-  } catch (e) {}
+    const rawInterests = req.query?.interests ?? req.body?.interests;
+
+    let interests = [];
+    if (typeof rawInterests === "string") {
+      interests = rawInterests
+        .split(",")
+        .map((i) => i.trim())
+        .filter(Boolean);
+    } else if (Array.isArray(rawInterests)) {
+      interests = rawInterests
+        .filter((i) => typeof i === "string")
+        .map((i) => i.trim())
+        .filter(Boolean);
+    } else if (rawInterests !== undefined && rawInterests !== null) {
+      return res.status(400).json({
+        success: false,
+        message: "Interests must be an array of strings or comma-separated string",
+      });
+    }
+
+    const hasInterests = interests.length > 0;
+
+    if (!hasInterests) {
+      const books = await Book.find()
+        .populate("author", "name email avatar")
+        .sort({ readCount: -1 })
+        .limit(10);
+
+      return res.status(200).json({
+        success: true,
+        recommended: books,
+        books,
+        message: "Popular books",
+      });
+    }
+
+    const recommended = await Book.find({
+      category: { $in: interests },
+    })
+      .populate("author", "name email avatar")
+      .sort({ readCount: -1 })
+      .limit(10);
+
+    return res.status(200).json({
+      success: true,
+      recommended,
+      books: recommended,
+      message: "Books recommended based on your interests",
+    });
+  } catch (error) {
+    logger.error("Error fetching recommended books:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Error fetching recommended books",
+    });
+  }
 };
 
 export const streamBookPreview = async (req, res) => {
