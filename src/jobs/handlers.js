@@ -1,6 +1,9 @@
 import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import Course from "../models/Course.js";
+import CourseProgress from "../models/CourseProgress.js";
+import Notification from "../models/Notification.js";
+import { deliverLocalSSENotification } from "../controllers/notificationController.js";
 import { sendOtpEmail, sendReceiptEmail } from "../../services/emails/sendMail.js";
 import { verifyPaymentOperations, getExplorerUrl } from "../services/stellar/stellarService.js";
 import { recordSaleEarnings } from "../services/payoutService.js";
@@ -94,6 +97,41 @@ registerJob("generateReceipt", async ({ transactionId }) => {
     txHash: transaction.stellarTxHash,
     explorerUrl: getExplorerUrl(transaction.stellarTxHash),
   });
+});
+
+registerJob("notifications.bulk", async ({ courseId, senderId, title, message, type }) => {
+  const course = await Course.findById(courseId).select("enrolledUsers createdBy title");
+  if (!course) return;
+
+  const progressList = await CourseProgress.find({ course: courseId }).select("user");
+  const progressUserIds = progressList.map((p) => p.user.toString());
+  const enrolledUserIds = (course.enrolledUsers || []).map((u) => u.toString());
+
+  const allRecipientIds = Array.from(new Set([...progressUserIds, ...enrolledUserIds])).filter(
+    (uid) => uid !== senderId?.toString()
+  );
+
+  if (allRecipientIds.length === 0) return;
+
+  const notifDocs = allRecipientIds.map((recipientId) => ({
+    recipient: recipientId,
+    sender: senderId,
+    type: type || "course_update",
+    title,
+    message,
+    data: { courseId: course._id },
+    priority: "medium",
+  }));
+
+  const inserted = await Notification.insertMany(notifDocs);
+
+  for (const notif of inserted) {
+    try {
+      deliverLocalSSENotification(notif.recipient, notif);
+    } catch {
+      // Non-critical SSE delivery error
+    }
+  }
 });
 
 export { expectedPaymentsFor, queueReceipt };

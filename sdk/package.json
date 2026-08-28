@@ -1,0 +1,23 @@
+{
+  "name": "@deenbridge/sdk",
+  "version": "1.0.0",
+  "description": "Auto-generated TypeScript SDK for the DeenBridge Backend API",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "generate": "bash ../scripts/generate-sdk.sh",
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["deenbridge", "openapi", "sdk", "api-client"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Deen-Bridge/dnb-backend.git",
+    "directory": "sdk"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "files": ["src"]
+}

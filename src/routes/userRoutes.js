@@ -17,6 +17,7 @@ import {
   getLearningDashboard,
 } from "../controllers/userController.js";
 import { searchAll } from "../controllers/searchController.js";
+import { getUserBadgesController } from "../controllers/badge.controller.js";
 import {
   cacheMiddleware,
   invalidateCacheMiddleware,
@@ -57,6 +58,9 @@ router.put(
   invalidateCacheMiddleware([`${CACHE_KEYS.USER}*`]),
   updateUser
 );
+
+// Fetch user badges
+router.get("/:userId/badges", protect, getUserBadgesController);
 
 // Get user by ID - cached for 10 minutes
 router.get(

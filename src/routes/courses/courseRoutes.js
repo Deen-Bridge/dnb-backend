@@ -6,6 +6,8 @@ import {
   enrollInCourse,
   getCoursesByUser,
   updateCourse,
+  publishCourse,
+  unpublishCourse,
   addCourseReview,
   getCourseReviews,
   updateCourseReview,
@@ -22,6 +24,8 @@ import {
   getCourseProgress,
   updateCourseProgress,
 } from "../../controllers/analytics/analyticsController.js";
+import { getBundlesByCourse } from "../../controllers/course-bundle.controller.js";
+import { generateCertificateController } from "../../controllers/certificate.controller.js";
 import { protect, requireVerifiedEducator } from "../../middlewares/authMiddleware.js";
 import {
   authorizeOwnership,
@@ -32,6 +36,8 @@ import {
   cacheMiddleware,
   invalidateCacheMiddleware,
 } from "../../middlewares/cache.js";
+import { validate } from "../../middlewares/validate.js";
+import { prerequisitesValidation } from "../../validators/requestValidators.js";
 import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 
 const router = express.Router();
@@ -65,6 +71,7 @@ router.post("/:id/progress", protect, updateCourseProgress);
 
 // Review listing route
 router.get("/:id/reviews", getCourseReviews);
+router.get("/:courseId/bundles", getBundlesByCourse);
 
 // Dynamic routes - cached for 15 minutes
 router.get(
@@ -78,6 +85,8 @@ router.post(
   "/",
   protect,
   requireVerifiedEducator,
+  prerequisitesValidation,
+  validate,
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createCourse
 );
@@ -139,8 +148,27 @@ router.put(
   "/:id",
   protect,
   authorizeOwnership({ model: Course, ownerField: "createdBy", resourceType: "Course" }),
+  prerequisitesValidation,
+  validate,
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
   updateCourse
 );
+router.patch(
+  "/:id/publish",
+  protect,
+  authorizeOwnership({ model: Course, ownerField: "createdBy", resourceType: "Course" }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
+  publishCourse
+);
+router.patch(
+  "/:id/unpublish",
+  protect,
+  authorizeOwnership({ model: Course, ownerField: "createdBy", resourceType: "Course" }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.COURSES}*`, `${CACHE_KEYS.COURSE}*`]),
+  unpublishCourse
+);
+
+// Course Certificate generation (Issue #125)
+router.post("/:id/certificate", protect, generateCertificateController);
 
 export default router;

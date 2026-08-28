@@ -153,6 +153,23 @@ export const standardLimiter = makeLimiter(
 );
 
 /**
+ * Per-MENTOR throttle for bulk notifications (max 5 per hour).
+ * Keyed on the authenticated user id (falling back to IP).
+ */
+export const bulkNotificationLimiter = makeLimiter(
+  5,
+  60 * 60 * 1000,
+  "RATE_LIMIT_BULK_NOTIFICATION",
+  {
+    keyGenerator: (req) =>
+      `bulk_notification:${req.user?._id?.toString() || ipKeyGenerator(req.ip)}`,
+    skip: () =>
+      process.env.RATE_LIMIT_BULK_NOTIFICATION_DISABLE === "true" ||
+      (process.env.NODE_ENV === "test" && process.env.ENABLE_TEST_RATE_LIMIT !== "true"),
+  }
+);
+
+/**
  * Generous – for read-heavy & content endpoints (courses, books, reels,
  * spaces, search, progress, notifications, stellar).
  * 500 requests per 15 minutes by default.
