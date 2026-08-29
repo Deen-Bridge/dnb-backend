@@ -736,6 +736,35 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/completion:
+    get:
+      tags: [Users]
+      summary: Get authenticated user's profile completion metrics and suggestions
+      description: Returns completion percentage, weighted field breakdown, and prioritized improvement suggestions.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/users/completion/criteria:
+    get:
+      tags: [Users]
+      summary: Get profile completion scoring criteria and levels
+      description: Public criteria definitions with field weights and progress tier ranges.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/users/completion/{id}:
+    get:
+      tags: [Users]
+      summary: Get profile completion for a specific user
+      description: Evaluates profile completion for the requested user ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/users/recommendations:
     get:
       tags: [Users]
