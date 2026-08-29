@@ -164,9 +164,46 @@ components:
       description: Standard error shape produced by the central error handler
       properties:
         success: { type: boolean, examples: [false] }
-        message: { type: string }
-        data: { description: Null on error responses }
-        stack: { type: string, description: Present only outside production }
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              enum:
+                - VALIDATION_ERROR
+                - NOT_FOUND
+                - UNAUTHORIZED
+                - FORBIDDEN
+                - CONFLICT
+                - RATE_LIMITED
+                - PAYLOAD_TOO_LARGE
+                - REQUEST_TIMEOUT
+                - NETWORK_UNAVAILABLE
+                - PAYMENT_FAILED
+                - PAYMENT_REJECTED
+                - WALLET_MISMATCH
+                - WALLET_NOT_CONNECTED
+                - ITEM_NOT_FOUND
+                - ALREADY_PURCHASED
+                - INSUFFICIENT_BALANCE
+                - STALE_XDR
+                - INVALID_XDR
+                - SPONSORSHIP_REJECTED
+                - INTERNAL_ERROR
+                - DATABASE_ERROR
+                - EXTERNAL_SERVICE_ERROR
+            message: { type: string, description: Human-readable error message }
+            details:
+              type: array
+              description: Optional field-level validation errors
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+        stack: { type: string, description: Present only in development }
+        reqId: { type: string, description: Request correlation ID }
     SuccessResponse:
       type: object
       description: Standard success envelope. Some list handlers return a bare array instead.
