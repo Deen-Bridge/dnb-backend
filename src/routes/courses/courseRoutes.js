@@ -39,6 +39,7 @@ import {
 import { validate } from "../../middlewares/validate.js";
 import { prerequisitesValidation } from "../../validators/requestValidators.js";
 import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
+import { trackAction } from "../../middlewares/analytics/journey-tracker.js";
 
 const router = express.Router();
 
@@ -93,6 +94,8 @@ router.post(
 router.post(
   "/:id/enroll",
   protect,
+  // Journey analytics: record the enrollment as a key user action (issue #246).
+  trackAction("enroll_course"),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
   enrollInCourse
 );
