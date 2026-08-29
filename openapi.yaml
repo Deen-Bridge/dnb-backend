@@ -68,6 +68,10 @@ tags:
     description: Signed Cloudinary upload parameters
   - name: Jobs
     description: Token protected background job dashboard
+  - name: Notifications
+    description: Real-time and bulk notifications
+  - name: Certificates
+    description: Verifiable course completion certificates
 security:
   - bearerAuth: []
 components:
@@ -1007,6 +1011,73 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/courses/{id}/certificate:
+    post:
+      tags: [Courses, Certificates]
+      summary: Generate verifiable course completion certificate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/certificates/{id}:
+    get:
+      tags: [Certificates]
+      summary: Public certificate verification
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/certificates/{id}/download:
+    get:
+      tags: [Certificates]
+      summary: Download PDF certificate
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: PDF binary stream
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/notifications/bulk:
+    post:
+      tags: [Notifications]
+      summary: Send bulk notification to course students (mentor/admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                course_id: { $ref: "#/components/schemas/ObjectId" }
+                title: { type: string }
+                message: { type: string }
+                type: { type: string, default: "course_update" }
+              required: [course_id, title, message]
+      responses:
+        "202": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/books:
     get:
       tags: [Books]
@@ -1064,6 +1135,38 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
       x-envelope-unverified: true
+  /api/books/recom:
+    get:
+      tags: [Books]
+      summary: Fetch recommended books by user interests or popular fallback
+      security: []
+      parameters:
+        - name: interests
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Books]
+      summary: Fetch recommended books by user interests payload
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interests:
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/books/bookmarks:
     get:
       tags: [Books]
