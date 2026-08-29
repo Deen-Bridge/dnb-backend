@@ -20,6 +20,7 @@ import {
 } from "./src/middlewares/security.js";
 import { sanitizeInput } from "./src/middlewares/validate.js";
 import { rtlMiddleware } from "./src/middlewares/rtl.js";
+import { trackActivity } from "./src/middlewares/analytics/activityTracker.js";
 import {
   errorHandler,
   notFound,
@@ -64,6 +65,7 @@ import courseBundleRoutes from "./src/routes/course-bundle.routes.js";
 import certificateRoutes from "./src/routes/certificate.routes.js";
 import badgeRoutes from "./src/routes/badge.routes.js";
 import achievementRoutes from "./src/routes/api/achievements.js";
+import activeUsersRoutes from "./src/routes/analytics/activeUsersRoutes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
@@ -180,6 +182,10 @@ app.use(hppMiddleware);
 app.use(sanitizeInput);
 app.use(rtlMiddleware);
 
+// Issue #243 — Real-time active-user tracking. Runs for every request and
+// only does work when a valid Bearer token is present (see the middleware).
+app.use(trackActivity);
+
 // ======================
 // ROUTES
 // ======================
@@ -268,6 +274,9 @@ app.use(versionMiddleware);
 // /api/v1/* and /api/v2/* let clients pin to a specific version.
 app.use("/api/v1", generousLimiter, v1Router);
 app.use("/api/v2", generousLimiter, v2Router);
+
+// Issue #243 — Real-time platform analytics (active users).
+app.use("/api/analytics", generousLimiter, activeUsersRoutes);
 
 // Issue #212 — Hashtag trending endpoints.
 app.use("/api/hashtags", generousLimiter, hashtagRoutes);
