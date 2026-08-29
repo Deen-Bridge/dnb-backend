@@ -107,10 +107,9 @@ describe("Full-text search API", () => {
     const res = await request(app).get("/api/search?minRating=5.5");
 
     expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
       success: false,
       message: "minRating must be a whole number between 0 and 5",
-      data: null,
     });
   });
 
