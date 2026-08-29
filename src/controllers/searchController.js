@@ -4,7 +4,7 @@ import { ERROR_CODES, buildErrorResponse } from "../config/errorCodes.js";
 
 export const searchAll = async (req, res) => {
   try {
-    const { q, type = "all", page = 1, limit = 10, sort, minPrice, maxPrice, free, category, minRating, interest } = req.query;
+    const { q, type = "all", page = 1, limit = 20, sort, cursor, minPrice, maxPrice, free, category, minRating, interest } = req.query;
     
     if (q && q.trim().length > 100) {
       return res.status(400).json(buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Query string is too long."));
@@ -12,7 +12,7 @@ export const searchAll = async (req, res) => {
 
     const filters = { minPrice, maxPrice, free, category, minRating, interest };
     
-    const result = await searchCollections({ q: q ? q.trim() : "", type, page, limit, sort, filters });
+    const result = await searchCollections({ q: q ? q.trim() : "", type, page, limit, sort, cursor, filters });
     
     res.json({ success: true, ...result });
   } catch (err) {
@@ -26,13 +26,13 @@ export const searchAll = async (req, res) => {
 
 export const searchEducatorsHandler = async (req, res) => {
   try {
-    const { q, interest, page = 1, limit = 10 } = req.query;
+    const { q, interest, page = 1, limit = 20, cursor } = req.query;
     
     if (q && q.trim().length > 100) {
       return res.status(400).json(buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Query string is too long."));
     }
     
-    const result = await searchEducators({ q: q ? q.trim() : "", interest, page, limit });
+    const result = await searchEducators({ q: q ? q.trim() : "", interest, page, limit, cursor });
     
     res.json({ success: true, ...result });
   } catch (err) {
