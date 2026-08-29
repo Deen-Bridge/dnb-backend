@@ -64,6 +64,7 @@ import courseBundleRoutes from "./src/routes/course-bundle.routes.js";
 import certificateRoutes from "./src/routes/certificate.routes.js";
 import badgeRoutes from "./src/routes/badge.routes.js";
 import achievementRoutes from "./src/routes/api/achievements.js";
+import contentPerformanceRoutes from "./src/routes/analytics/contentPerformanceRoutes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
@@ -268,6 +269,9 @@ app.use(versionMiddleware);
 // /api/v1/* and /api/v2/* let clients pin to a specific version.
 app.use("/api/v1", generousLimiter, v1Router);
 app.use("/api/v2", generousLimiter, v2Router);
+
+// Issue #244 — Content performance analytics (views, engagement, completion).
+app.use("/api/analytics", generousLimiter, contentPerformanceRoutes);
 
 // Issue #212 — Hashtag trending endpoints.
 app.use("/api/hashtags", generousLimiter, hashtagRoutes);
