@@ -83,6 +83,9 @@ import { versionMiddleware } from "./src/middlewares/versionMiddleware.js";
 // Issue #224 — Developer documentation portal
 import docsRoutes from "./src/routes/docsRoutes.js";
 
+// Issue #245 — Search analytics
+import searchAnalyticsRoutes from "./src/routes/analytics/search.js";
+
 const app = express();
 
 app.set("trust proxy", 1);
@@ -279,6 +282,9 @@ app.use("/api/spaces/:spaceId/recordings", generousLimiter, spaceRecordingRoutes
 // Issue #224 — Developer documentation portal at /docs.
 // No auth or rate-limiting so the docs are always accessible.
 app.use("/docs", docsRoutes);
+
+// Issue #245 — Search analytics (admin-gated; see routes/analytics/search.js).
+app.use("/api/analytics/search", generousLimiter, searchAnalyticsRoutes);
 
 // Start the hourly trending-hashtag score job (Issue #212).
 startTrendingHashtagsJob();

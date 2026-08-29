@@ -1,6 +1,7 @@
 import express from "express";
 import { searchAll, searchEducatorsHandler } from "../controllers/searchController.js";
 import { cacheMiddleware } from "../middlewares/cache.js";
+import { searchLogger } from "../middlewares/analytics/search-logger.js";
 import { CACHE_TTL, CACHE_KEYS } from "../utils/cache.js";
 
 const router = express.Router();
@@ -16,10 +17,10 @@ const searchCacheKey = (req) => {
   return `${CACHE_KEYS.SEARCH}${req.path}:${type}:${query.toLowerCase().trim()}:page=${page}:limit=${limit}:${filtersStr}`;
 };
 
-// Main search endpoint
-router.get("/", cacheMiddleware(CACHE_TTL.SEARCH, searchCacheKey), searchAll);
+// Main search endpoint — logs every query for analytics (issue #245).
+router.get("/", searchLogger, cacheMiddleware(CACHE_TTL.SEARCH, searchCacheKey), searchAll);
 
-// Dedicated educators endpoint
-router.get("/educators", cacheMiddleware(CACHE_TTL.SEARCH, searchCacheKey), searchEducatorsHandler);
+// Dedicated educators endpoint — logs every query for analytics (issue #245).
+router.get("/educators", searchLogger, cacheMiddleware(CACHE_TTL.SEARCH, searchCacheKey), searchEducatorsHandler);
 
 export default router;
