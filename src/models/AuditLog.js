@@ -78,6 +78,9 @@ export const AUDIT_ACTIONS = Object.freeze({
   WEBHOOK_SECRET_ROTATED:    "webhook.secret.rotated",
   WEBHOOK_DELIVERY_REDELIVERED: "webhook.delivery.redelivered",
   WEBHOOK_PING:              "webhook.ping",
+
+  // Bulk notifications (issue #123)
+  NOTIFICATION_BULK_SENT:    "notification.bulk_sent",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);

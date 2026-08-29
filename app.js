@@ -41,6 +41,7 @@ import callRoutes from "./src/routes/callRoutes.js";
 import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarAnalyticsRoutes from "./src/routes/stellar/analyticsRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
+import stellarExportRoutes from "./src/routes/stellar/exportRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import stellarOnrampRoutes from "./src/routes/stellar/onrampRoutes.js";
 import stellarPledgeRoutes from "./src/routes/stellar/pledgeRoutes.js";
@@ -62,9 +63,25 @@ import readingGroupRoutes from "./src/routes/readingGroupRoutes.js";
 import courseBundleRoutes from "./src/routes/course-bundle.routes.js";
 import certificateRoutes from "./src/routes/certificate.routes.js";
 import badgeRoutes from "./src/routes/badge.routes.js";
+import achievementRoutes from "./src/routes/api/achievements.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
+
+// Issue #212 — Hashtag trending
+import hashtagRoutes from "./src/routes/hashtagRoutes.js";
+import { startTrendingHashtagsJob } from "./src/jobs/trendingHashtagsJob.js";
+
+// Issue #207 — Space recording & replay
+import spaceRecordingRoutes from "./src/routes/spaceRecordingRoutes.js";
+
+// Issue #215 — API versioning (v1 / v2)
+import v1Router from "./src/routes/api/v1/index.js";
+import v2Router from "./src/routes/api/v2/index.js";
+import { versionMiddleware } from "./src/middlewares/versionMiddleware.js";
+
+// Issue #224 — Developer documentation portal
+import docsRoutes from "./src/routes/docsRoutes.js";
 
 const app = express();
 
@@ -209,6 +226,7 @@ app.use("/api/course-bundles", generousLimiter, courseBundleRoutes);
 app.use("/api/courses/bundles", generousLimiter, courseBundleRoutes);
 app.use("/api/certificates", generousLimiter, certificateRoutes);
 app.use("/api/badges", generousLimiter, badgeRoutes);
+app.use("/api/achievements", generousLimiter, achievementRoutes);
 app.use("/api/courses", generousLimiter, courseRoutes);
 app.use("/api/categories", generousLimiter, categoryRoutes);
 app.use("/api/reels", generousLimiter, reelsRoute);
@@ -228,6 +246,7 @@ app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
 app.use("/api/stellar/analytics", generousLimiter, stellarAnalyticsRoutes);
 // Payment routes mutate money state — stricter per-user limiter (issue #4).
 app.use("/api/stellar/payment", paymentLimiter, stellarPaymentRoutes);
+app.use("/api/stellar/export", paymentLimiter, stellarExportRoutes);
 app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
 app.use("/api/stellar/onramp", generousLimiter, stellarOnrampRoutes);
 app.use("/api/stellar/pledges", generousLimiter, stellarPledgeRoutes);
@@ -249,6 +268,29 @@ app.use("/admin/jobs", jobsRoutes);
 app.use("/api/admin/audit", auditRoutes);
 app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
 app.use("/api/admin/moderation", adminModerationRoutes);
+
+// Issue #215 — Apply version detection middleware globally on /api paths.
+// Must come before versioned router mounts.
+app.use(versionMiddleware);
+
+// Issue #215 — Versioned API routers.
+// /api/v1/* and /api/v2/* let clients pin to a specific version.
+app.use("/api/v1", generousLimiter, v1Router);
+app.use("/api/v2", generousLimiter, v2Router);
+
+// Issue #212 — Hashtag trending endpoints.
+app.use("/api/hashtags", generousLimiter, hashtagRoutes);
+
+// Issue #207 — Space recording & replay.
+// Nested under /api/spaces/:spaceId/recordings.
+app.use("/api/spaces/:spaceId/recordings", generousLimiter, spaceRecordingRoutes);
+
+// Issue #224 — Developer documentation portal at /docs.
+// No auth or rate-limiting so the docs are always accessible.
+app.use("/docs", docsRoutes);
+
+// Start the hourly trending-hashtag score job (Issue #212).
+startTrendingHashtagsJob();
 
 // ======================
 // ERROR HANDLING

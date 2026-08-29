@@ -18,6 +18,9 @@ import {
 } from "../controllers/userController.js";
 import { searchAll } from "../controllers/searchController.js";
 import { getUserBadgesController } from "../controllers/badge.controller.js";
+import completionRoutes, {
+  getUserCompletion,
+} from "./api/users/completion.js";
 import {
   cacheMiddleware,
   invalidateCacheMiddleware,
@@ -59,8 +62,14 @@ router.put(
   updateUser
 );
 
+// Profile completion routes (must be before /:id)
+router.use("/completion", completionRoutes);
+
 // Fetch user badges
 router.get("/:userId/badges", protect, getUserBadgesController);
+
+// Fetch user profile completion
+router.get("/:userId/completion", protect, getUserCompletion);
 
 // Get user by ID - cached for 10 minutes
 router.get(

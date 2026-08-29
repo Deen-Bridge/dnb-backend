@@ -1,7 +1,12 @@
+import mongoose from "mongoose";
 import Notification from "../models/Notification.js";
 import logger from "../config/logger.js";
 import User from "../models/User.js";
+import Course from "../models/Course.js";
 import { getRedisClient, isRedisReady } from "../config/redis.js";
+import { enqueue } from "../jobs/queue.js";
+import { recordAudit } from "../services/audit/auditService.js";
+import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 /**
  * SSE Connections Map
@@ -439,6 +444,88 @@ export const getNotificationSettings = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch notification settings",
+      error: error.message,
+    });
+  }
+};
+
+// Send bulk notification to all students enrolled in a course (Issue #123)
+export const sendBulkNotification = async (req, res) => {
+  try {
+    const { course_id, title, message, type } = req.body;
+
+    if (!course_id || !title || !message) {
+      return res.status(400).json({
+        success: false,
+        message: "course_id, title, and message are required",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(course_id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid course_id format",
+      });
+    }
+
+    const course = await Course.findById(course_id);
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found",
+      });
+    }
+
+    // Role check: Admin can notify any course; mentor must be the course creator
+    if (req.user.role !== "admin" && course.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You are not authorized to send notifications for this course",
+      });
+    }
+
+    const notificationType = type || "course_update";
+
+    const job = await enqueue(
+      "notifications.bulk",
+      {
+        courseId: course._id.toString(),
+        senderId: req.user._id.toString(),
+        title,
+        message,
+        type: notificationType,
+      },
+      {
+        attempts: 3,
+        backoffMs: 1000,
+      }
+    );
+
+    recordAudit({
+      action: AUDIT_ACTIONS.NOTIFICATION_BULK_SENT,
+      actor: req.user._id,
+      req,
+      targetType: "Course",
+      targetId: course._id.toString(),
+      status: "success",
+      metadata: {
+        courseId: course._id.toString(),
+        jobId: (job.id || job.idempotencyKey)?.toString(),
+        title,
+        type: notificationType,
+      },
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: "Bulk notification queued successfully",
+      jobId: job.id || job.idempotencyKey,
+    });
+  } catch (error) {
+    logger.error("Send bulk notification error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send bulk notification",
       error: error.message,
     });
   }

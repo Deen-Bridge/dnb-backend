@@ -68,6 +68,10 @@ tags:
     description: Signed Cloudinary upload parameters
   - name: Jobs
     description: Token protected background job dashboard
+  - name: Notifications
+    description: Real-time and bulk notifications
+  - name: Certificates
+    description: Verifiable course completion certificates
 security:
   - bearerAuth: []
 components:
@@ -160,9 +164,46 @@ components:
       description: Standard error shape produced by the central error handler
       properties:
         success: { type: boolean, examples: [false] }
-        message: { type: string }
-        data: { description: Null on error responses }
-        stack: { type: string, description: Present only outside production }
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              enum:
+                - VALIDATION_ERROR
+                - NOT_FOUND
+                - UNAUTHORIZED
+                - FORBIDDEN
+                - CONFLICT
+                - RATE_LIMITED
+                - PAYLOAD_TOO_LARGE
+                - REQUEST_TIMEOUT
+                - NETWORK_UNAVAILABLE
+                - PAYMENT_FAILED
+                - PAYMENT_REJECTED
+                - WALLET_MISMATCH
+                - WALLET_NOT_CONNECTED
+                - ITEM_NOT_FOUND
+                - ALREADY_PURCHASED
+                - INSUFFICIENT_BALANCE
+                - STALE_XDR
+                - INVALID_XDR
+                - SPONSORSHIP_REJECTED
+                - INTERNAL_ERROR
+                - DATABASE_ERROR
+                - EXTERNAL_SERVICE_ERROR
+            message: { type: string, description: Human-readable error message }
+            details:
+              type: array
+              description: Optional field-level validation errors
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+        stack: { type: string, description: Present only in development }
+        reqId: { type: string, description: Request correlation ID }
     SuccessResponse:
       type: object
       description: Standard success envelope. Some list handlers return a bare array instead.
@@ -672,6 +713,35 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/completion:
+    get:
+      tags: [Users]
+      summary: Get authenticated user's profile completion metrics and suggestions
+      description: Returns completion percentage, weighted field breakdown, and prioritized improvement suggestions.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/users/completion/criteria:
+    get:
+      tags: [Users]
+      summary: Get profile completion scoring criteria and levels
+      description: Public criteria definitions with field weights and progress tier ranges.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/users/completion/{id}:
+    get:
+      tags: [Users]
+      summary: Get profile completion for a specific user
+      description: Evaluates profile completion for the requested user ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/users/recommendations:
     get:
       tags: [Users]
@@ -1007,6 +1077,73 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/courses/{id}/certificate:
+    post:
+      tags: [Courses, Certificates]
+      summary: Generate verifiable course completion certificate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/certificates/{id}:
+    get:
+      tags: [Certificates]
+      summary: Public certificate verification
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/certificates/{id}/download:
+    get:
+      tags: [Certificates]
+      summary: Download PDF certificate
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: PDF binary stream
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/notifications/bulk:
+    post:
+      tags: [Notifications]
+      summary: Send bulk notification to course students (mentor/admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                course_id: { $ref: "#/components/schemas/ObjectId" }
+                title: { type: string }
+                message: { type: string }
+                type: { type: string, default: "course_update" }
+              required: [course_id, title, message]
+      responses:
+        "202": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/books:
     get:
       tags: [Books]
@@ -1064,6 +1201,38 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
       x-envelope-unverified: true
+  /api/books/recom:
+    get:
+      tags: [Books]
+      summary: Fetch recommended books by user interests or popular fallback
+      security: []
+      parameters:
+        - name: interests
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Books]
+      summary: Fetch recommended books by user interests payload
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interests:
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/books/bookmarks:
     get:
       tags: [Books]

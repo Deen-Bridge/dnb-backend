@@ -55,7 +55,7 @@ export const enqueue = async (name, payload, opts = {}) => {
       .then(() => executeInline(name, payload, options))
       .finally(() => inFlight.delete(promise));
     inFlight.add(promise);
-    return { queued: true, idempotencyKey: options.idempotencyKey };
+    return { queued: true, id: options.idempotencyKey, idempotencyKey: options.idempotencyKey };
   }
 
   const job = await Job.findOneAndUpdate(

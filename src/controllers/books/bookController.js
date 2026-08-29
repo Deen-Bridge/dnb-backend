@@ -222,17 +222,69 @@ export {
 // recommended books for user based on their profile interest
 export const fetchRecommendedBooks = async (req, res) => {
   try {
-    const { interests } = req.body || {};
-    const categories = Array.isArray(interests) ? interests : interests ? [interests] : [];
-    const filter = categories.length > 0 ? { category: { $in: categories } } : {};
-    const recommended = await Book.find(filter)
-      .select("_id title author category categoryRef price currency readCount rating numReviews description image createdAt")
-      .populate("author", "name avatar bio")
-      .limit(20)
+    const rawInterests = req.query?.interests ?? req.body?.interests;
+
+    let interests = [];
+    if (typeof rawInterests === "string") {
+      interests = rawInterests
+        .split(",")
+        .map((i) => i.trim())
+        .filter(Boolean);
+    } else if (Array.isArray(rawInterests)) {
+      interests = rawInterests
+        .filter((i) => typeof i === "string")
+        .map((i) => i.trim())
+        .filter(Boolean);
+    } else if (rawInterests !== undefined && rawInterests !== null) {
+      return res.status(400).json({
+        success: false,
+        message: "Interests must be an array of strings or comma-separated string",
+      });
+    }
+
+    const selectFields =
+      "_id title author category categoryRef price currency readCount rating numReviews description image createdAt updatedAt";
+    const hasInterests = interests.length > 0;
+
+    if (!hasInterests) {
+      const books = await Book.find()
+        .select(selectFields)
+        .populate("author", "name email avatar bio")
+        .sort({ readCount: -1 })
+        .limit(10)
+        .lean();
+
+      return res.status(200).json({
+        success: true,
+        recommended: books,
+        recommmended: books,
+        books,
+        message: "Popular books",
+      });
+    }
+
+    const recommended = await Book.find({
+      category: { $in: interests },
+    })
+      .select(selectFields)
+      .populate("author", "name email avatar bio")
+      .sort({ readCount: -1 })
+      .limit(10)
       .lean();
-    res.status(200).json({ success: true, recommended, recommmended: recommended });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+
+    return res.status(200).json({
+      success: true,
+      recommended,
+      recommmended: recommended,
+      books: recommended,
+      message: "Books recommended based on your interests",
+    });
+  } catch (error) {
+    logger.error("Error fetching recommended books:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Error fetching recommended books",
+    });
   }
 };
 
