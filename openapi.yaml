@@ -164,9 +164,46 @@ components:
       description: Standard error shape produced by the central error handler
       properties:
         success: { type: boolean, examples: [false] }
-        message: { type: string }
-        data: { description: Null on error responses }
-        stack: { type: string, description: Present only outside production }
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              enum:
+                - VALIDATION_ERROR
+                - NOT_FOUND
+                - UNAUTHORIZED
+                - FORBIDDEN
+                - CONFLICT
+                - RATE_LIMITED
+                - PAYLOAD_TOO_LARGE
+                - REQUEST_TIMEOUT
+                - NETWORK_UNAVAILABLE
+                - PAYMENT_FAILED
+                - PAYMENT_REJECTED
+                - WALLET_MISMATCH
+                - WALLET_NOT_CONNECTED
+                - ITEM_NOT_FOUND
+                - ALREADY_PURCHASED
+                - INSUFFICIENT_BALANCE
+                - STALE_XDR
+                - INVALID_XDR
+                - SPONSORSHIP_REJECTED
+                - INTERNAL_ERROR
+                - DATABASE_ERROR
+                - EXTERNAL_SERVICE_ERROR
+            message: { type: string, description: Human-readable error message }
+            details:
+              type: array
+              description: Optional field-level validation errors
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+        stack: { type: string, description: Present only in development }
+        reqId: { type: string, description: Request correlation ID }
     SuccessResponse:
       type: object
       description: Standard success envelope. Some list handlers return a bare array instead.
@@ -174,6 +211,29 @@ components:
         success: { type: boolean, examples: [true] }
         message: { type: string }
         data: { description: Payload, shape depends on the endpoint }
+    CursorPagination:
+      type: object
+      description: Cursor-based pagination metadata returned by search endpoints
+      properties:
+        total:
+          type: integer
+          description: Total number of matching documents across all pages
+        has_more:
+          type: boolean
+          description: Whether there are more results beyond the current page
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque cursor to pass as the `cursor` query parameter for the next page. Null when there are no more results.
+        page:
+          type: integer
+          description: Current page number (present only for offset-based fallback)
+        limit:
+          type: integer
+          description: Results per page (present only for offset-based fallback)
+        pages:
+          type: integer
+          description: Total number of pages (present only for offset-based fallback)
     StellarPublicKey:
       type: string
       pattern: "^G[A-Z0-9]{55}$"
@@ -672,6 +732,35 @@ paths:
           in: path
           required: true
           schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/completion:
+    get:
+      tags: [Users]
+      summary: Get authenticated user's profile completion metrics and suggestions
+      description: Returns completion percentage, weighted field breakdown, and prioritized improvement suggestions.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/users/completion/criteria:
+    get:
+      tags: [Users]
+      summary: Get profile completion scoring criteria and levels
+      description: Public criteria definitions with field weights and progress tier ranges.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/users/completion/{id}:
+    get:
+      tags: [Users]
+      summary: Get profile completion for a specific user
+      description: Evaluates profile completion for the requested user ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -1616,8 +1705,29 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: Opaque cursor from a previous response's `pagination.next_cursor` for cursor-based pagination
       responses:
-        "200": { $ref: "#/components/responses/Ok" }
+        "200":
+          description: Search results with cursor-based pagination
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, examples: [true] }
+                      results:
+                        type: object
+                        description: Search results keyed by entity type
+                      pagination:
+                        type: object
+                        description: Pagination metadata per entity type
+                        additionalProperties:
+                          $ref: "#/components/schemas/CursorPagination"
       x-envelope-unverified: true
   /api/search/educators:
     get:
@@ -1631,6 +1741,11 @@ paths:
           schema: { type: string }
         - { $ref: "#/components/parameters/Page" }
         - { $ref: "#/components/parameters/Limit" }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: Opaque cursor from a previous response's `pagination.next_cursor`
       responses:
         "200": { $ref: "#/components/responses/Ok" }
       x-envelope-unverified: true
