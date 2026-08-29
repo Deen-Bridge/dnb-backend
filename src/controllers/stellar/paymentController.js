@@ -47,6 +47,7 @@ import {
 import { recordAudit } from "../../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
 import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
+import { ERROR_CODES, buildErrorResponse } from "../../config/errorCodes.js";
 
 /**
  * Resolve the item, its creator, and the settlement destination wallet for a
@@ -126,42 +127,37 @@ export const getQuote = async (req, res) => {
     const { itemType, itemId, sendAssetCode, sendAssetIssuer } = req.body;
 
     if (!["book", "course"].includes(itemType)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid item type. Must be 'book' or 'course'",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Invalid item type. Must be 'book' or 'course'")
+      );
     }
 
     const Model = itemType === "book" ? Book : Course;
     const item = await Model.findById(itemId);
 
     if (!item) {
-      return res.status(404).json({
-        success: false,
-        message: `${itemType} not found`,
-      });
+      return res.status(404).json(
+        buildErrorResponse(ERROR_CODES.NOT_FOUND, `${itemType} not found`)
+      );
     }
 
     if (!item.price || item.price === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "This item is free, no quote needed",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "This item is free, no quote needed")
+      );
     }
 
     const itemAssetCode = resolveItemCurrency(item);
     if (itemAssetCode !== "USDC") {
-      return res.status(400).json({
-        success: false,
-        message: `Path payment quotes are only available for USDC-priced items. This item is priced in ${itemAssetCode}; pay directly in ${itemAssetCode} instead.`,
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, `Path payment quotes are only available for USDC-priced items. This item is priced in ${itemAssetCode}; pay directly in ${itemAssetCode} instead.`)
+      );
     }
 
     if (sendAssetCode && !sendAssetIssuer && sendAssetCode !== "XLM" && sendAssetCode !== "native") {
-      return res.status(400).json({
-        success: false,
-        message: "Non-native assets require an issuer. Omit sendAssetIssuer only for native XLM.",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Non-native assets require an issuer. Omit sendAssetIssuer only for native XLM.")
+      );
     }
 
     const sendAsset = sendAssetIssuer
@@ -172,10 +168,9 @@ export const getQuote = async (req, res) => {
     const paths = await findPaymentPaths(sendAsset, destAmount);
 
     if (!paths || paths.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No payment path found for the given asset",
-      });
+      return res.status(404).json(
+        buildErrorResponse(ERROR_CODES.NOT_FOUND, "No payment path found for the given asset")
+      );
     }
 
     const bestPath = paths[0];
@@ -223,16 +218,13 @@ export const getQuote = async (req, res) => {
       error.message?.includes("Invalid asset") ||
       error.message?.includes("bad asset")
     ) {
-      return res.status(400).json({
-        success: false,
-        message: "Unknown or invalid asset",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Unknown or invalid asset")
+      );
     }
-    res.status(500).json({
-      success: false,
-      message: "Failed to get quote",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
+    res.status(500).json(
+      buildErrorResponse(ERROR_CODES.INTERNAL_ERROR, "Failed to get quote")
+    );
   }
 };
 
@@ -315,12 +307,9 @@ export const getPaymentPreflight = async (req, res) => {
     });
   } catch (error) {
     logger.error("Payment preflight error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to run payment pre-flight checks",
-      error:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
+    res.status(500).json(
+      buildErrorResponse(ERROR_CODES.INTERNAL_ERROR, "Failed to run payment pre-flight checks")
+    );
   }
 };
 
@@ -338,35 +327,32 @@ export const initializePayment = async (req, res) => {
 
     if (!["book", "course"].includes(itemType)) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "Invalid item type. Must be 'book' or 'course'",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Invalid item type. Must be 'book' or 'course'")
+      );
     }
 
     const buyer = await User.findById(buyerId).session(session);
     if (!buyer?.stellarWallet?.publicKey) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "Please connect your Stellar wallet first",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.WALLET_NOT_CONNECTED, "Please connect your Stellar wallet first")
+      );
     }
 
     if (buyer.stellarWallet.publicKey !== buyerWallet) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "Wallet mismatch. Please reconnect your wallet.",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.WALLET_MISMATCH, "Wallet mismatch. Please reconnect your wallet.")
+      );
     }
 
     const resolved = await resolvePaymentDestination({ itemType, itemId, session });
     if (resolved.error) {
       await session.abortTransaction();
+      const code = resolved.error.status === 404 ? ERROR_CODES.ITEM_NOT_FOUND : ERROR_CODES.VALIDATION_ERROR;
       return res.status(resolved.error.status).json({
-        success: false,
-        message: resolved.error.message,
+        ...buildErrorResponse(code, resolved.error.message),
         ...(resolved.error.fallback && { fallback: resolved.error.fallback }),
       });
     }
@@ -375,19 +361,17 @@ export const initializePayment = async (req, res) => {
 
     if (!item.price || item.price === 0) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "This item is free, no payment required",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "This item is free, no payment required")
+      );
     }
 
     const itemAssetCode = resolveItemCurrency(item);
     if (!isAssetSupported(itemAssetCode)) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: `This item is priced in an unsupported asset (${itemAssetCode}). Supported: ${getSupportedCodes().join(", ")}`,
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, `This item is priced in an unsupported asset (${itemAssetCode}). Supported: ${getSupportedCodes().join(", ")}`)
+      );
     }
 
     const purchasedArray =
@@ -399,10 +383,9 @@ export const initializePayment = async (req, res) => {
 
     if (alreadyPurchased) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: `You already own this ${itemType}`,
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.ALREADY_PURCHASED, `You already own this ${itemType}`)
+      );
     }
 
     const existingTx = await Transaction.findOne({
@@ -623,12 +606,9 @@ export const initializePayment = async (req, res) => {
   } catch (error) {
     await session.abortTransaction();
     logger.error("Initialize payment error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to initialize payment",
-      error:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
+    res.status(500).json(
+      buildErrorResponse(ERROR_CODES.INTERNAL_ERROR, "Failed to initialize payment")
+    );
   } finally {
     session.endSession();
   }
@@ -648,10 +628,9 @@ export const submitPayment = async (req, res) => {
 
     if (!transactionId || !signedXdr) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "Transaction ID and signed XDR are required",
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Transaction ID and signed XDR are required")
+      );
     }
 
     // Derive the deterministic on-chain hash of the submitted transaction.
@@ -710,10 +689,9 @@ export const submitPayment = async (req, res) => {
 
     if (!transaction) {
       await session.abortTransaction();
-      return res.status(404).json({
-        success: false,
-        message: "Transaction not found or already processed",
-      });
+      return res.status(404).json(
+        buildErrorResponse(ERROR_CODES.NOT_FOUND, "Transaction not found or already processed")
+      );
     }
 
     // Build expected payments to validate XDR BEFORE submit
@@ -809,11 +787,9 @@ export const submitPayment = async (req, res) => {
           failureReason: `validation_failed: ${validationError.message}`,
         });
 
-        return res.status(400).json({
-          success: false,
-          message: "Signed transaction does not match expected payment details",
-          error: validationError.message,
-        });
+        return res.status(400).json(
+          buildErrorResponse(ERROR_CODES.INVALID_XDR, "Signed transaction does not match expected payment details")
+        );
       }
     }
 
@@ -848,11 +824,9 @@ export const submitPayment = async (req, res) => {
         failureReason: stellarError.message,
       });
 
-      return res.status(400).json({
-        success: false,
-        message: "Transaction failed on Stellar network",
-        error: stellarError.message,
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.PAYMENT_FAILED, "Transaction failed on Stellar network")
+      );
     }
 
     // Sponsored submits: the platform's fee-bump has landed, so account the
@@ -973,11 +947,9 @@ export const submitPayment = async (req, res) => {
         failureReason: `On-chain verification failed: ${verification.reason}`,
       });
 
-      return res.status(400).json({
-        success: false,
-        message: "Payment could not be verified on the Stellar network",
-        error: verification.reason,
-      });
+      return res.status(400).json(
+        buildErrorResponse(ERROR_CODES.PAYMENT_FAILED, "Payment could not be verified on the Stellar network")
+      );
     }
 
     transaction.stellarTxHash = settledHash;
@@ -1115,12 +1087,9 @@ export const submitPayment = async (req, res) => {
   } catch (error) {
     await session.abortTransaction();
     logger.error("Submit payment error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to process payment",
-      error:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
+    res.status(500).json(
+      buildErrorResponse(ERROR_CODES.INTERNAL_ERROR, "Failed to process payment")
+    );
   } finally {
     session.endSession();
   }
@@ -1189,10 +1158,9 @@ export const getTransaction = async (req, res) => {
       .populate("creator", "name avatar");
 
     if (!transaction) {
-      return res.status(404).json({
-        success: false,
-        message: "Transaction not found",
-      });
+      return res.status(404).json(
+        buildErrorResponse(ERROR_CODES.NOT_FOUND, "Transaction not found")
+      );
     }
 
     let stellarVerification = null;
@@ -1257,10 +1225,9 @@ export const cancelTransaction = async (req, res) => {
     );
 
     if (!transaction) {
-      return res.status(404).json({
-        success: false,
-        message: "Transaction not found or cannot be cancelled",
-      });
+      return res.status(404).json(
+        buildErrorResponse(ERROR_CODES.NOT_FOUND, "Transaction not found or cannot be cancelled")
+      );
     }
 
     logger.info(`Transaction ${transactionId} cancelled by user ${userId}`);
@@ -1299,10 +1266,9 @@ export const cancelTransaction = async (req, res) => {
     });
   } catch (error) {
     logger.error("Cancel transaction error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to cancel transaction",
-    });
+    res.status(500).json(
+      buildErrorResponse(ERROR_CODES.INTERNAL_ERROR, "Failed to cancel transaction")
+    );
   }
 };
 
@@ -1319,9 +1285,8 @@ export const sponsorshipStatus = async (req, res) => {
     res.status(200).json({ success: true, sponsorship: status });
   } catch (error) {
     logger.error("Sponsorship status error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch sponsorship status",
-    });
+    res.status(500).json(
+      buildErrorResponse(ERROR_CODES.INTERNAL_ERROR, "Failed to fetch sponsorship status")
+    );
   }
 };
