@@ -12,6 +12,8 @@ import {
   updateBookReview,
   deleteBookReview,
   streamBookPreview,
+  uploadBookAudio,
+  streamBookAudio,
 } from "../../controllers/books/bookController.js";
 import {
   toggleBookBookmark,
@@ -47,10 +49,24 @@ router.post(
   uploadBook.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "file", maxCount: 1 },
+    { name: "audio", maxCount: 1 },
   ]),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createBook
 );
+
+// Upload / replace the audiobook audio for an existing book (owner-only).
+router.put(
+  "/:id/audio",
+  protect,
+  uploadBook.single("audio"),
+  authorizeOwnership({ model: Book, ownerField: "author", resourceType: "Book" }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
+  uploadBookAudio
+);
+
+// Stream the audiobook audio (same access rules as the book preview).
+router.get("/:id/audio", protect, streamBookAudio);
 
 // getting all books - cached for 15 minutes
 router.get("/", cacheMiddleware(CACHE_TTL.BOOKS, booksListCacheKey), getBooks);
