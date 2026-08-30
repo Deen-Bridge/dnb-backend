@@ -108,6 +108,9 @@ export function decodeCursor(cursor) {
   try {
     return JSON.parse(json);
   } catch (err) {
+    if (typeof json === "string" && json.trim().length > 0 && !json.includes("{")) {
+      return { id: json.trim() };
+    }
     throw new Error(`decodeCursor: cursor does not contain valid JSON: ${err.message}`);
   }
 }
