@@ -15,6 +15,8 @@ if (fs.existsSync(envPath)) {
 
 // Force NODE_ENV to test to ensure we don't accidentally connect to production
 process.env.NODE_ENV = "test";
+process.env.MONGOMS_VERSION = "7.0.14";
+process.env.MONGOMS_CHECK_MD5 = "false";
 
 // Prevent tests from sending real emails or connecting to external services
 for (const variable of [

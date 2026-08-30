@@ -113,4 +113,9 @@ const courseSchema = new mongoose.Schema(
 
 courseSchema.index({ title: "text", description: "text", category: "text" }, { weights: { title: 5 } });
 courseSchema.index({ rating: -1 });
+courseSchema.index({ status: 1, createdAt: -1 });
+courseSchema.index({ createdBy: 1 });
+courseSchema.index({ categoryRef: 1, status: 1 });
+courseSchema.index({ enrolledUsers: 1 });
+
 export default mongoose.model("Course", courseSchema);

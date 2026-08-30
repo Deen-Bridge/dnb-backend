@@ -47,8 +47,9 @@ const connectDB = async () => {
   let retryCount = 0;
 
   const options = {
-    maxPoolSize: 10,
-    minPoolSize: 5,
+    maxPoolSize: parseInt(process.env.MAX_POOL_SIZE || "50", 10),
+    minPoolSize: parseInt(process.env.MIN_POOL_SIZE || "10", 10),
+    maxIdleTimeMS: 30000,
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000,
     family: 4,
