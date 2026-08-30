@@ -107,13 +107,14 @@ export const getCourses = async (req, res) => {
       "createdBy",
       "name email avatar"
     );
-    res.status(200).json({ success: true, courses });
+    res.status(200).json({ success: true, data: courses });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // 📘 Get a single course
+
 export const getCourseById = async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
@@ -130,7 +131,7 @@ export const getCourseById = async (req, res) => {
       logger.error("Failed to increment course view count:", err)
     );
 
-    res.status(200).json({ success: true, course });
+    res.status(200).json({ success: true, data: course });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -162,12 +163,8 @@ export const getCoursesByUser = async (req, res) => {
     logger.info("✅ Finding courses...");
     const courses = await Course.find({ createdBy }).populate("createdBy", "name avatar bio");
 
-    if (!courses || courses.length === 0) {
-      return res
-        .status(200)
-        .json({ success: false, message: "No courses found" });
-    }
-    res.status(200).json({ success: true, courses });
+    // An empty result set is a successful query, not a failure.
+    res.status(200).json({ success: true, data: courses || [] });
   } catch (error) {
     logger.error("❌ Unexpected Error in getCoursesByUser:", error);
     res.status(500).json({ success: false, message: error.message });
