@@ -92,7 +92,7 @@ export const createBook = async (req, res) => {
 // get all books in the store
 export const getBooks = async (req, res) => {
   const books = await Book.find().populate("author", "name avatar bio").populate("reviews.user", "name avatar");
-  res.json({ success: true, books });
+  res.status(200).json({ success: true, data: books });
 };
 
 // get a particular book
@@ -101,7 +101,7 @@ export const getBook = async (req, res) => {
     .populate("author", "name avatar bio")
     .populate("reviews.user", "name avatar");
   if (!book) return res.status(404).json({ success: false, message: "Book not found" });
-  res.json({ success: true, book });
+  res.status(200).json({ success: true, data: book });
 };
 
 // get books created by the author
@@ -114,12 +114,8 @@ export const getBooksByAuthor = async (req, res) => {
         .json({ success: false, message: "Missing author id" });
     }
     const books = await Book.find({ author: authorId }).populate("author", "name avatar bio");
-    if (!books || books.length === 0) {
-      return res
-        .status(200)
-        .json({ success: false, message: "No books found" });
-    }
-    res.status(200).json({ success: true, books });
+    // An empty result set is a successful query, not a failure.
+    res.status(200).json({ success: true, data: books || [] });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
