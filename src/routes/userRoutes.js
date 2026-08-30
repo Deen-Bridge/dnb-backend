@@ -21,6 +21,7 @@ import { getUserBadgesController } from "../controllers/badge.controller.js";
 import completionRoutes, {
   getUserCompletion,
 } from "./api/users/completion.js";
+import preferencesRoutes from "./api/users/preferences.js";
 import {
   cacheMiddleware,
   invalidateCacheMiddleware,
@@ -36,6 +37,10 @@ const followersCacheKey = (req) =>
   `${CACHE_KEYS.USER}${req.params.userId}:followers`;
 const followingCacheKey = (req) =>
   `${CACHE_KEYS.USER}${req.params.userId}:following`;
+
+// User preferences routes (must be before /:id)
+router.use("/me/preferences", preferencesRoutes);
+router.use("/preferences", preferencesRoutes);
 
 // Get personalized recommendations - cached for 10 minutes (must be before /:id)
 router.get(
