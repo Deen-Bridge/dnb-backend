@@ -138,8 +138,8 @@ describe("Course prerequisites enrollment gate", () => {
     const res = await request(app).get(`/api/courses/${advanced._id}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.course.prerequisites).toHaveLength(1);
-    expect(res.body.course.prerequisites[0].title).toBe("Intro to Fiqh");
+    expect(res.body.data.prerequisites).toHaveLength(1);
+    expect(res.body.data.prerequisites[0].title).toBe("Intro to Fiqh");
   });
 
   afterAll(async () => {

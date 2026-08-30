@@ -73,10 +73,26 @@ const bookSchema = new mongoose.Schema({
   },
   fileUrl: {
     type: String,
-    required: true,
   },
   filePublicId: {
     type: String,
+  },
+  // Audiobook support: URL + Cloudinary public id of the uploaded audio file
+  // (MP3/M4A), plus its duration in seconds. `duration` feeds the player's
+  // progress bar and lets the client derive a listening percentage from the
+  // tracked position. `fileUrl` is optional so a book can ship as audio-only.
+  audioFileUrl: {
+    type: String,
+    default: null,
+  },
+  audioFilePublicId: {
+    type: String,
+    default: null,
+  },
+  duration: {
+    type: Number,
+    default: 0,
+    min: 0,
   },
   createdAt: {
     type: Date,

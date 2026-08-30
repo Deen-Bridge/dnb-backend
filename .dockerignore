@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+coverage/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI/CD
+.github/
+.coderabbit.yaml
+
+# Docs (not needed in image)
+docs/
+*.md
+
+# Test files
+test/
+__tests__/
+*.test.js
+*.spec.js
+jest.config.js
+
+# Contracts (Rust/WASM builds not needed in Node image)
+contracts/
+target/
+
+# Misc
+.tmp/
+tmp/

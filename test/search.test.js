@@ -82,25 +82,25 @@ describe("Full-text search API", () => {
     const res = await request(app).get("/api/search?q=React");
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.results.courses).toBeDefined();
-    expect(res.body.results.books).toBeDefined();
+    expect(res.body.data.courses).toBeDefined();
+    expect(res.body.data.books).toBeDefined();
     // Check if courses returned match the query
-    expect(res.body.results.courses.length).toBeGreaterThan(0);
-    expect(res.body.results.courses[0].title).toContain("React");
+    expect(res.body.data.courses.length).toBeGreaterThan(0);
+    expect(res.body.data.courses[0].title).toContain("React");
   });
 
   it("should support pagination per type", async () => {
     const res = await request(app).get("/api/search?q=Node&limit=1");
     expect(res.statusCode).toBe(200);
-    expect(res.body.results.courses.length).toBeLessThanOrEqual(1);
+    expect(res.body.data.courses.length).toBeLessThanOrEqual(1);
     expect(res.body.pagination.courses.limit).toBe(1);
   });
 
   it("should filter by free", async () => {
     const res = await request(app).get("/api/search?type=courses&free=true");
     expect(res.statusCode).toBe(200);
-    expect(res.body.results.courses.length).toBe(1);
-    expect(res.body.results.courses[0].title).toBe("Cooking 101");
+    expect(res.body.data.courses.length).toBe(1);
+    expect(res.body.data.courses[0].title).toBe("Cooking 101");
   });
 
   it("rejects invalid minRating values", async () => {
@@ -117,9 +117,9 @@ describe("Full-text search API", () => {
     const res = await request(app).get("/api/search?minRating=4");
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.results.courses).toHaveLength(1);
-    expect(res.body.results.books).toHaveLength(1);
-    for (const item of [...res.body.results.courses, ...res.body.results.books]) {
+    expect(res.body.data.courses).toHaveLength(1);
+    expect(res.body.data.books).toHaveLength(1);
+    for (const item of [...res.body.data.courses, ...res.body.data.books]) {
       expect(item.rating).toBeGreaterThanOrEqual(4);
       expect(item.rating).toBeDefined();
       expect(item.numReviews).toBeDefined();
@@ -129,16 +129,16 @@ describe("Full-text search API", () => {
   it("should filter by category", async () => {
     const res = await request(app).get("/api/search?category=Cooking");
     expect(res.statusCode).toBe(200);
-    expect(res.body.results.courses.length).toBe(1);
-    expect(res.body.results.books.length).toBe(0);
+    expect(res.body.data.courses.length).toBe(1);
+    expect(res.body.data.books.length).toBe(0);
   });
 
   it("should support educator search with public fields only", async () => {
     const res = await request(app).get("/api/search/educators?interest=React");
     expect(res.statusCode).toBe(200);
-    expect(res.body.results.length).toBe(1);
-    expect(res.body.results[0].name).toBe("John Doe");
-    expect(res.body.results[0].email).toBeUndefined();
-    expect(res.body.results[0].password).toBeUndefined();
+    expect(res.body.data.length).toBe(1);
+    expect(res.body.data[0].name).toBe("John Doe");
+    expect(res.body.data[0].email).toBeUndefined();
+    expect(res.body.data[0].password).toBeUndefined();
   });
 });

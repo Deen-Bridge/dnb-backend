@@ -83,6 +83,10 @@ import { versionMiddleware } from "./src/middlewares/versionMiddleware.js";
 // Issue #224 — Developer documentation portal
 import docsRoutes from "./src/routes/docsRoutes.js";
 
+// Issue #246 — User journey tracking
+import userJourneyRoutes from "./src/routes/analytics/user-journey.js";
+import { trackPageVisit } from "./src/middlewares/analytics/journey-tracker.js";
+
 const app = express();
 
 app.set("trust proxy", 1);
@@ -189,6 +193,11 @@ app.use(hppMiddleware);
 app.use(sanitizeInput);
 app.use(rtlMiddleware);
 
+// Issue #246 — Capture page visits across the platform. Applied globally after
+// request parsing so every navigation (GET) is recorded for journey analysis;
+// fire-and-forget and GET-only, so it never blocks or mutates responses.
+app.use(trackPageVisit);
+
 // ======================
 // ROUTES
 // ======================
@@ -288,6 +297,9 @@ app.use("/api/spaces/:spaceId/recordings", generousLimiter, spaceRecordingRoutes
 // Issue #224 — Developer documentation portal at /docs.
 // No auth or rate-limiting so the docs are always accessible.
 app.use("/docs", docsRoutes);
+
+// Issue #246 — User journey analytics endpoints.
+app.use("/api/analytics/journey", generousLimiter, userJourneyRoutes);
 
 // Start the hourly trending-hashtag score job (Issue #212).
 startTrendingHashtagsJob();

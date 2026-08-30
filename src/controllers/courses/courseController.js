@@ -103,7 +103,6 @@ export const getCourses = async (req, res) => {
       if (!categoryDoc) return res.status(404).json({ success: false, message: "Category not found" });
       filter.categoryRef = categoryDoc._id;
     }
-
     const pageParam = req.query.page ? parseInt(req.query.page, 10) : null;
     const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : null;
     const isPaginated = pageParam !== null || limitParam !== null;
@@ -134,7 +133,7 @@ export const getCourses = async (req, res) => {
         limit,
         total,
         hasMore,
-        courses,
+        data: courses,
       });
     }
 
@@ -144,13 +143,14 @@ export const getCourses = async (req, res) => {
       .populate("createdBy", "name email avatar")
       .lean();
 
-    res.status(200).json({ success: true, courses });
+    res.status(200).json({ success: true, data: courses });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // 📘 Get a single course
+
 export const getCourseById = async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
@@ -168,7 +168,7 @@ export const getCourseById = async (req, res) => {
       logger.error("Failed to increment course view count:", err)
     );
 
-    res.status(200).json({ success: true, course });
+    res.status(200).json({ success: true, data: course });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -206,12 +206,8 @@ export const getCoursesByUser = async (req, res) => {
       .populate("createdBy", "name avatar bio")
       .lean();
 
-    if (!courses || courses.length === 0) {
-      return res
-        .status(200)
-        .json({ success: false, message: "No courses found" });
-    }
-    res.status(200).json({ success: true, courses });
+    // An empty result set is a successful query, not a failure.
+    res.status(200).json({ success: true, data: courses || [] });
   } catch (error) {
     logger.error("❌ Unexpected Error in getCoursesByUser:", error);
     res.status(500).json({ success: false, message: error.message });

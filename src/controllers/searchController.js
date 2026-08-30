@@ -4,7 +4,7 @@ import { ERROR_CODES, buildErrorResponse } from "../config/errorCodes.js";
 
 export const searchAll = async (req, res) => {
   try {
-    const { q, type = "all", page = 1, limit = 10, sort, minPrice, maxPrice, free, category, minRating, interest } = req.query;
+    const { q, type = "all", page = 1, limit = 20, sort, cursor, minPrice, maxPrice, free, category, minRating, interest } = req.query;
     
     if (q && q.trim().length > 100) {
       return res.status(400).json(buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Query string is too long."));
@@ -12,9 +12,9 @@ export const searchAll = async (req, res) => {
 
     const filters = { minPrice, maxPrice, free, category, minRating, interest };
     
-    const result = await searchCollections({ q: q ? q.trim() : "", type, page, limit, sort, filters });
+    const result = await searchCollections({ q: q ? q.trim() : "", type, page, limit, sort, cursor, filters });
     
-    res.json({ success: true, ...result });
+    res.status(200).json({ success: true, data: result.results, pagination: result.pagination });
   } catch (err) {
     logger.error("Search error:", err);
     const code = err.statusCode ? (err.statusCode === 404 ? ERROR_CODES.NOT_FOUND : ERROR_CODES.VALIDATION_ERROR) : ERROR_CODES.INTERNAL_ERROR;
@@ -26,15 +26,15 @@ export const searchAll = async (req, res) => {
 
 export const searchEducatorsHandler = async (req, res) => {
   try {
-    const { q, interest, page = 1, limit = 10 } = req.query;
+    const { q, interest, page = 1, limit = 20, cursor } = req.query;
     
     if (q && q.trim().length > 100) {
       return res.status(400).json(buildErrorResponse(ERROR_CODES.VALIDATION_ERROR, "Query string is too long."));
     }
     
-    const result = await searchEducators({ q: q ? q.trim() : "", interest, page, limit });
+    const result = await searchEducators({ q: q ? q.trim() : "", interest, page, limit, cursor });
     
-    res.json({ success: true, ...result });
+    res.status(200).json({ success: true, data: result.results, pagination: result.pagination });
   } catch (err) {
     logger.error("Search educators error:", err);
     res.status(500).json(buildErrorResponse(ERROR_CODES.INTERNAL_ERROR, "Server error"));

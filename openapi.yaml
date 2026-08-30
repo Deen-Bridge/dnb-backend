@@ -211,6 +211,29 @@ components:
         success: { type: boolean, examples: [true] }
         message: { type: string }
         data: { description: Payload, shape depends on the endpoint }
+    CursorPagination:
+      type: object
+      description: Cursor-based pagination metadata returned by search endpoints
+      properties:
+        total:
+          type: integer
+          description: Total number of matching documents across all pages
+        has_more:
+          type: boolean
+          description: Whether there are more results beyond the current page
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque cursor to pass as the `cursor` query parameter for the next page. Null when there are no more results.
+        page:
+          type: integer
+          description: Current page number (present only for offset-based fallback)
+        limit:
+          type: integer
+          description: Results per page (present only for offset-based fallback)
+        pages:
+          type: integer
+          description: Total number of pages (present only for offset-based fallback)
     StellarPublicKey:
       type: string
       pattern: "^G[A-Z0-9]{55}$"
@@ -1682,8 +1705,29 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: Opaque cursor from a previous response's `pagination.next_cursor` for cursor-based pagination
       responses:
-        "200": { $ref: "#/components/responses/Ok" }
+        "200":
+          description: Search results with cursor-based pagination
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, examples: [true] }
+                      results:
+                        type: object
+                        description: Search results keyed by entity type
+                      pagination:
+                        type: object
+                        description: Pagination metadata per entity type
+                        additionalProperties:
+                          $ref: "#/components/schemas/CursorPagination"
       x-envelope-unverified: true
   /api/search/educators:
     get:
@@ -1697,6 +1741,11 @@ paths:
           schema: { type: string }
         - { $ref: "#/components/parameters/Page" }
         - { $ref: "#/components/parameters/Limit" }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: Opaque cursor from a previous response's `pagination.next_cursor`
       responses:
         "200": { $ref: "#/components/responses/Ok" }
       x-envelope-unverified: true
