@@ -122,15 +122,66 @@ export const createBook = async (req, res) => {
 
 // get all books in the store
 export const getBooks = async (req, res) => {
-  const books = await Book.find().populate("author", "name avatar bio").populate("reviews.user", "name avatar");
-  res.status(200).json({ success: true, data: books });
+  try {
+    const filter = {};
+    if (req.query.category) {
+      filter.category = req.query.category;
+    }
+
+    const pageParam = req.query.page ? parseInt(req.query.page, 10) : null;
+    const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const isPaginated = pageParam !== null || limitParam !== null;
+
+    const selectFields =
+      "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
+
+    if (isPaginated) {
+      const page = Math.max(pageParam || 1, 1);
+      const limit = Math.min(Math.max(limitParam || 20, 1), 100);
+      const skip = (page - 1) * limit;
+
+      const [books, total] = await Promise.all([
+        Book.find(filter)
+          .select(selectFields)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate("author", "name avatar bio")
+          .populate("reviews.user", "name avatar")
+          .lean(),
+        Book.countDocuments(filter),
+      ]);
+
+      const hasMore = skip + books.length < total;
+      return res.status(200).json({
+        success: true,
+        page,
+        limit,
+        total,
+        hasMore,
+        data: books,
+      });
+    }
+
+    const books = await Book.find(filter)
+      .select(selectFields)
+      .sort({ createdAt: -1 })
+      .populate("author", "name avatar bio")
+      .populate("reviews.user", "name avatar")
+      .lean();
+
+    res.status(200).json({ success: true, data: books });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // get a particular book
 export const getBook = async (req, res) => {
   const book = await Book.findById(req.params.id)
     .populate("author", "name avatar bio")
-    .populate("reviews.user", "name avatar");
+    .populate("reviews.user", "name avatar")
+    .lean();
   if (!book) return res.status(404).json({ success: false, message: "Book not found" });
   res.status(200).json({ success: true, data: book });
 };
@@ -144,7 +195,13 @@ export const getBooksByAuthor = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing author id" });
     }
-    const books = await Book.find({ author: authorId }).populate("author", "name avatar bio");
+    const selectFields =
+      "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
+    const books = await Book.find({ author: authorId })
+      .select(selectFields)
+      .sort({ createdAt: -1 })
+      .populate("author", "name avatar bio")
+      .lean();
     // An empty result set is a successful query, not a failure.
     res.status(200).json({ success: true, data: books || [] });
   } catch (error) {
@@ -331,17 +388,22 @@ export const fetchRecommendedBooks = async (req, res) => {
       });
     }
 
+    const selectFields =
+      "_id title author category categoryRef price currency readCount rating numReviews description image createdAt updatedAt";
     const hasInterests = interests.length > 0;
 
     if (!hasInterests) {
       const books = await Book.find()
-        .populate("author", "name email avatar")
+        .select(selectFields)
+        .populate("author", "name email avatar bio")
         .sort({ readCount: -1 })
-        .limit(10);
+        .limit(10)
+        .lean();
 
       return res.status(200).json({
         success: true,
         recommended: books,
+        recommmended: books,
         books,
         message: "Popular books",
       });
@@ -350,13 +412,16 @@ export const fetchRecommendedBooks = async (req, res) => {
     const recommended = await Book.find({
       category: { $in: interests },
     })
-      .populate("author", "name email avatar")
+      .select(selectFields)
+      .populate("author", "name email avatar bio")
       .sort({ readCount: -1 })
-      .limit(10);
+      .limit(10)
+      .lean();
 
     return res.status(200).json({
       success: true,
       recommended,
+      recommmended: recommended,
       books: recommended,
       message: "Books recommended based on your interests",
     });

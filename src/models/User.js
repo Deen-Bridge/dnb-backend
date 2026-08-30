@@ -187,5 +187,7 @@ userSchema.index(
   { name: "text", bio: "text", interests: "text" },
   { language_override: "lang", default_language: "none" }
 );
+userSchema.index({ role: 1 });
+userSchema.index({ verifiedEducator: 1 });
 
 export default mongoose.model("User", userSchema);

@@ -106,6 +106,9 @@ const bookSchema = new mongoose.Schema({
 
 bookSchema.index({ title: "text", description: "text", category: "text" }, { weights: { title: 5 } });
 bookSchema.index({ rating: -1 });
+bookSchema.index({ author: 1 });
+bookSchema.index({ category: 1 });
+bookSchema.index({ createdAt: -1 });
 
 const Book = mongoose.model("Book", bookSchema);
 
