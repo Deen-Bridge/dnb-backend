@@ -2,21 +2,18 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import compression from "compression";
-import dotenv from "dotenv";
 import crypto from "crypto";
 import "./src/jobs/handlers.js";
 
-dotenv.config();
-
-import connectDB from "./src/config/db.js";
-import validateEnv from "./src/config/validateEnv.js";
 import logger from "./src/config/logger.js";
-import { registry, metricsMiddleware, observeHttpDuration } from "./src/config/metrics.js";
+import { metricsMiddleware, observeHttpDuration } from "./src/config/metrics.js";
 
 import {
   helmetMiddleware,
-  apiLimiter,
+  standardLimiter,
+  generousLimiter,
   authLimiter,
+  paymentLimiter,
   mongoSanitizeMiddleware,
   hppMiddleware,
   customSecurityHeaders,
@@ -25,8 +22,6 @@ import { sanitizeInput } from "./src/middlewares/validate.js";
 import {
   errorHandler,
   notFound,
-  handleUnhandledRejection,
-  handleUncaughtException,
 } from "./src/middlewares/errorHandler.js";
 
 import authRoutes from "./src/routes/authRoutes.js";
@@ -44,18 +39,23 @@ import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import stellarAnchorRoutes from "./src/routes/stellar/anchorRoutes.js";
+import stellarPledgeRoutes from "./src/routes/stellar/pledgeRoutes.js";
+import stellarGiftRoutes from "./src/routes/stellar/giftRoutes.js";
+import stellarReportsRoutes from "./src/routes/stellar/reportsRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
+import notificationRoutes from "./src/routes/notificationRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
+import internalAiRoutes from "./src/routes/internal/aiRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
-
-handleUncaughtException();
-validateEnv();
-
-// Connect to MongoDB (skip during tests as tests handle their own connections)
-if (process.env.NODE_ENV !== "test") {
-  connectDB();
-}
+import apiDocsRoutes from "./src/routes/api-docs.js";
+import auditRoutes from "./src/routes/admin/auditRoutes.js";
+import educatorRoutes from "./src/routes/educatorRoutes.js";
+import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
+import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
+import webhookRoutes from "./src/routes/webhookRoutes.js";
+import categoryRoutes from "./src/routes/categoryRoutes.js";
+import { healthCheck, ping } from "./src/controllers/healthController.js";
 
 const app = express();
 
@@ -135,7 +135,17 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-app.use(express.json({ limit: "10mb" }));
+// Capture the raw request bytes so the service-to-service auth middleware can
+// verify HMAC signatures over the exact body (see middlewares/serviceAuth.js).
+// This only stashes a Buffer reference and does not alter parsing behaviour.
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 app.use(compression());
@@ -156,20 +166,16 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "pong",
-    timestamp: new Date().toISOString(),
-  });
-});
+app.get("/ping", ping);
+app.get("/health", healthCheck);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter
 app.use("/.well-known", wellKnownRoutes);
 
-app.use("/api", apiLimiter);
+// Interactive API documentation (Swagger UI) — served from openapi.yaml
+app.use("/api-docs", apiDocsRoutes);
 
-// Auth routes
+// Auth routes — strict
 app.use("/api/auth", authLimiter, authRoutes);
 
 // Other API routes
@@ -189,7 +195,43 @@ app.use("/api/stellar/donation", stellarDonationRoutes);
 app.use("/api/stellar/anchor", stellarAnchorRoutes);
 app.use("/api/payouts", payoutRoutes);
 app.use("/api/uploads", uploadRoutes);
+// Mutation routes — standard limiter
+app.use("/api/email", standardLimiter, emailRoutes);
+app.use("/api/purchase", standardLimiter, purchaseRoutes);
+app.use("/api/uploads", standardLimiter, uploadRoutes);
+app.use("/api/payouts", standardLimiter, payoutRoutes);
+
+// Read-heavy & content routes — generous limiter
+app.use("/api/courses", generousLimiter, courseRoutes);
+app.use("/api/categories", generousLimiter, categoryRoutes);
+app.use("/api/reels", generousLimiter, reelsRoute);
+app.use("/api/books", generousLimiter, bookRoutes);
+app.use("/api/books", generousLimiter, recommendedBooksRoutes);
+app.use("/api/spaces", generousLimiter, spacesRoutes);
+app.use("/api/users", generousLimiter, userRoutes);
+app.use("/api/search", generousLimiter, searchRoutes);
+app.use("/api/calls", generousLimiter, callRoutes);
+app.use("/api/educators", generousLimiter, educatorRoutes);
+app.use("/api/educator-verification", standardLimiter, educatorVerificationRoutes);
+app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
+// Payment routes mutate money state — stricter per-user limiter (issue #4).
+app.use("/api/stellar/payment", paymentLimiter, stellarPaymentRoutes);
+app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
+app.use("/api/stellar/pledges", generousLimiter, stellarPledgeRoutes);
+app.use("/api/stellar/gifts", generousLimiter, stellarGiftRoutes);
+app.use("/api/stellar/reports", standardLimiter, stellarReportsRoutes);
+app.use("/api/notifications", generousLimiter, notificationRoutes);
+
+// Outbound webhook management API (admin-gated)
+app.use("/api/webhooks", standardLimiter, webhookRoutes);
+
+// Internal service-to-service (dnb-ai) — signed-request auth, no user JWTs
+app.use("/api/internal/ai", internalAiRoutes);
+
+// Admin — no rate limit
 app.use("/admin/jobs", jobsRoutes);
+app.use("/api/admin/audit", auditRoutes);
+app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
 
 // ======================
 // ERROR HANDLING
@@ -197,7 +239,6 @@ app.use("/admin/jobs", jobsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
-handleUnhandledRejection();
 
 logger.info("DeenBridge API initialized");
 logger.info(`Logging enabled - Level: ${logger.level}`);

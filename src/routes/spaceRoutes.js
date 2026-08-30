@@ -1,5 +1,7 @@
 import express from "express";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, requireVerifiedEducator } from "../middlewares/authMiddleware.js";
+import { authorizeOwnership } from "../middlewares/authorize.js";
+import Space from "../models/Space.js";
 import upload from "../middlewares/upload.js";
 import {
   cacheMiddleware,
@@ -50,8 +52,9 @@ router.get(
 router.post(
   "/",
   protect,
+  requireVerifiedEducator,
   upload.fields([{ name: "thumbnail", maxCount: 1 }]),
-  invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createSpace
 );
 
@@ -67,6 +70,7 @@ router.post(
 router.put(
   "/update/:id",
   protect,
+  authorizeOwnership({ model: Space, ownerField: "host", resourceType: "Space" }),
   invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`, `${CACHE_KEYS.SPACE}*`]),
   updateSpace
 );
@@ -75,7 +79,8 @@ router.put(
 router.delete(
   "/:id",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`, `${CACHE_KEYS.SPACE}*`]),
+  authorizeOwnership({ model: Space, ownerField: "host", resourceType: "Space" }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.SPACES}*`, `${CACHE_KEYS.SPACE}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   deleteSpace
 );
 

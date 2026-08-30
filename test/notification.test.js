@@ -19,6 +19,15 @@ describe("Notification System & Event Wiring", () => {
   let mongoServer;
 
   beforeAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_notification`, { serverSelectionTimeoutMS: 2000 });
+        return;
+      } catch (_err) {}
+    }
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
     await mongoose.connect(mongoUri);
@@ -54,13 +63,13 @@ describe("Notification System & Event Wiring", () => {
       const follower = await User.create({
         name: "Follower User",
         email: "follower@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       const followed = await User.create({
         name: "Followed User",
         email: "followed@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       await createFollowNotification(follower._id, followed._id);
@@ -76,13 +85,13 @@ describe("Notification System & Event Wiring", () => {
       const unfollower = await User.create({
         name: "Unfollower User",
         email: "unfollower@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       const unfollowed = await User.create({
         name: "Unfollowed User",
         email: "unfollowed@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       await createUnfollowNotification(unfollower._id, unfollowed._id);
@@ -98,18 +107,18 @@ describe("Notification System & Event Wiring", () => {
       const follower1 = await User.create({
         name: "Follower 1",
         email: "f1@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
       const follower2 = await User.create({
         name: "Follower 2",
         email: "f2@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       const creator = await User.create({
         name: "Course Creator",
         email: "creator@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         followers: [follower1._id, follower2._id],
       });
 
@@ -141,18 +150,18 @@ describe("Notification System & Event Wiring", () => {
       const follower1 = await User.create({
         name: "Book Reader 1",
         email: "r1@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
       const follower2 = await User.create({
         name: "Book Reader 2",
         email: "r2@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       const author = await User.create({
         name: "Book Author",
         email: "author@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
         followers: [follower1._id, follower2._id],
       });
 
@@ -190,13 +199,13 @@ describe("Notification System & Event Wiring", () => {
       const recipient = await User.create({
         name: "Recipient User",
         email: "recipient@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       const sender = await User.create({
         name: "Sender User",
         email: "sender@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       // Insert 120 notifications for recipient
@@ -252,7 +261,7 @@ describe("Notification System & Event Wiring", () => {
       const user = await User.create({
         name: "SSE User",
         email: "sse@example.com",
-        password: "password123",
+        password: "Qx7#vLmp92Zt",
       });
 
       const writeHeadMock = jest.fn();

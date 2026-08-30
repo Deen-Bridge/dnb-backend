@@ -1,29 +1,62 @@
 // controllers/authController.js
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import User from "../models/User.js";
+import PendingUser from "../models/PendingUser.js";
 import Session from "../models/Session.js";
-import sendMail from "../../services/emails/sendMail.js";
-import { generatedOtp } from "../routes/emailRoutes.js";
+import { sendOtpEmail, sendVerificationEmail } from "../../services/emails/sendMail.js";
 import logger from "../config/logger.js";
 import { enqueue } from "../jobs/queue.js";
+import { recordAudit } from "../services/audit/auditService.js";
+import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 import { generateOtp, hashOtp, verifyOtp } from "../utils/otp.js";
+import { firstPasswordIssue } from "../utils/passwordPolicy.js";
+import { isPasswordBreached } from "../utils/hibp.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
+import qrcode from "qrcode";
+import {
+  encryptSecret,
+  decryptSecret,
+  generateRecoveryCodes,
+  verifyAndConsumeRecoveryCode,
+  generateBase32Secret,
+  verifyTOTPCode,
+  generateOtpauthUrl,
+} from "../utils/twoFactorCrypto.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
+// Runtime bootstrap validates this before serving traffic. Resolving it when a
+// token operation occurs keeps importing the Express app free of process-wide
+// configuration side effects for unit and integration tests.
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET is required to sign or verify auth tokens");
+  }
+  return secret;
+};
 
-// Log JWT configuration on startup and warn if using fallback
-if (!process.env.JWT_SECRET) {
-  logger.warn(
-    "⚠️ WARNING: JWT_SECRET not found in .env! Using fallback (INSECURE for production)"
+// ── Progressive login lockout (issue #89) ───────────────────────────────────
+// After LOGIN_MAX_FAILED_ATTEMPTS consecutive failures, the account is locked
+// for an escalating duration. Each new failure while unlocked (re)extends the
+// lock with exponential backoff, capped at LOGIN_LOCKOUT_MAX_MS.
+const LOGIN_MAX_FAILED_ATTEMPTS =
+  parseInt(process.env.LOGIN_MAX_ATTEMPTS, 10) || 5;
+const LOGIN_LOCKOUT_BASE_MS =
+  parseInt(process.env.LOGIN_LOCKOUT_BASE_MS, 10) || 60 * 1000; // 1 min
+const LOGIN_LOCKOUT_MAX_MS =
+  parseInt(process.env.LOGIN_LOCKOUT_MAX_MS, 10) || 24 * 60 * 60 * 1000; // 24 h
+const LOGIN_LOCKOUT_MULTIPLIER = 2;
+
+/** Escalating backoff: base * 2^(failures - threshold), capped at the max. */
+const lockoutDurationMs = (failedAttempts) =>
+  Math.min(
+    LOGIN_LOCKOUT_MAX_MS,
+    LOGIN_LOCKOUT_BASE_MS *
+      LOGIN_LOCKOUT_MULTIPLIER **
+        Math.max(0, failedAttempts - LOGIN_MAX_FAILED_ATTEMPTS)
   );
-} else {
-  logger.info(
-    `✅ JWT_SECRET loaded from .env (length: ${process.env.JWT_SECRET.length})`
-  );
-}
 
 // Helper: parse duration string to ms (e.g. 15m, 30d)
 export const parseDurationToMs = (duration) => {
@@ -60,8 +93,26 @@ const getDeviceLabel = (userAgent) => {
   return `${browser} on ${os}`;
 };
 
+// Helper: shape the public user object returned by every auth response.
+// Kept in one place so email login, register, and Stellar login stay identical.
+export const shapeAuthUser = (user) => ({
+  id: user._id,
+  name: user.name,
+  role: user.role,
+  email: user.email,
+  avatar: user.avatar,
+  gender: user.gender,
+  age: user.age,
+  country: user.country,
+  language: user.language,
+  interests: user.interests,
+  bio: user.bio,
+  isVerified: user.isVerified,
+});
+
 // Helper: generate new session + refresh token + cookie + access token
-const createSessionAndTokens = async (user, req, res) => {
+export const createSessionAndTokens = async (user, req, res, options = {}) => {
+  const is2FAVerified = options.is2FAVerified === true;
   const rawRefreshToken = crypto.randomBytes(32).toString("hex");
   const refreshTokenHash = crypto.createHash("sha256").update(rawRefreshToken).digest("hex");
   
@@ -80,12 +131,13 @@ const createSessionAndTokens = async (user, req, res) => {
       label: getDeviceLabel(req.headers["user-agent"]),
     },
     expiresAt,
+    is2FAVerified,
   });
 
   const accessTokenTtl = process.env.ACCESS_TOKEN_TTL || "15m";
   const accessToken = jwt.sign(
-    { userId: user._id, role: user.role, sessionId: session._id },
-    JWT_SECRET,
+    { userId: user._id, role: user.role, sessionId: session._id, is2FAVerified },
+    getJwtSecret(),
     { expiresIn: accessTokenTtl }
   );
 
@@ -107,51 +159,239 @@ export const registerUser = catchAsync(async (req, res, next) => {
 
   logger.info(`📝 Registration attempt for: ${email}`);
 
+  // Enforce the password policy before anything else touches it. The client
+  // shows the same rules live, but that check is bypassable.
+  const passwordIssue = firstPasswordIssue(password, { name, email });
+  if (passwordIssue) {
+    logger.warn(`❌ Registration failed - weak password: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "weak_password" },
+    });
+    return next(new APIError(passwordIssue, 400));
+  }
+
+  // Reject passwords that appear in real-world breach dumps (HIBP range API,
+  // SHA-1 prefix only — the password is never transmitted). Fails open on a
+  // HIBP outage so signups don't break.
+  const breached = await isPasswordBreached(password);
+  if (breached) {
+    logger.warn(`❌ Registration failed - breached password: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "breached_password" },
+    });
+    return next(
+      new APIError(
+        "This password has appeared in a known data breach. Please choose a different one.",
+        400
+      )
+    );
+  }
+
   // Check if user already exists
   const existing = await User.findOne({ email });
   if (existing) {
     logger.warn(`❌ Registration failed - Email already exists: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "email_already_exists" },
+    });
     return next(new APIError("Email already exists", 400));
   }
 
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 12);
 
-  // Prevent self-assignment of privileged roles (admin, arbiter)
-  const allowedSelfRegistrationRoles = ["student", "tutor", "mentor"];
-  const assignedRole = allowedSelfRegistrationRoles.includes(role) ? role : "student";
+  // Users can only self-register as student or mentor. Privileged roles
+  // (admin) can never be self-assigned — they are granted only to accounts
+  // whose email is on the ADMIN_EMAILS whitelist.
+  const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
 
-  // Create user
-  const user = await User.create({
-    name,
-    email,
-    password: hashedPassword,
-    role: assignedRole,
-  });
+  const allowedSelfRegistrationRoles = ["student", "mentor"];
+  let assignedRole = allowedSelfRegistrationRoles.includes(role) ? role : "student";
 
-  await enqueue(
-    "sendOtpEmail",
-    { userId: user._id.toString(), otp: generatedOtp },
-    { attempts: 5, backoffMs: 1000, idempotencyKey: `otp:${user._id}:${generatedOtp}` }
+  if (ADMIN_EMAILS.includes(email.toLowerCase())) {
+    assignedRole = "admin";
+    logger.info(`👑 Whitelisted admin account registering: ${email}`);
+  } else if (!allowedSelfRegistrationRoles.includes(role)) {
+    logger.warn(
+      `⛔ Blocked invalid role attempt: ${email} tried to register as "${role}"`
+    );
+    assignedRole = "student";
+  }
+
+  // Generate verification token
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+
+  // Store pending user (auto-deletes after 24h via TTL index)
+  const pendingUser = await PendingUser.findOneAndUpdate(
+    { email },
+    {
+      name,
+      email,
+      password: hashedPassword,
+      role: assignedRole,
+      verificationToken,
+    },
+    { upsert: true, new: true },
   );
 
-  logger.info(`✅ User registered successfully: ${email} (ID: ${user._id})`);
+  try {
+    await sendVerificationEmail(email, verificationToken);
+  } catch (err) {
+    // Email delivery failed (e.g. provider outage / disconnected sender).
+    // Roll back the pending record so the user can retry cleanly, and return a
+    // clear 503 rather than a generic 500 "Programming Error".
+    await PendingUser.deleteOne({ _id: pendingUser._id }).catch(() => {});
+    logger.error(`Verification email delivery failed for ${email}: ${err.message}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_REGISTER_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "verification_email_failed" },
+    });
+    return next(
+      new APIError(
+        "We couldn't send your verification email right now. Please try again in a few minutes.",
+        503
+      )
+    );
+  }
 
-  // Generate session and tokens
-  const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_REGISTER_SUCCESS,
+    actor:      pendingUser._id,
+    req,
+    targetType: "User",
+    targetId:   pendingUser._id.toString(),
+    status:     "success",
+    metadata:   { email, assignedRole, name },
+  });
 
   res.status(201).json({
     success: true,
-    message: "User created successfully",
+    message:
+      "Please check your email to verify your account. The link expires in 24 hours.",
+  });
+});
+
+export const verifyEmail = catchAsync(async (req, res, next) => {
+  const { token } = req.params;
+
+  if (!token) {
+    return next(new APIError("Verification token is required", 400));
+  }
+
+  // Find the pending user by token
+  const pending = await PendingUser.findOne({ verificationToken: token });
+
+  if (!pending) {
+    return next(new APIError("Invalid or expired verification token. Please register again.", 400));
+  }
+
+  // Check for duplicate (e.g., if another registration happened in the meantime)
+  const existing = await User.findOne({ email: pending.email });
+  if (existing) {
+    await PendingUser.deleteOne({ _id: pending._id });
+    return next(new APIError("This email is already registered. Please log in.", 400));
+  }
+
+  // Create the real user
+  const user = await User.create({
+    name: pending.name,
+    email: pending.email,
+    password: pending.password,
+    role: pending.role,
+    isVerified: true,
+  });
+
+  // Remove the pending record
+  await PendingUser.deleteOne({ _id: pending._id });
+
+  // Generate session and tokens so user is logged in immediately
+  const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
+
+  logger.info(`✅ Email verified & user created: ${user.email} (ID: ${user._id})`);
+
+  res.status(200).json({
+    success: true,
+    message: "Email verified successfully. Welcome to DeenBridge!",
     accessToken,
     refreshToken,
-    token: accessToken, // legacy token field
+    token: accessToken,
     user: {
       id: user._id,
       name: user.name,
       role: user.role,
       email: user.email,
+      isVerified: true,
     },
+  });
+});
+
+export const resendVerification = catchAsync(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return next(new APIError("Email is required", 400));
+  }
+
+  const pending = await PendingUser.findOne({ email });
+
+  if (!pending) {
+    // Check if user is already fully registered
+    const user = await User.findOne({ email });
+    if (user) {
+      return next(new APIError("This email is already verified. Please log in.", 400));
+    }
+    return next(new APIError("No pending registration found with this email. Please register first.", 404));
+  }
+
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+  pending.verificationToken = verificationToken;
+  await pending.save();
+
+  try {
+    await sendVerificationEmail(email, verificationToken);
+  } catch (err) {
+    // Provider outage / disconnected sender — return a clear 503 so the client
+    // can prompt a retry instead of surfacing a generic 500.
+    logger.error(`Verification email resend failed for ${email}: ${err.message}`);
+    return next(
+      new APIError(
+        "We couldn't resend your verification email right now. Please try again in a few minutes.",
+        503
+      )
+    );
+  }
+
+  logger.info(`📧 Verification email resent to: ${email}`);
+
+  res.status(200).json({
+    success: true,
+    message: "Verification email sent. Please check your inbox.",
   });
 });
 
@@ -169,24 +409,153 @@ export const loginUser = catchAsync(async (req, res, next) => {
   const user = await User.findOne({ email }).select("+password");
   if (!user) {
     logger.warn(`❌ Login failed - User not found: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_LOGIN_FAILURE,
+      actor:      null,
+      req,
+      targetType: "User",
+      targetId:   email,
+      status:     "failure",
+      metadata:   { email, reason: "user_not_found" },
+    });
+    return next(new APIError("Invalid credentials", 401));
+  }
+
+  // Per-account lockout: reject BEFORE running bcrypt while the account is
+  // locked. Respond with the SAME generic "Invalid credentials" used for a
+  // nonexistent account so a locked account is indistinguishable from one that
+  // does not exist (no enumeration). The lock itself is recorded in the audit
+  // log for operators.
+  const isLocked = user.lockUntil && new Date(user.lockUntil) > new Date();
+  if (isLocked) {
+    logger.warn(`🔒 Login blocked - account locked: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_ACCOUNT_LOCKED,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "failure",
+      metadata:   { email, reason: "account_locked" },
+    });
     return next(new APIError("Invalid credentials", 401));
   }
 
   // Verify password
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
+    // Atomic increment — the DB is the single source of truth for the counter,
+    // so concurrent login attempts cannot race a read-then-write snapshot.
+    const updated = await User.findByIdAndUpdate(
+      user._id,
+      { $inc: { failedLoginAttempts: 1 } },
+      { new: true }
+    );
+    const failedAttempts = updated?.failedLoginAttempts ?? 1;
+    user.failedLoginAttempts = failedAttempts;
+
+    if (failedAttempts >= LOGIN_MAX_FAILED_ATTEMPTS) {
+      const lockUntil = new Date(
+        Date.now() + lockoutDurationMs(failedAttempts)
+      );
+      await User.updateOne(
+        { _id: user._id },
+        { $set: { lockUntil } }
+      );
+      user.lockUntil = lockUntil;
+      logger.warn(
+        `🔒 Account locked after ${failedAttempts} failed attempts: ${email}`
+      );
+      recordAudit({
+        action:     AUDIT_ACTIONS.AUTH_ACCOUNT_LOCKED,
+        actor:      user._id,
+        req,
+        targetType: "User",
+        targetId:   user._id.toString(),
+        status:     "failure",
+        metadata:   { email, reason: "account_locked" },
+      });
+    }
+
     logger.warn(`❌ Login failed - Incorrect password: ${email}`);
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_LOGIN_FAILURE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "failure",
+      metadata:   { email, reason: "invalid_password" },
+    });
     return next(new APIError("Invalid credentials", 401));
   }
 
-  // Update last login
+  // Auto-promote whitelisted admin emails (self-healing for existing accounts, only if 2FA is enabled)
+  const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (ADMIN_EMAILS.includes(user.email.toLowerCase()) && user.role !== "admin") {
+    if (user.twoFactor?.enabled) {
+      user.role = "admin";
+      await user.save({ validateBeforeSave: false });
+      logger.info(`👑 Promoted ${user.email} to admin (whitelisted account with 2FA)`);
+    } else {
+      logger.warn(`⚠️ Whitelisted admin account ${user.email} not promoted because 2FA is not enabled`);
+    }
+  }
+
+  // If 2FA is enabled for this user, issue a short-lived MFA challenge token instead of session tokens
+  if (user.twoFactor?.enabled) {
+    const mfaToken = jwt.sign(
+      { userId: user._id, type: "mfa_challenge" },
+      getJwtSecret(),
+      { expiresIn: "5m" }
+    );
+
+    logger.info(`🔐 2FA step-up challenge issued for: ${email}`);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_2FA_LOGIN_CHALLENGE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "success",
+      metadata:   { email, mfaRequired: true },
+    });
+
+    return res.status(200).json({
+      success: true,
+      mfaRequired: true,
+      mfaToken,
+      message: "Two-factor authentication required",
+    });
+  }
+
+  // Update last login and clear any lockout state (success is the reset).
   user.lastLogin = new Date();
+  if (user.failedLoginAttempts || user.lockUntil) {
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+  }
   await user.save({ validateBeforeSave: false });
 
-  // Generate session and tokens
+  // Generate session and tokens (for users without 2FA)
   const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res);
 
   logger.info(`✅ Login successful: ${email} (ID: ${user._id})`);
+
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_LOGIN_SUCCESS,
+    actor:      user._id,
+    req,
+    targetType: "User",
+    targetId:   user._id.toString(),
+    status:     "success",
+    metadata:   { email, role: user.role },
+  });
 
   res.status(200).json({
     success: true,
@@ -206,6 +575,7 @@ export const loginUser = catchAsync(async (req, res, next) => {
       language: user.language,
       interests: user.interests,
       bio: user.bio,
+      isVerified: user.isVerified,
     },
   });
 });
@@ -243,13 +613,23 @@ export const requestPasswordReset = async (req, res) => {
 
     // Send OTP via email with error handling to preserve anti-enumeration and clear orphaned tokens
     try {
-      await sendMail(otp, email);
+      await sendOtpEmail(otp, email);
     } catch (mailErr) {
       logger.error("❌ Password reset email delivery error:", mailErr.message);
       user.resetTokenHash = undefined;
       user.resetTokenExpiry = undefined;
       await user.save();
     }
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_PASSWORD_RESET_REQUEST,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "success",
+      metadata:   { email },
+    });
 
     res.status(200).json({
       success: true,
@@ -273,6 +653,13 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email, OTP, and new password are required" });
     }
 
+    // Same policy as registration — a reset must not be a way around it.
+    const newPasswordIssue = firstPasswordIssue(newPassword, { email });
+    if (newPasswordIssue) {
+      logger.warn(`❌ Password reset failed - weak password: ${email}`);
+      return res.status(400).json({ success: false, message: newPasswordIssue });
+    }
+
     const user = await User.findOne({ email }).select("+password");
 
     if (!user) {
@@ -293,6 +680,19 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
     }
 
+    // A reset must not be a way around a breached-password rejection either.
+    // Run only AFTER the caller proves account ownership via the OTP, so an
+    // unauthenticated attacker cannot trigger HIBP lookups for arbitrary emails.
+    const breached = await isPasswordBreached(newPassword);
+    if (breached) {
+      logger.warn(`❌ Password reset failed - breached password: ${email}`);
+      return res.status(400).json({
+        success: false,
+        message:
+          "This password has appeared in a known data breach. Please choose a different one.",
+      });
+    }
+
     // Hash new password using cost factor 12 (aligned with registerUser)
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     user.password = hashedPassword;
@@ -303,6 +703,17 @@ export const resetPassword = async (req, res) => {
     await user.save();
 
     logger.info("✅ Password reset successful for:", email);
+
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_PASSWORD_RESET_COMPLETE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "success",
+      metadata:   { email },
+    });
+
     res.status(200).json({
       success: true,
       message:
@@ -345,6 +756,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
   }
 
   // Perform rotation
+  const is2FAVerified = session.is2FAVerified === true;
   const newRawToken = crypto.randomBytes(32).toString("hex");
   const newHash = crypto.createHash("sha256").update(newRawToken).digest("hex");
   
@@ -362,6 +774,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
       label: getDeviceLabel(req.headers["user-agent"]),
     },
     expiresAt: newExpiresAt,
+    is2FAVerified,
   });
 
   session.revokedAt = new Date();
@@ -371,8 +784,8 @@ export const refreshSession = catchAsync(async (req, res, next) => {
 
   const accessTokenTtl = process.env.ACCESS_TOKEN_TTL || "15m";
   const accessToken = jwt.sign(
-    { userId: session.user._id, role: session.user.role, sessionId: newSession._id },
-    JWT_SECRET,
+    { userId: session.user._id, role: session.user.role, sessionId: newSession._id, is2FAVerified },
+    getJwtSecret(),
     { expiresIn: accessTokenTtl }
   );
 
@@ -402,6 +815,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
       language: session.user.language,
       interests: session.user.interests,
       bio: session.user.bio,
+      isVerified: session.user.isVerified,
     },
   });
 });
@@ -484,6 +898,16 @@ export const logoutUser = catchAsync(async (req, res, next) => {
     );
   }
 
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_LOGOUT,
+    actor:      req.user?._id ?? null,
+    req,
+    targetType: "User",
+    targetId:   req.user?._id?.toString() ?? null,
+    status:     "success",
+    metadata:   null,
+  });
+
   const isProd = process.env.NODE_ENV === "production";
   res.clearCookie("refreshToken", {
     httpOnly: true,
@@ -495,5 +919,350 @@ export const logoutUser = catchAsync(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: "Logged out successfully",
+  });
+});
+
+// Change password for an authenticated user. Verifies the current password,
+// enforces the password policy on the new one, and signs out all OTHER sessions.
+export const changePassword = catchAsync(async (req, res, next) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return next(new APIError("Current and new password are required", 400));
+  }
+
+  const passwordIssue = firstPasswordIssue(newPassword, {
+    name: req.user?.name,
+    email: req.user?.email,
+  });
+  if (passwordIssue) {
+    return next(new APIError(passwordIssue, 400));
+  }
+
+  const user = await User.findById(req.user._id).select("+password");
+  if (!user || !user.password) {
+    return next(new APIError("User not found", 404));
+  }
+
+  const isCurrentCorrect = await bcrypt.compare(currentPassword, user.password);
+  if (!isCurrentCorrect) {
+    recordAudit({
+      action:     AUDIT_ACTIONS.AUTH_PASSWORD_CHANGE,
+      actor:      user._id,
+      req,
+      targetType: "User",
+      targetId:   user._id.toString(),
+      status:     "failure",
+      metadata:   { reason: "invalid_current_password" },
+    });
+    return next(new APIError("Current password is incorrect", 401));
+  }
+
+  const isSameAsOld = await bcrypt.compare(newPassword, user.password);
+  if (isSameAsOld) {
+    return next(
+      new APIError("New password must be different from the current one", 400)
+    );
+  }
+
+  user.password = await bcrypt.hash(newPassword, 12);
+  await user.save();
+
+  // Sign out every OTHER session so a password change kicks other devices.
+  await Session.deleteMany({ user: user._id, _id: { $ne: req.sessionId } });
+
+  recordAudit({
+    action:     AUDIT_ACTIONS.AUTH_PASSWORD_CHANGE,
+    actor:      user._id,
+    req,
+    targetType: "User",
+    targetId:   user._id.toString(),
+    status:     "success",
+    metadata:   {},
+  });
+
+  res.status(200).json({
+    success: true,
+    message:
+      "Password changed successfully. Other devices have been signed out.",
+  });
+});
+
+// ── TOTP 2FA Controllers ───────────────────────────────────────────────────
+
+/**
+ * Enrollment endpoint (POST /api/auth/2fa/setup, protect)
+ * Generates secret, stores encrypted pendingSecret, returns otpauth URI & QR code.
+ */
+export const setup2FA = catchAsync(async (req, res, next) => {
+  const user = await User.findById(req.user._id).select("+twoFactor.secret +twoFactor.pendingSecret");
+  if (!user) {
+    return next(new APIError("User not found", 404));
+  }
+
+  if (user.twoFactor?.enabled) {
+    return next(new APIError("Two-factor authentication is already enabled", 400));
+  }
+
+  const secret = generateBase32Secret();
+  const encryptedSecret = encryptSecret(secret);
+
+  if (!user.twoFactor) {
+    user.twoFactor = {};
+  }
+  user.twoFactor.pendingSecret = encryptedSecret;
+  await user.save({ validateBeforeSave: false });
+
+  const otpauthUrl = generateOtpauthUrl(user.email, secret);
+  const qrCode = await qrcode.toDataURL(otpauthUrl);
+
+  recordAudit({
+    action: AUDIT_ACTIONS.AUTH_2FA_SETUP_INITIATED,
+    actor: user._id,
+    req,
+    targetType: "User",
+    targetId: user._id.toString(),
+    status: "success",
+    metadata: { email: user.email },
+  });
+
+  res.status(200).json({
+    success: true,
+    secret,
+    otpauthUrl,
+    qrCode,
+    message: "2FA setup initiated. Scan QR code or enter secret into your authenticator app, then confirm with a 2FA code.",
+  });
+});
+
+/**
+ * Confirm/Verify endpoint (POST /api/auth/2fa/verify)
+ * Supports:
+ *  1. Setup confirmation (with protect authorization header & code)
+ *  2. Login step-up completion (with mfaToken & code / recoveryCode)
+ */
+export const verify2FA = catchAsync(async (req, res, next) => {
+  const { code, recoveryCode, mfaToken } = req.body;
+
+  // Branch A: Login step-up verification
+  if (mfaToken) {
+    let decoded;
+    try {
+      decoded = jwt.verify(mfaToken, getJwtSecret());
+    } catch (err) {
+      return next(new APIError("Invalid or expired 2FA challenge token", 401));
+    }
+
+    if (decoded.type !== "mfa_challenge" || !decoded.userId) {
+      return next(new APIError("Invalid 2FA challenge token", 401));
+    }
+
+    const user = await User.findById(decoded.userId).select("+twoFactor.secret +twoFactor.recoveryCodes");
+    if (!user || !user.twoFactor?.enabled) {
+      return next(new APIError("Two-factor authentication is not enabled for this user", 400));
+    }
+
+    let isValid = false;
+    let isRecovery = false;
+
+    if (code) {
+      const decryptedSecret = decryptSecret(user.twoFactor.secret);
+      isValid = verifyTOTPCode(code.toString(), decryptedSecret);
+    }
+
+    if (!isValid && recoveryCode) {
+      isValid = await verifyAndConsumeRecoveryCode(user, recoveryCode);
+      if (isValid) isRecovery = true;
+    }
+
+    // Fallback: if recovery code was passed in the code field
+    if (!isValid && code && !recoveryCode) {
+      isValid = await verifyAndConsumeRecoveryCode(user, code);
+      if (isValid) isRecovery = true;
+    }
+
+    if (!isValid) {
+      recordAudit({
+        action: AUDIT_ACTIONS.AUTH_2FA_LOGIN_FAILURE,
+        actor: user._id,
+        req,
+        targetType: "User",
+        targetId: user._id.toString(),
+        status: "failure",
+        metadata: { email: user.email, reason: "invalid_2fa_code" },
+      });
+      return next(new APIError("Invalid 2FA code or recovery code", 401));
+    }
+
+    // Auto-promote whitelisted admin emails now that 2FA is verified & enabled
+    const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (ADMIN_EMAILS.includes(user.email.toLowerCase()) && user.role !== "admin") {
+      user.role = "admin";
+      logger.info(`👑 Promoted ${user.email} to admin (whitelisted account with 2FA)`);
+    }
+
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+
+    if (isRecovery) {
+      recordAudit({
+        action: AUDIT_ACTIONS.AUTH_2FA_RECOVERY_USED,
+        actor: user._id,
+        req,
+        targetType: "User",
+        targetId: user._id.toString(),
+        status: "success",
+        metadata: { email: user.email, recoveryCodeUsed: true },
+      });
+    }
+
+    const { accessToken, refreshToken } = await createSessionAndTokens(user, req, res, { is2FAVerified: true });
+
+    recordAudit({
+      action: AUDIT_ACTIONS.AUTH_2FA_LOGIN_SUCCESS,
+      actor: user._id,
+      req,
+      targetType: "User",
+      targetId: user._id.toString(),
+      status: "success",
+      metadata: { email: user.email, role: user.role },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      accessToken,
+      refreshToken,
+      token: accessToken,
+      user: shapeAuthUser(user),
+    });
+  }
+
+  // Branch B: Setup confirmation
+  if (!req.user) {
+    return next(new APIError("Authentication required (provide authorization header or mfaToken)", 401));
+  }
+
+  if (!code) {
+    return next(new APIError("Please provide a 2FA code", 400));
+  }
+
+  const user = await User.findById(req.user._id).select("+twoFactor.pendingSecret +twoFactor.secret +twoFactor.recoveryCodes");
+  if (!user || !user.twoFactor?.pendingSecret) {
+    return next(new APIError("No 2FA setup in progress. Please call setup first.", 400));
+  }
+
+  const decryptedSecret = decryptSecret(user.twoFactor.pendingSecret);
+  const isValid = verifyTOTPCode(code.toString(), decryptedSecret);
+
+  if (!isValid) {
+    recordAudit({
+      action: AUDIT_ACTIONS.AUTH_2FA_ENABLE_FAILURE,
+      actor: user._id,
+      req,
+      targetType: "User",
+      targetId: user._id.toString(),
+      status: "failure",
+      metadata: { email: user.email, reason: "invalid_confirmation_code" },
+    });
+    return next(new APIError("Invalid 2FA verification code", 401));
+  }
+
+  // Generate single-use recovery codes
+  const { plainCodes, hashedCodes } = await generateRecoveryCodes(10);
+
+  user.twoFactor.secret = user.twoFactor.pendingSecret;
+  user.twoFactor.pendingSecret = undefined;
+  user.twoFactor.enabled = true;
+  user.twoFactor.recoveryCodes = hashedCodes;
+  user.twoFactor.enrolledAt = new Date();
+  await user.save({ validateBeforeSave: false });
+
+  recordAudit({
+    action: AUDIT_ACTIONS.AUTH_2FA_ENABLE_SUCCESS,
+    actor: user._id,
+    req,
+    targetType: "User",
+    targetId: user._id.toString(),
+    status: "success",
+    metadata: { email: user.email, twoFactorEnabled: true },
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Two-factor authentication enabled successfully",
+    recoveryCodes: plainCodes,
+  });
+});
+
+/**
+ * Disable 2FA endpoint (POST /api/auth/2fa/disable, protect)
+ * Requires a valid code or recovery code.
+ */
+export const disable2FA = catchAsync(async (req, res, next) => {
+  const { code, recoveryCode } = req.body;
+
+  if (!code && !recoveryCode) {
+    return next(new APIError("Please provide a 2FA code or recovery code to disable 2FA", 400));
+  }
+
+  const user = await User.findById(req.user._id).select("+twoFactor.secret +twoFactor.recoveryCodes");
+  if (!user || !user.twoFactor?.enabled) {
+    return next(new APIError("Two-factor authentication is not enabled", 400));
+  }
+
+  let isValid = false;
+
+  if (code) {
+    const decryptedSecret = decryptSecret(user.twoFactor.secret);
+    isValid = verifyTOTPCode(code.toString(), decryptedSecret);
+  }
+
+  if (!isValid && recoveryCode) {
+    isValid = await verifyAndConsumeRecoveryCode(user, recoveryCode);
+  }
+
+  if (!isValid && code && !recoveryCode) {
+    isValid = await verifyAndConsumeRecoveryCode(user, code);
+  }
+
+  if (!isValid) {
+    recordAudit({
+      action: AUDIT_ACTIONS.AUTH_2FA_DISABLE_FAILURE,
+      actor: user._id,
+      req,
+      targetType: "User",
+      targetId: user._id.toString(),
+      status: "failure",
+      metadata: { email: user.email, reason: "invalid_code" },
+    });
+    return next(new APIError("Invalid 2FA code or recovery code", 401));
+  }
+
+  user.twoFactor.enabled = false;
+  user.twoFactor.secret = undefined;
+  user.twoFactor.pendingSecret = undefined;
+  user.twoFactor.recoveryCodes = [];
+  user.twoFactor.enrolledAt = undefined;
+
+  await user.save({ validateBeforeSave: false });
+
+  recordAudit({
+    action: AUDIT_ACTIONS.AUTH_2FA_DISABLE_SUCCESS,
+    actor: user._id,
+    req,
+    targetType: "User",
+    targetId: user._id.toString(),
+    status: "success",
+    metadata: { email: user.email, twoFactorEnabled: false },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Two-factor authentication disabled successfully",
   });
 });

@@ -8,6 +8,9 @@ import {
   getBook,
   fetchRecommendedBooks,
   addBookReview,
+  getBookReviews,
+  updateBookReview,
+  deleteBookReview,
   streamBookPreview,
 } from "../../controllers/books/bookController.js";
 import {
@@ -16,7 +19,12 @@ import {
   checkIfBookBookmarked,
   removeBookBookmark,
 } from "../../controllers/books/bookmarkBookController.js";
-import { protect } from "../../middlewares/authMiddleware.js";
+import { protect, requireVerifiedEducator } from "../../middlewares/authMiddleware.js";
+import {
+  authorizeOwnership,
+  authorizeReviewOwnership,
+} from "../../middlewares/authorize.js";
+import Book from "../../models/Book.js";
 import {
   cacheMiddleware,
   invalidateCacheMiddleware,
@@ -35,11 +43,12 @@ const booksByAuthorCacheKey = (req) =>
 router.post(
   "/",
   protect,
+  requireVerifiedEducator,
   uploadBook.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "file", maxCount: 1 },
   ]),
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`]),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createBook
 );
 
@@ -58,6 +67,9 @@ router.get("/bookmarks", protect, getBookmarkedBooks);
 router.post("/:bookId/bookmark", protect, toggleBookBookmark);
 router.get("/:bookId/bookmark/check", protect, checkIfBookBookmarked);
 router.delete("/:bookId/bookmark", protect, removeBookBookmark);
+
+// Review listing route
+router.get("/:id/reviews", getBookReviews);
 
 // get books created by the author - cached for 15 minutes
 router.get(
@@ -78,7 +90,8 @@ router.get(
 router.delete(
   "/:id",
   protect,
-  invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.BOOK}*`]),
+  authorizeOwnership({ model: Book, ownerField: "author", resourceType: "Book" }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   deleteBook
 );
 
@@ -89,5 +102,48 @@ router.post(
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`]),
   addBookReview
 );
+router.put(
+  "/:id/reviews",
+  protect,
+  authorizeReviewOwnership({ model: Book }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
+  updateBookReview
+);
+router.patch(
+  "/:id/reviews",
+  protect,
+  authorizeReviewOwnership({ model: Book }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
+  updateBookReview
+);
+router.put(
+  "/:id/reviews/:reviewId",
+  protect,
+  authorizeReviewOwnership({ model: Book }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
+  updateBookReview
+);
+router.patch(
+  "/:id/reviews/:reviewId",
+  protect,
+  authorizeReviewOwnership({ model: Book }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
+  updateBookReview
+);
+router.delete(
+  "/:id/reviews",
+  protect,
+  authorizeReviewOwnership({ model: Book }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
+  deleteBookReview
+);
+router.delete(
+  "/:id/reviews/:reviewId",
+  protect,
+  authorizeReviewOwnership({ model: Book }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
+  deleteBookReview
+);
 
 export default router;
+

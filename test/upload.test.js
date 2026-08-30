@@ -5,6 +5,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 
 import app from "../app.js";
 import cloudinary from "../src/utils/cloudinary.js";
+import { seedUserAndLogin } from "./helpers/testAuth.js";
 
 describe("Upload Routes", () => {
   jest.setTimeout(30000);
@@ -13,20 +14,36 @@ describe("Upload Routes", () => {
   let testUserId;
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(`${process.env.MONGO_URI}_upload`, { serverSelectionTimeoutMS: 2000 });
+      } catch (_err) {
+        mongoServer = await MongoMemoryServer.create();
+        await mongoose.connect(mongoServer.getUri());
+      }
+    } else {
+      mongoServer = await MongoMemoryServer.create();
+      await mongoose.connect(mongoServer.getUri());
+    }
 
-    const authRes = await request(app)
-      .post("/api/auth/register")
-      .send({ name: "Uploader", email: "uploader@example.com", password: "password", role: "student" });
-    token = authRes.body.accessToken;
-    testUserId = authRes.body.user._id || authRes.body.user.id;
+    const { token: authToken, user } = await seedUserAndLogin(app, {
+      name: "Uploader",
+      email: "uploader@example.com",
+    });
+    token = authToken;
+    testUserId = user._id.toString();
   });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await mongoServer.stop();
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
   });
+
 
   describe("POST /api/uploads/signature", () => {
     it("should reject unauthenticated requests", async () => {
@@ -70,11 +87,11 @@ describe("Upload Routes", () => {
     });
 
     it("should return 403 if user tries to update another user's profile", async () => {
-      const otherAuthRes = await request(app)
-        .post("/api/auth/register")
-        .send({ name: "Other", email: "other@example.com", password: "password", role: "student" });
-      
-      const otherUserId = otherAuthRes.body.user._id || otherAuthRes.body.user.id;
+      const { user: otherUser } = await seedUserAndLogin(app, {
+        name: "Other",
+        email: "other@example.com",
+      });
+      const otherUserId = otherUser._id.toString();
 
       const res = await request(app)
         .put(`/api/users/update/${otherUserId}`)

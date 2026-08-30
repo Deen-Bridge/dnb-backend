@@ -4,6 +4,12 @@ import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
 import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 import { createNewCourseNotification } from "../notificationController.js";
+import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
+import {
+  categoryTaxonomyExists,
+  categoryValidationError,
+  resolveActiveCategory,
+} from "../../services/categoryService.js";
 
 /**
  * Create a new course
@@ -21,12 +27,17 @@ export const createCourse = catchAsync(async (req, res, next) => {
       new APIError("Title, description, and category are required", 400)
     );
   }
+  const categoryDoc = await resolveActiveCategory(category);
+  if (!categoryDoc && (await categoryTaxonomyExists())) {
+    return next(new APIError(await categoryValidationError(), 400));
+  }
 
   // Create course with URLs from frontend
   const course = await Course.create({
     title,
     description,
-    category,
+    category: categoryDoc?.name || category,
+    categoryRef: categoryDoc?._id,
     price: price || 0,
     createdBy: req.user._id,
     thumbnail: thumbnail || null, // URL from frontend
@@ -48,9 +59,15 @@ export const createCourse = catchAsync(async (req, res, next) => {
 });
 
 // 📚 Get all courses
-export const getCourses = async (_req, res) => {
+export const getCourses = async (req, res) => {
   try {
-    const courses = await Course.find().populate(
+    const filter = {};
+    if (req.query.category) {
+      const categoryDoc = await resolveActiveCategory(req.query.category);
+      if (!categoryDoc) return res.status(404).json({ success: false, message: "Category not found" });
+      filter.categoryRef = categoryDoc._id;
+    }
+    const courses = await Course.find(filter).populate(
       "createdBy",
       "name email avatar"
     );
@@ -63,7 +80,7 @@ export const getCourses = async (_req, res) => {
 // 📘 Get a single course
 export const getCourseById = async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id).populate("createdBy");
+    const course = await Course.findById(req.params.id).populate("createdBy", "name avatar bio");
     if (!course)
       return res
         .status(404)
@@ -99,7 +116,7 @@ export const getCoursesByUser = async (req, res) => {
     }
 
     logger.info("✅ Finding courses...");
-    const courses = await Course.find({ createdBy }).populate("createdBy");
+    const courses = await Course.find({ createdBy }).populate("createdBy", "name avatar bio");
 
     if (!courses || courses.length === 0) {
       return res
@@ -149,6 +166,12 @@ export const enrollInCourse = async (req, res) => {
       }
     }
 
+    await emitEvent(EVENT_TYPES.COURSE_ENROLLED, {
+      courseId: course._id.toString(),
+      itemTitle: course.title,
+      userId: req.user._id.toString(),
+    });
+
     res
       .status(200)
       .json({
@@ -169,23 +192,23 @@ export const updateCourse = catchAsync(async (req, res, next) => {
 
   logger.info(`Updating course: ${courseId}`);
 
-  const course = await Course.findById(courseId);
+  // Ownership is enforced by authorizeOwnership middleware (req.resource).
+  const course = req.resource || (await Course.findById(courseId));
   if (!course) {
     return next(new APIError("Course not found", 404));
-  }
-
-  // Check if user is the creator or admin (authorization)
-  if (req.user.role !== "admin" && course.createdBy.toString() !== req.user._id.toString()) {
-    logger.warn(`Unauthorized course update attempt by user: ${req.user._id}`);
-    return next(
-      new APIError("You are not authorized to update this course", 403)
-    );
   }
 
   // Update fields (URLs from frontend)
   course.title = title || course.title;
   course.description = description || course.description;
-  course.category = category || course.category;
+  if (category) {
+    const categoryDoc = await resolveActiveCategory(category);
+    if (!categoryDoc && (await categoryTaxonomyExists())) {
+      return next(new APIError(await categoryValidationError(), 400));
+    }
+    course.category = categoryDoc?.name || category;
+    course.categoryRef = categoryDoc?._id;
+  }
   course.price = price !== undefined ? price : course.price;
 
   // Update media URLs if provided
@@ -203,45 +226,13 @@ export const updateCourse = catchAsync(async (req, res, next) => {
   });
 });
 
-export const addCourseReview = async (req, res) => {
-  const { rating, comment } = req.body;
-  const course = await Course.findById(req.params.id);
+export {
+  addCourseReview,
+  getCourseReviews,
+  updateCourseReview,
+  deleteCourseReview,
+} from "../reviewController.js";
 
-  if (!course) {
-    return res
-      .status(404)
-      .json({ success: false, message: "course not found" });
-  }
-
-  // Optional: Prevent duplicate reviews by the same user
-  const alreadyReviewed = course.reviews.find(
-    (r) => r.user.toString() === req.user._id.toString()
-  );
-  if (alreadyReviewed) {
-    return res.status(400).json({
-      success: false,
-      message: "course already reviewed by this user",
-    });
-  }
-
-  const review = {
-    user: req.user._id,
-    comment,
-    rating: Number(rating),
-  };
-
-  course.reviews.push(review);
-
-  // Optionally update average rating and review count
-  course.rating =
-    course.reviews.reduce((acc, item) => item.rating + acc, 0) /
-    course.reviews.length;
-
-  await course.save();
-  res
-    .status(201)
-    .json({ success: true, message: "Review added", reviews: course.reviews });
-};
 
 // recommended courses for user based on their profile interest
 export const fetchRecommendedCourses = async (req, res) => {

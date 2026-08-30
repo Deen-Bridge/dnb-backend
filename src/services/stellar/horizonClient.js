@@ -1,5 +1,6 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 import logger from "../../config/logger.js";
+import { resolveStellarConfig } from "../../config/stellar.js";
 
 export class HorizonClient {
   constructor(urls, timeoutMs = 10000) {
@@ -184,10 +185,41 @@ export class HorizonClient {
   }
 }
 
-// Export a pre-configured instance of HorizonClient
-export const client = new HorizonClient(
-  (process.env.HORIZON_URLS || "https://horizon-testnet.stellar.org").split(",").map(u => u.trim()),
-  parseInt(process.env.HORIZON_TIMEOUT_MS || "10000", 10)
+// Resolve Horizon endpoints from the single source of truth
+// (config/stellar.js). The default is network-aware (mainnet vs testnet) so
+// a mainnet deployment never silently falls back to testnet Horizon when
+// HORIZON_URLS is left unset.
+function resolveHorizonEndpoints() {
+  return resolveStellarConfig().horizonUrls;
+}
+
+// Construct the client lazily on first use, so it reads HORIZON_URLS /
+// STELLAR_NETWORK AFTER the environment is fully loaded — not at import time
+// (which, being import-hoisted, runs before validateEnv() and could otherwise
+// capture the testnet fallback even on a mainnet config).
+let _client = null;
+export function getClient() {
+  if (!_client) {
+    _client = new HorizonClient(
+      resolveHorizonEndpoints(),
+      parseInt(process.env.HORIZON_TIMEOUT_MS || "10000", 10)
+    );
+  }
+  return _client;
+}
+
+// Back-compat: existing `import { client }` + `client.execute(...)` /
+// `client.endpoints` keep working unchanged, but construction is deferred to
+// the first property access via this proxy.
+export const client = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const instance = getClient();
+      const value = instance[prop];
+      return typeof value === "function" ? value.bind(instance) : value;
+    },
+  }
 );
 
 export const getHorizonHealth = () => {

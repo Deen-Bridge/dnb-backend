@@ -17,6 +17,7 @@ export const CACHE_TTL = {
   SPACES: 60 * 5, // 5 minutes
   REELS: 60 * 3, // 3 minutes
   SEARCH: 60 * 5, // 5 minutes
+  EDUCATORS: 60 * 10, // 10 minutes
 };
 
 /**
@@ -34,6 +35,8 @@ export const CACHE_KEYS = {
   REELS: "reels:",
   REEL: "reel:",
   SEARCH: "search:",
+  EDUCATORS: "educators:",
+  CATEGORIES: "categories:",
 };
 
 /**

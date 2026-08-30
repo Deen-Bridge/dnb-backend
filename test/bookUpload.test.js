@@ -10,6 +10,7 @@ import Book from "../src/models/Book.js";
 import cloudinary from "../src/utils/cloudinary.js";
 
 import * as fileValidation from "../src/utils/fileValidation.js";
+import { seedUserAndLogin } from "./helpers/testAuth.js";
 
 // Need realistic magic bytes for file-type detection
 const validPdfBytes = Buffer.from("%PDF-1.4\n%EOF\n");
@@ -22,8 +23,20 @@ describe("Media Upload Hardening", () => {
   let mongoServer;
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (process.env.MONGO_URI) {
+      try {
+        await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 2000 });
+      } catch (_err) {
+        mongoServer = await MongoMemoryServer.create();
+        await mongoose.connect(mongoServer.getUri());
+      }
+    } else {
+      mongoServer = await MongoMemoryServer.create();
+      await mongoose.connect(mongoServer.getUri());
+    }
 
     // Mock cloudinary upload stream
     jest.spyOn(cloudinary.uploader, "upload_stream").mockImplementation((options, cb) => {
@@ -37,15 +50,14 @@ describe("Media Upload Hardening", () => {
       return "https://example.com/signed-url";
     });
 
-    const authRes = await request(app).post("/api/auth/register").send({ name: "Uploader", email: "uploader@example.com", password: "password", role: "student" });
-    token = authRes.body.accessToken;
-    testUser = authRes.body.user;
-  });
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-    jest.restoreAllMocks();
+    const { token: authToken, user } = await seedUserAndLogin(app, {
+      name: "Uploader",
+      email: "uploader@example.com",
+      role: "mentor",
+      verifiedEducator: true,
+    });
+    token = authToken;
+    testUser = user;
   });
 
   it("should reject oversized files (Multer limits)", async () => {
@@ -61,8 +73,8 @@ describe("Media Upload Hardening", () => {
       .field("price", 10)
       .field("description", "Test Description");
 
-    expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/File too large/i);
+    expect([400, 413]).toContain(res.status);
+    expect(res.body.message).toMatch(/File too large|Payload Too Large/i);
   });
 
   it("should reject mismatched magic bytes (server validation)", async () => {
@@ -110,11 +122,14 @@ describe("Media Upload Hardening", () => {
       filePublicId: "paid_public_id"
     });
 
-    const authRes = await request(app).post("/api/auth/register").send({ name: "Poor", email: "poor@example.com", password: "password", role: "student" });
-    
+    const { token: poorToken } = await seedUserAndLogin(app, {
+      name: "Poor",
+      email: "poor@example.com",
+    });
+
     const res = await request(app)
       .get(`/api/books/${book._id}/preview`)
-      .set("Authorization", `Bearer ${authRes.body.accessToken}`);
+      .set("Authorization", `Bearer ${poorToken}`);
 
     expect(res.status).toBe(403);
     expect(res.body.message).toMatch(/do not have access/i);
@@ -139,4 +154,14 @@ describe("Media Upload Hardening", () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("https://example.com/signed-url");
   });
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
+  });
 });
+

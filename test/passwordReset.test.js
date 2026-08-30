@@ -1,11 +1,14 @@
 import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import axios from "axios";
 import app from "../app.js";
 import User from "../src/models/User.js";
+import PendingUser from "../src/models/PendingUser.js";
 import Session from "../src/models/Session.js";
+import logger from "../src/config/logger.js";
+import { testOutbox } from "../services/emails/sendMail.js";
 
 const testUser = {
   name: "Reset User",
@@ -19,11 +22,15 @@ describe("Password Reset Flow", () => {
 
   let usersStore = [];
   let sessionsStore = [];
-  let axiosSpy;
+  let loggerInfoSpy;
 
   beforeAll(() => {
-    // Mock axios to prevent network calls during tests
-    axiosSpy = jest.spyOn(axios, "post").mockResolvedValue({ status: 200, statusText: "OK", data: {} });
+    // Capture log output so we can assert OTPs/tokens never reach the logger.
+    loggerInfoSpy = jest.spyOn(logger, "info");
+    jest.spyOn(logger, "warn");
+    jest.spyOn(logger, "error");
+    // Mock the HIBP breached-password range call (empty data => not breached).
+    jest.spyOn(axios, "get").mockResolvedValue({ status: 200, statusText: "OK", data: "" });
 
     // Mock User methods
     jest.spyOn(User, "findOne").mockImplementation((query) => {
@@ -59,6 +66,18 @@ describe("Password Reset Flow", () => {
       return { acknowledged: true };
     });
 
+    // Registration stores a pending user awaiting email verification
+    jest.spyOn(PendingUser, "findOneAndUpdate").mockImplementation(async (query, update) => {
+      const _id = new mongoose.Types.ObjectId().toString();
+      const newUser = {
+        _id,
+        ...update,
+        save: async function () { return this; },
+      };
+      usersStore.push(newUser);
+      return newUser;
+    });
+
     // Mock Session methods
     jest.spyOn(Session, "create").mockImplementation(async (data) => {
       const _id = new mongoose.Types.ObjectId().toString();
@@ -91,20 +110,32 @@ describe("Password Reset Flow", () => {
   beforeEach(() => {
     usersStore = [];
     sessionsStore = [];
-    if (axiosSpy) axiosSpy.mockClear().mockResolvedValue({ status: 200, statusText: "OK", data: {} });
+    testOutbox.length = 0;
+    if (loggerInfoSpy) loggerInfoSpy.mockClear();
   });
 
   afterAll(() => {
     jest.restoreAllMocks();
   });
 
-  const getSentOtpFromAxios = () => {
-    const emailCalls = axiosSpy.mock.calls.filter(
-      (call) => call[1]?.template_params?.otp !== undefined
-    );
-    const lastCall = emailCalls[emailCalls.length - 1];
-    return lastCall ? lastCall[1].template_params.otp : null;
+  const getSentOtp = () => {
+    // sendMail captures rendered emails in its in-memory testOutbox (never in
+    // logs). Registration also sends a verification email, so pick the most
+    // recent outbox entry that actually carries an OTP span.
+    const otpMail = [...testOutbox]
+      .reverse()
+      .find((mail) => /#166534;">(\d+)<\/span>/.test(mail.html));
+    const match = otpMail && otpMail.html.match(/#166534;">(\d+)<\/span>/);
+    return match ? match[1] : null;
   };
+
+  const capturedLogText = () =>
+    ["info", "warn", "error"]
+      .flatMap((method) => logger[method].mock.calls || [])
+      .map((call) =>
+        call.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" ")
+      )
+      .join("\n");
 
   it("should request password reset without exposing OTP in response body and include success: true", async () => {
     await request(app).post("/api/auth/register").send(testUser);
@@ -118,7 +149,7 @@ describe("Password Reset Flow", () => {
     expect(res.body.message).toContain("If an account exists");
     expect(res.body).not.toHaveProperty("otp");
 
-    const sentOtp = getSentOtpFromAxios();
+    const sentOtp = getSentOtp();
     expect(sentOtp).toBeDefined();
     expect(typeof sentOtp).toBe("string");
 
@@ -142,16 +173,22 @@ describe("Password Reset Flow", () => {
   it("should handle sendMail delivery failure by rolling back token fields and returning generic 200 (anti-enumeration)", async () => {
     await request(app).post("/api/auth/register").send(testUser);
 
-    // Make axios rejection simulate email service failure
-    axiosSpy.mockRejectedValueOnce(new Error("EmailJS service unavailable"));
+    // Force the OTP email to fail: point SendLib at a closed local port so the
+    // connection is refused and sendOtpEmail throws.
+    process.env.SENDLIB_API_URL = "http://127.0.0.1:2525";
+    process.env.SENDLIB_API_KEY = "invalid_test_key";
+    try {
+      const res = await request(app)
+        .post("/api/auth/request-password-reset")
+        .send({ email: testUser.email });
 
-    const res = await request(app)
-      .post("/api/auth/request-password-reset")
-      .send({ email: testUser.email });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.message).toContain("If an account exists");
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.message).toContain("If an account exists");
+    } finally {
+      delete process.env.SENDLIB_API_URL;
+      delete process.env.SENDLIB_API_KEY;
+    }
 
     // Token fields should be rolled back to undefined so orphaned tokens aren't left active
     const dbUser = usersStore.find((u) => u.email === testUser.email);
@@ -184,7 +221,7 @@ describe("Password Reset Flow", () => {
       .post("/api/auth/request-password-reset")
       .send({ email: testUser.email });
 
-    const sentOtp = getSentOtpFromAxios();
+    const sentOtp = getSentOtp();
     const dbUser = usersStore.find((u) => u.email === testUser.email);
     // Artificially expire the token
     dbUser.resetTokenExpiry = new Date(Date.now() - 1000);
@@ -208,7 +245,7 @@ describe("Password Reset Flow", () => {
       .post("/api/auth/request-password-reset")
       .send({ email: testUser.email });
 
-    const sentOtp = getSentOtpFromAxios();
+    const sentOtp = getSentOtp();
     const newPassword = "newSecurePassword123";
 
     // Successful reset
@@ -253,5 +290,28 @@ describe("Password Reset Flow", () => {
     expect(reuseRes.statusCode).toBe(400);
     expect(reuseRes.body.success).toBe(false);
     expect(reuseRes.body.message).toContain("Invalid or expired OTP");
+  });
+
+  it("never leaks the OTP or verification token into log output", async () => {
+    await request(app).post("/api/auth/register").send(testUser);
+
+    // Registration renders a verification email carrying a token link; the
+    // reset request renders an OTP email. Both must stay out of the logs.
+    const verificationMail = testOutbox.find((m) => m.template === "verification");
+    const tokenMatch = verificationMail && verificationMail.html.match(/token=([a-f0-9]{64})/);
+    expect(tokenMatch).not.toBeNull();
+
+    await request(app)
+      .post("/api/auth/request-password-reset")
+      .send({ email: testUser.email });
+
+    const otp = getSentOtp();
+    expect(otp).toBeDefined();
+
+    const logs = capturedLogText();
+    expect(logs).not.toContain(otp);
+    expect(logs).not.toContain(tokenMatch[1]);
+    expect(logs).not.toContain("token=");
+    expect(logs).not.toContain("<html");
   });
 });

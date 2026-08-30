@@ -1,10 +1,25 @@
-import app from "./app.js";
+import dotenv from "dotenv";
+import http from "http";
 import logger from "./src/config/logger.js";
+import connectDB from "./src/config/db.js";
+import validateEnv from "./src/config/validateEnv.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
+import { initSockets, closeSockets } from "./src/sockets/index.js";
 import { startJobs, stopJobs } from "./src/jobs/queue.js";
 import { startAnchorPoller, stopAnchorPoller } from "./src/jobs/anchorPoller.js";
+import {
+  handleUncaughtException,
+  handleUnhandledRejection,
+} from "./src/middlewares/errorHandler.js";
 import "./src/jobs/handlers.js";
 
+dotenv.config();
+handleUncaughtException();
+validateEnv();
+await connectDB();
+handleUnhandledRejection();
+
+const { default: app } = await import("./app.js");
 const PORT = process.env.PORT || 5000;
 
 // Initialize Redis
@@ -15,7 +30,11 @@ initRedis().catch((err) => {
   );
 });
 
-const server = app.listen(PORT, () => {
+// Real-time payment notifications (Socket.io) share the HTTP server.
+const server = http.createServer(app);
+initSockets(server);
+
+server.listen(PORT, () => {
   logger.info(`🚀🕌 DeenBridge API running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV}`);
   logger.info(`Process ID: ${process.pid}`);
@@ -23,6 +42,44 @@ const server = app.listen(PORT, () => {
 
 startJobs().catch((err) => logger.error(err, "Background job startup failed"));
 startAnchorPoller();
+
+// Start payment ingestion worker if enabled
+let stopIngestionWorker;
+if (process.env.INGESTION_WORKER_ENABLED === "true") {
+  import("./src/workers/paymentIngestionWorker.js").then(
+    ({ startIngestionWorker, stopIngestionWorker: stopFn }) => {
+      stopIngestionWorker = stopFn;
+      startIngestionWorker().catch((err) =>
+        logger.error(err, "Ingestion worker startup failed")
+      );
+    }
+  );
+}
+
+// Start outbound webhook delivery worker if enabled
+let stopWebhookWorker;
+if (process.env.WEBHOOK_WORKER_ENABLED === "true") {
+  import("./src/services/webhooks/deliveryWorker.js").then(
+    ({ startDeliveryWorker, stopDeliveryWorker: stopFn }) => {
+      stopWebhookWorker = stopFn;
+      startDeliveryWorker().catch((err) =>
+        logger.error(err, "Webhook delivery worker startup failed")
+      );
+    }
+  );
+}
+
+let stopPledgeScheduler;
+if (process.env.PLEDGE_SCHEDULER_ENABLED === "true") {
+  import("./src/workers/pledgeScheduler.js").then(
+    ({ startPledgeScheduler, stopPledgeScheduler: stopFn }) => {
+      stopPledgeScheduler = stopFn;
+      startPledgeScheduler().catch((err) =>
+        logger.error(err, "Pledge scheduler startup failed")
+      );
+    }
+  );
+}
 
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
@@ -34,7 +91,20 @@ const gracefulShutdown = async (signal) => {
     await stopJobs();
     await stopAnchorPoller();
 
+    if (stopIngestionWorker) {
+      await stopIngestionWorker();
+    }
+
+    if (stopWebhookWorker) {
+      await stopWebhookWorker();
+    }
+
+    if (stopPledgeScheduler) {
+      await stopPledgeScheduler();
+    }
+
     // Close Redis connection
+    await closeSockets();
     await closeRedis();
 
     process.exit(0);

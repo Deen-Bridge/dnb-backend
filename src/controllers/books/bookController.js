@@ -1,17 +1,19 @@
 import axios from "axios";
+import mongoose from "mongoose";
 import Book from "../../models/Book.js";
 import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
 import logger from "../../config/logger.js";
 import { validateMagicBytes } from "../../utils/fileValidation.js";
 import { createNewBookNotification } from "../notificationController.js";
+import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
 
 //cretae a book
 export const createBook = async (req, res) => {
   logger.info("Creating book with data:", req.body);
   logger.info("Files received:", req.files);
   try {
-    const { title, category, price, readCount, rating, description } = req.body;
+    const { title, category, price, readCount, description } = req.body;
 
     if (!req.files || !req.files.thumbnail || !req.files.file)
       return res
@@ -68,7 +70,6 @@ export const createBook = async (req, res) => {
       price,
       description,
       readCount,
-      rating,
       image: thumbnailUpload.secure_url,
       fileUrl: fileUpload.secure_url,
       filePublicId: fileUpload.public_id,
@@ -90,17 +91,17 @@ export const createBook = async (req, res) => {
 
 // get all books in the store
 export const getBooks = async (req, res) => {
-  const books = await Book.find().populate("author").populate("reviews.user"); // populate all author fields
-  res.json(books);
+  const books = await Book.find().populate("author", "name avatar bio").populate("reviews.user", "name avatar");
+  res.json({ success: true, books });
 };
 
 // get a particular book
 export const getBook = async (req, res) => {
   const book = await Book.findById(req.params.id)
-    .populate("author")
-    .populate("reviews.user"); // populate all author fields
-  if (!book) return res.status(404).json({ error: "Book not found" });
-  res.json(book);
+    .populate("author", "name avatar bio")
+    .populate("reviews.user", "name avatar");
+  if (!book) return res.status(404).json({ success: false, message: "Book not found" });
+  res.json({ success: true, book });
 };
 
 // get books created by the author
@@ -112,7 +113,7 @@ export const getBooksByAuthor = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing author id" });
     }
-    const books = await Book.find({ author: authorId }).populate("author");
+    const books = await Book.find({ author: authorId }).populate("author", "name avatar bio");
     if (!books || books.length === 0) {
       return res
         .status(200)
@@ -125,65 +126,43 @@ export const getBooksByAuthor = async (req, res) => {
 };
 
 // delete book by id
-export const deleteBook = async (req, res) => {
-  try {
-    const book = await Book.findById(req.params.id);
-    if (!book) {
-      return res.status(404).json({ success: false, message: "Book not found" });
-    }
+export const deleteBook = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
 
-    if (req.user.role !== "admin" && book.author.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to delete this book",
-      });
-    }
-
-    await Book.findByIdAndDelete(req.params.id);
-    res.json({ success: true, message: "Book deleted" });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return next(new APIError("Invalid book id", 400));
   }
-};
+
+  const book = req.resource || (await Book.findById(id));
+  if (!book) {
+    return next(new APIError("Book not found", 404));
+  }
+
+  const isOwner =
+    req.user?._id && book.author?.toString() === req.user._id.toString();
+  const isAdmin = req.user?.role === "admin";
+  if (!isOwner && !isAdmin) {
+    return next(
+      new APIError("You are not authorized to delete this book", 403)
+    );
+  }
+
+  await Book.findByIdAndDelete(book._id);
+  res.status(200).json({
+    success: true,
+    message: "Book deleted",
+    data: null,
+  });
+});
 
 // review books
 
-export const addBookReview = async (req, res) => {
-  const { rating, comment } = req.body;
-  const book = await Book.findById(req.params.id);
-
-  if (!book) {
-    return res.status(404).json({ success: false, message: "Book not found" });
-  }
-
-  // Optional: Prevent duplicate reviews by the same user
-  const alreadyReviewed = book.reviews.find(
-    (r) => r.user.toString() === req.user._id.toString()
-  );
-  if (alreadyReviewed) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Book already reviewed by this user" });
-  }
-
-  const review = {
-    user: req.user._id,
-    comment,
-    rating: Number(rating),
-  };
-
-  book.reviews.push(review);
-
-  // Optionally update average rating and review count
-  book.rating =
-    book.reviews.reduce((acc, item) => item.rating + acc, 0) /
-    book.reviews.length;
-
-  await book.save();
-  res
-    .status(201)
-    .json({ success: true, message: "Review added", reviews: book.reviews });
-};
+export {
+  addBookReview,
+  getBookReviews,
+  updateBookReview,
+  deleteBookReview,
+} from "../reviewController.js";
 
 // recommended books for user based on their profile interest
 export const fetchRecommendedBooks = async (req, res) => {
