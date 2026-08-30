@@ -8,7 +8,15 @@ export const updateReadingProgress = async (req, res) => {
   try {
     const { bookId } = req.params;
     const userId = req.user._id;
-    const { page, totalPages, percentage, lastPosition, device } = req.body;
+    const {
+      page,
+      totalPages,
+      percentage,
+      lastPosition,
+      audioPositionSeconds,
+      audioDuration,
+      device,
+    } = req.body;
 
     const progress = await readingProgressService.upsertProgress({
       userId,
@@ -17,6 +25,8 @@ export const updateReadingProgress = async (req, res) => {
       totalPages,
       percentage,
       lastPosition,
+      audioPositionSeconds,
+      audioDuration,
       device,
     });
 

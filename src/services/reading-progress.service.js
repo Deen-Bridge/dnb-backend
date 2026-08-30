@@ -13,14 +13,18 @@ import { emitProgress } from "../sockets/reading-progress.socket.js";
 export class ReadingProgressService {
   /**
    * Derive a 0-100 percentage. Prefers an explicit percentage; otherwise
-   * computes it from page / totalPages when both are known.
+   * computes it from page / totalPages when both are known, then from
+   * audioPositionSeconds / audioDuration for audiobooks.
    */
-  computePercentage({ percentage, page, totalPages }) {
+  computePercentage({ percentage, page, totalPages, audioPositionSeconds, audioDuration }) {
     if (percentage !== undefined && percentage !== null) {
       return Math.min(100, Math.max(0, Number(percentage)));
     }
     if (totalPages && totalPages > 0 && page !== undefined && page !== null) {
       return Math.min(100, Math.max(0, Number(((page / totalPages) * 100).toFixed(2))));
+    }
+    if (audioDuration && audioDuration > 0 && audioPositionSeconds !== undefined && audioPositionSeconds !== null) {
+      return Math.min(100, Math.max(0, Number(((audioPositionSeconds / audioDuration) * 100).toFixed(2))));
     }
     return undefined;
   }
@@ -31,7 +35,7 @@ export class ReadingProgressService {
    * (via timestamps) `updatedAt`, then emits a real-time sync event to the
    * user's other devices when a socket layer is attached.
    */
-  async upsertProgress({ userId, bookId, page, totalPages, percentage, lastPosition, device }) {
+  async upsertProgress({ userId, bookId, page, totalPages, percentage, lastPosition, audioPositionSeconds, audioDuration, device }) {
     const book = await Book.findById(bookId).select("_id");
     if (!book) {
       throw new Error("Book not found");
@@ -41,9 +45,11 @@ export class ReadingProgressService {
     if (page !== undefined && page !== null) set.page = page;
     if (totalPages !== undefined && totalPages !== null) set.totalPages = totalPages;
     if (lastPosition !== undefined && lastPosition !== null) set.lastPosition = lastPosition;
+    if (audioPositionSeconds !== undefined && audioPositionSeconds !== null) set.audioPositionSeconds = audioPositionSeconds;
+    if (audioDuration !== undefined && audioDuration !== null) set.audioDuration = audioDuration;
     if (device !== undefined && device !== null) set.device = device;
 
-    const computed = this.computePercentage({ percentage, page, totalPages });
+    const computed = this.computePercentage({ percentage, page, totalPages, audioPositionSeconds, audioDuration });
     if (computed !== undefined) {
       set.percentage = computed;
       if (computed >= 100) {
@@ -63,6 +69,8 @@ export class ReadingProgressService {
       page: progress.page,
       percentage: progress.percentage,
       lastPosition: progress.lastPosition,
+      audioPositionSeconds: progress.audioPositionSeconds,
+      audioDuration: progress.audioDuration,
       version: progress.version,
       updatedAt: progress.updatedAt,
       device: progress.device,
@@ -98,6 +106,8 @@ export class ReadingProgressService {
         totalPages: record.totalPages,
         percentage: record.percentage,
         lastPosition: record.lastPosition,
+        audioPositionSeconds: record.audioPositionSeconds,
+        audioDuration: record.audioDuration,
         version: record.version,
         completedAt: record.completedAt,
         updatedAt: record.updatedAt,
