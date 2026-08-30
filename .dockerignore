@@ -51,3 +51,4 @@ target/
 # Misc
 .tmp/
 tmp/
+docker-compose*.yml
