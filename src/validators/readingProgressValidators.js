@@ -31,6 +31,14 @@ export const updateReadingProgressValidation = [
     .optional({ nullable: true })
     .isString()
     .withMessage("lastPosition must be a string"),
+  body("audioPositionSeconds")
+    .optional({ nullable: true })
+    .isFloat({ min: 0 })
+    .withMessage("audioPositionSeconds must be a number >= 0"),
+  body("audioDuration")
+    .optional({ nullable: true })
+    .isFloat({ min: 0 })
+    .withMessage("audioDuration must be a number >= 0"),
   body("device")
     .optional({ nullable: true })
     .isString()
@@ -39,9 +47,10 @@ export const updateReadingProgressValidation = [
     if (
       (value.page === undefined || value.page === null) &&
       (value.percentage === undefined || value.percentage === null) &&
-      (value.lastPosition === undefined || value.lastPosition === null)
+      (value.lastPosition === undefined || value.lastPosition === null) &&
+      (value.audioPositionSeconds === undefined || value.audioPositionSeconds === null)
     ) {
-      throw new Error("Provide at least one of page, percentage or lastPosition");
+      throw new Error("Provide at least one of page, percentage, lastPosition or audioPositionSeconds");
     }
     return true;
   }),
