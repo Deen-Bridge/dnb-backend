@@ -48,6 +48,15 @@ const optionalEnvVars = [
   "QUEUE_DRIVER",
   "JOBS_ENABLED",
   "JOBS_DASHBOARD_TOKEN",
+  "EMAILJS_RECEIPT_TEMPLATE_ID",
+  "ANCHOR_HOME_DOMAINS",
+  "ANCHOR_TOML_CACHE_TTL",
+  // Redis configuration (optional - app works without Redis)
+  "REDIS_URL",
+  "REDIS_HOST",
+  "REDIS_PORT",
+  "REDIS_USERNAME",
+  "REDIS_PASSWORD",
   "STELLAR_PLATFORM_PUBLIC_KEY",
   "ORG_NAME",
   "ORG_URL",
@@ -94,6 +103,17 @@ export const validateEnv = () => {
   process.env.ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
   process.env.REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || "30d";
 
+  // Anchor allowlist defaults to Stellar's public test anchor on testnet only;
+  // mainnet requires an operator to explicitly opt in to a real anchor domain.
+  if (
+    !process.env.ANCHOR_HOME_DOMAINS &&
+    (process.env.STELLAR_NETWORK || "testnet") === "testnet"
+  ) {
+    process.env.ANCHOR_HOME_DOMAINS = "testanchor.stellar.org";
+  }
+  process.env.ANCHOR_TOML_CACHE_TTL = process.env.ANCHOR_TOML_CACHE_TTL || "3600";
+  // Default values for Horizon resilient client if not provided
+  const network = process.env.STELLAR_NETWORK || "testnet";
   // Default values for Horizon resilient client if not provided. The
   // network-aware default comes from the single source of truth
   // (config/stellar.js), so the env var always reflects what the app will

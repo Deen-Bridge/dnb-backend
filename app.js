@@ -38,6 +38,7 @@ import callRoutes from "./src/routes/callRoutes.js";
 import stellarWalletRoutes from "./src/routes/stellar/walletRoutes.js";
 import stellarPaymentRoutes from "./src/routes/stellar/paymentRoutes.js";
 import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
+import stellarAnchorRoutes from "./src/routes/stellar/anchorRoutes.js";
 import stellarPledgeRoutes from "./src/routes/stellar/pledgeRoutes.js";
 import stellarGiftRoutes from "./src/routes/stellar/giftRoutes.js";
 import stellarReportsRoutes from "./src/routes/stellar/reportsRoutes.js";
@@ -177,6 +178,23 @@ app.use("/api-docs", apiDocsRoutes);
 // Auth routes — strict
 app.use("/api/auth", authLimiter, authRoutes);
 
+// Other API routes
+app.use("/api/courses", courseRoutes);
+app.use("/api/reels", reelsRoute);
+app.use("/api/books", bookRoutes);
+app.use("/api/books", recommendedBooksRoutes);
+app.use("/api/spaces", spacesRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/email", emailRoutes);
+app.use("/api/purchase", purchaseRoutes);
+app.use("/api/search", searchRoutes);
+app.use("/api/calls", callRoutes);
+app.use("/api/stellar/wallet", stellarWalletRoutes);
+app.use("/api/stellar/payment", stellarPaymentRoutes);
+app.use("/api/stellar/donation", stellarDonationRoutes);
+app.use("/api/stellar/anchor", stellarAnchorRoutes);
+app.use("/api/payouts", payoutRoutes);
+app.use("/api/uploads", uploadRoutes);
 // Mutation routes — standard limiter
 app.use("/api/email", standardLimiter, emailRoutes);
 app.use("/api/purchase", standardLimiter, purchaseRoutes);

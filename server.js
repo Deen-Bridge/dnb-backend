@@ -6,6 +6,7 @@ import validateEnv from "./src/config/validateEnv.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
 import { initSockets, closeSockets } from "./src/sockets/index.js";
 import { startJobs, stopJobs } from "./src/jobs/queue.js";
+import { startAnchorPoller, stopAnchorPoller } from "./src/jobs/anchorPoller.js";
 import {
   handleUncaughtException,
   handleUnhandledRejection,
@@ -40,6 +41,7 @@ server.listen(PORT, () => {
 });
 
 startJobs().catch((err) => logger.error(err, "Background job startup failed"));
+startAnchorPoller();
 
 // Start payment ingestion worker if enabled
 let stopIngestionWorker;
@@ -87,6 +89,7 @@ const gracefulShutdown = async (signal) => {
     logger.info("HTTP server closed");
 
     await stopJobs();
+    await stopAnchorPoller();
 
     if (stopIngestionWorker) {
       await stopIngestionWorker();
