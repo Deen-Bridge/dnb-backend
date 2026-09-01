@@ -39,11 +39,15 @@ import {
 import { validate } from "../../middlewares/validate.js";
 import { prerequisitesValidation } from "../../validators/requestValidators.js";
 import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
+import { trackAction } from "../../middlewares/analytics/journey-tracker.js";
 
 const router = express.Router();
 
 // Cache key generators
-const coursesListCacheKey = (req) => `${CACHE_KEYS.COURSES}list:${req.query.category || "all"}`;
+const coursesListCacheKey = (req) => {
+  const queryStr = new URLSearchParams(req.query).toString();
+  return `${CACHE_KEYS.COURSES}list:${queryStr || "all"}`;
+};
 const courseDetailCacheKey = (req) => `${CACHE_KEYS.COURSE}${req.params.id}`;
 const coursesByUserCacheKey = (req) =>
   `${CACHE_KEYS.COURSES}user:${req.query.createdBy}`;
@@ -93,6 +97,8 @@ router.post(
 router.post(
   "/:id/enroll",
   protect,
+  // Journey analytics: record the enrollment as a key user action (issue #246).
+  trackAction("enroll_course"),
   invalidateCacheMiddleware([`${CACHE_KEYS.COURSE}*`]),
   enrollInCourse
 );
