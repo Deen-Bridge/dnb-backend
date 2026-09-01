@@ -48,6 +48,20 @@ const readingProgressSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    // Audiobook listening position in seconds (the audio player's current
+    // time), used to resume from the last position.
+    audioPositionSeconds: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Total audio duration in seconds as last reported by the player; lets the
+    // server derive a listening percentage when only seconds are sent.
+    audioDuration: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     // Identifier of the device that last wrote progress. Lets a client ignore
     // echoes of its own updates when syncing across devices.
     device: {

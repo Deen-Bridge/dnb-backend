@@ -118,6 +118,23 @@ dashboard is available at `/admin/jobs`.
 | Stellar Wallet | `/api/stellar/wallet/*` |
 | Stellar Payments | `/api/stellar/payment/*` |
 
+### API response envelope convention
+
+Read/list endpoints return a consistent envelope so clients can rely on the
+shape and distinguish an empty result from an error:
+
+- **`200` + `{ success: true, data: [...] }`** — a successful read/list. When a
+  query legitimately matches nothing, `data` is an empty array and `success` is
+  still `true`. An empty result set is *not* an error.
+- **`{ success: false }` with a `4xx`/`5xx` status** — reserved strictly for
+  genuine failures (missing resource `404`, invalid input `400`, forbidden
+  `403`, server errors `500`).
+
+This applies to the bookstore, course, and search read endpoints. New
+controllers should follow the same rule: if the query could return zero rows
+for a normal request, return `success: true` with an empty `data` array — never
+flip `success` to `false` for an empty result.
+
 ### Machine-readable spec
 
 The full OpenAPI 3.1 contract for every mounted route lives in [`openapi.yaml`](openapi.yaml).

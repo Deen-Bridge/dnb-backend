@@ -23,10 +23,24 @@ const bookFilter = (req, file, cb) => {
       file.mimetype === "application/epub+zip")
   ) {
     cb(null, true);
+  } else if (file.fieldname === "audio" && isAudioMime(file.mimetype)) {
+    cb(null, true);
   } else {
-    cb(new APIError("Invalid file format. Thumbnail must be an image, file must be PDF/EPUB.", 400));
+    cb(new APIError("Invalid file format. Thumbnail must be an image, file must be PDF/EPUB, audio must be MP3/M4A.", 400));
   }
 };
+
+// Accepted audio mimetypes for audiobook uploads (MP3 and M4A, including the
+// alternate MIME labels browsers/clients commonly send for them).
+const AUDIO_MIMES = [
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/aac",
+];
+
+const isAudioMime = (mimetype) => AUDIO_MIMES.includes(mimetype);
 
 export const uploadImage = multer({
   storage,
