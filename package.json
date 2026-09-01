@@ -7,12 +7,18 @@
     "start": "node --import dotenv/config server.js",
     "dev": "nodemon --import dotenv/config server.js",
     "seed": "node src/scripts/seedDatabase.js",
+    "db:seed": "node mongo/seeds/index.js",
+    "db:seed:minimal": "node mongo/seeds/index.js --minimal",
+    "db:seed:full": "node mongo/seeds/index.js --full",
+    "db:seed:reset": "node mongo/seeds/index.js --reset",
+    "db:seed:clean": "node mongo/seeds/index.js --clean",
     "seed:categories": "node src/scripts/seedCategories.js",
     "migrate:categories": "node src/scripts/migrateCategories.js",
     "migrate:review-stats": "node src/migrations/backfillReviewStats.js",
     "test-redis": "node test-redis.js",
     "payouts:audit": "node src/scripts/auditPayouts.js",
-    "worker:ingest": "node src/workers/runIngestionWorker.js"
+    "worker:ingest": "node src/workers/runIngestionWorker.js",
+    "test:mutation": "bash scripts/run-mutation-tests.sh"
   },
   "keywords": [],
   "author": "zeemscript",
@@ -62,6 +68,12 @@
     "mongodb-memory-server": "^11.2.0",
     "nodemon": "^3.1.10",
     "supertest": "^7.1.4"
+  },
+  "config": {
+    "mongodbMemoryServer": {
+      "version": "7.0.14",
+      "checkMD5": false
+    }
   },
   "type": "module"
 }
