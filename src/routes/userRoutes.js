@@ -47,7 +47,6 @@ router.get(
 router.put(
   "/update/:id",
   protect,
-  upload.single("avatar"),
   (req, res, next) => {
     if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
       return res.status(403).json({ success: false, message: "Not authorized to update this profile", data: null });
@@ -58,6 +57,7 @@ router.put(
   invalidateCacheMiddleware([`${CACHE_KEYS.USER}*`]),
   updateUser
 );
+
 
 // Get user by ID - cached for 10 minutes
 router.get(
