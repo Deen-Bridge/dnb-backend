@@ -28,6 +28,7 @@ import {
 import authRoutes from "./src/routes/authRoutes.js";
 import courseRoutes from "./src/routes/courses/courseRoutes.js";
 import courseAnalyticsRoutes from "./src/routes/courses/analyticsRoutes.js";
+import quizRoutes from "./src/routes/courses/quizRoutes.js";
 import reelsRoute from "./src/routes/reelsRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
 import bookRoutes from "./src/routes/books/bookRoutes.js";
@@ -238,6 +239,7 @@ app.use("/api/certificates", generousLimiter, certificateRoutes);
 app.use("/api/badges", generousLimiter, badgeRoutes);
 app.use("/api/achievements", generousLimiter, achievementRoutes);
 app.use("/api/courses", generousLimiter, courseRoutes);
+app.use("/api", generousLimiter, quizRoutes);
 app.use("/api/categories", generousLimiter, categoryRoutes);
 app.use("/api/reels", generousLimiter, reelsRoute);
 app.use("/api/books", generousLimiter, bookRoutes);
