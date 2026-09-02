@@ -372,7 +372,12 @@ export const buildChangeTrustTransaction = async ({ publicKey, asset = USDC }) =
     };
   } catch (error) {
     logger.error("Error building change trust transaction:", error);
+    throw error;
+  }
+};
+
 // SEP-29: an account opts into requiring a memo on incoming payments by
+
 // setting a manageData entry with key "config.memo_required" (value is
 // conventionally "1", base64-encoded by Horizon like all data_attr values).
 export const MEMO_REQUIRED_DATA_KEY = "config.memo_required";
