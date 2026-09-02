@@ -55,6 +55,9 @@ import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.
 import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
 import webhookRoutes from "./src/routes/webhookRoutes.js";
 import categoryRoutes from "./src/routes/categoryRoutes.js";
+
+// Issue #245 — Search analytics
+import searchAnalyticsRoutes from "./src/routes/analytics/search.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 
 const app = express();
@@ -224,6 +227,9 @@ app.use("/api/notifications", generousLimiter, notificationRoutes);
 
 // Outbound webhook management API (admin-gated)
 app.use("/api/webhooks", standardLimiter, webhookRoutes);
+
+// Issue #245 — Search analytics (admin-gated; see routes/analytics/search.js)
+app.use("/api/analytics/search", generousLimiter, searchAnalyticsRoutes);
 
 // Internal service-to-service (dnb-ai) — signed-request auth, no user JWTs
 app.use("/api/internal/ai", internalAiRoutes);
