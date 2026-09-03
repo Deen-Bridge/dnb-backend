@@ -86,7 +86,7 @@ describe("Course Certificates API", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.certificateId).toMatch(/^CERT-/);
+    expect(res.body.data.certificateId).toMatch(/^cert_/);
     expect(res.body.data.learnerName).toBe(user.name);
     expect(res.body.data.courseTitle).toBe(course.title);
   });
