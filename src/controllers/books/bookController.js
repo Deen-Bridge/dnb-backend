@@ -5,6 +5,7 @@ import User from "../../models/User.js";
 import cloudinary from "../../utils/cloudinary.js";
 import logger from "../../config/logger.js";
 import { validateMagicBytes } from "../../utils/fileValidation.js";
+import contentMetricsService from "../../services/analytics/contentMetricsService.js";
 import { bookService } from "../../services/book.service.js";
 import { createNewBookNotification } from "../notificationController.js";
 import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
@@ -183,6 +184,13 @@ export const getBook = async (req, res) => {
     .populate("reviews.user", "name avatar")
     .lean();
   if (!book) return res.status(404).json({ success: false, message: "Book not found" });
+
+  // Track a book view for content-performance analytics (issue #244),
+  // fire-and-forget so a failed metric write never blocks the response.
+  contentMetricsService
+    .recordBookView(book._id)
+    .catch((err) => logger.error("Failed to increment book read count:", err));
+
   res.status(200).json({ success: true, data: book });
 };
 
