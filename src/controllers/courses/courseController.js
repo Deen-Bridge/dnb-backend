@@ -5,6 +5,7 @@ import logger from "../../config/logger.js";
 import { catchAsync, APIError } from "../../middlewares/errorHandler.js";
 import { getCacheOrSet, CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 import { createNewCourseNotification } from "../notificationController.js";
+import contentMetricsService from "../../services/analytics/contentMetricsService.js";
 import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
 import {
   categoryTaxonomyExists,
@@ -162,11 +163,12 @@ export const getCourseById = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Course not found" });
 
-    // Track a course view for creator analytics (fire-and-forget so a failed
-    // metric write never blocks or fails the detail response).
-    Course.updateOne({ _id: course._id }, { $inc: { views: 1 } }).catch((err) =>
-      logger.error("Failed to increment course view count:", err)
-    );
+    // Track a course view for content-performance analytics (issue #244),
+    // fire-and-forget so a failed metric write never blocks or fails the
+    // detail response.
+    contentMetricsService
+      .recordCourseView(course._id)
+      .catch((err) => logger.error("Failed to increment course view count:", err));
 
     res.status(200).json({ success: true, data: course });
   } catch (error) {

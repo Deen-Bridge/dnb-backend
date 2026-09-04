@@ -29,6 +29,7 @@ import {
 import authRoutes from "./src/routes/authRoutes.js";
 import courseRoutes from "./src/routes/courses/courseRoutes.js";
 import courseAnalyticsRoutes from "./src/routes/courses/analyticsRoutes.js";
+import quizRoutes from "./src/routes/courses/quizRoutes.js";
 import reelsRoute from "./src/routes/reelsRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
 import bookRoutes from "./src/routes/books/bookRoutes.js";
@@ -66,6 +67,7 @@ import certificateRoutes from "./src/routes/certificate.routes.js";
 import badgeRoutes from "./src/routes/badge.routes.js";
 import achievementRoutes from "./src/routes/api/achievements.js";
 import activeUsersRoutes from "./src/routes/analytics/activeUsersRoutes.js";
+import contentPerformanceRoutes from "./src/routes/analytics/contentPerformanceRoutes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
@@ -243,6 +245,7 @@ app.use("/api/certificates", generousLimiter, certificateRoutes);
 app.use("/api/badges", generousLimiter, badgeRoutes);
 app.use("/api/achievements", generousLimiter, achievementRoutes);
 app.use("/api/courses", generousLimiter, courseRoutes);
+app.use("/api", generousLimiter, quizRoutes);
 app.use("/api/categories", generousLimiter, categoryRoutes);
 app.use("/api/reels", generousLimiter, reelsRoute);
 app.use("/api/books", generousLimiter, bookRoutes);
@@ -295,6 +298,8 @@ app.use("/api/v2", generousLimiter, v2Router);
 
 // Issue #243 — Real-time platform analytics (active users).
 app.use("/api/analytics", generousLimiter, activeUsersRoutes);
+// Issue #244 — Content performance analytics (views, engagement, completion).
+app.use("/api/analytics", generousLimiter, contentPerformanceRoutes);
 
 // Issue #212 — Hashtag trending endpoints.
 app.use("/api/hashtags", generousLimiter, hashtagRoutes);
