@@ -142,7 +142,10 @@ export const handleUnhandledRejection = () => {
 
 export const handleUncaughtException = () => {
   process.on("uncaughtException", (err) => {
-    logger.error({ err }, "UNCAUGHT EXCEPTION! Shutting down...");
+    logger.error({ err }, "UNCAUGHT EXCEPTION!");
+    if (err?.code === "ETIMEDOUT" || err?.code === "ECONNRESET" || err?.code === "EPIPE") {
+      return;
+    }
     process.exit(1);
   });
 };
