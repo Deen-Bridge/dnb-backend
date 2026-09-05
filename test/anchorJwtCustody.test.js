@@ -7,6 +7,7 @@ import axios from "axios";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import app from "../app.js";
 import User from "../src/models/User.js";
+import PendingUser from "../src/models/PendingUser.js";
 import logger from "../src/config/logger.js";
 import { USDC_ISSUER } from "../src/services/stellar/stellarService.js";
 
@@ -37,6 +38,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await User.deleteMany({ email: testUser.email });
+  await PendingUser.deleteMany({ email: testUser.email });
   await mongoose.disconnect();
 });
 
@@ -46,7 +48,10 @@ afterEach(() => {
 
 const registerAndConnectWallet = async () => {
   await User.deleteMany({ email: testUser.email });
-  const res = await request(app).post("/api/auth/register").send(testUser);
+  await PendingUser.deleteMany({ email: testUser.email });
+  await request(app).post("/api/auth/register").send(testUser);
+  const pending = await PendingUser.findOne({ email: testUser.email });
+  const res = await request(app).get(`/api/auth/verify-email/${pending.verificationToken}`);
   const publicKey = StellarSdk.Keypair.random().publicKey();
   await User.findByIdAndUpdate(res.body.user.id, {
     stellarWallet: { publicKey, connectedAt: new Date(), network: "testnet" },
