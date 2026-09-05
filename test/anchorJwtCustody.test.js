@@ -17,7 +17,7 @@ const TRANSFER_SERVER = `https://${HOME_DOMAIN}/sep24`;
 const testUser = {
   name: "JWT Custody Test User",
   email: "anchor_jwt_test@example.com",
-  password: "password123",
+  password: "Qx7#vLmp92Zt",
   role: "student",
 };
 

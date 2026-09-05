@@ -12,7 +12,7 @@ const HOME_DOMAIN = "testanchor.stellar.org";
 const testUser = {
   name: "Anchor Route Test User",
   email: "anchor_route_test@example.com",
-  password: "password123",
+  password: "Qx7#vLmp92Zt",
   role: "student",
 };
 
