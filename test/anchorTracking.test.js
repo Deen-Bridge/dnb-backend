@@ -9,13 +9,13 @@ const HOME_DOMAIN = "testanchor.stellar.org";
 const userA = {
   name: "Anchor Tracking User A",
   email: "anchor_tracking_a@example.com",
-  password: "password123",
+  password: "Qx7#vLmp92Zt",
   role: "student",
 };
 const userB = {
   name: "Anchor Tracking User B",
   email: "anchor_tracking_b@example.com",
-  password: "password123",
+  password: "Qx7#vLmp92Zt",
   role: "student",
 };
 

@@ -61,7 +61,7 @@ const WEB_AUTH_ENDPOINT = `https://${HOME_DOMAIN}/auth`;
 const testUser = {
   name: "Interactive Flow Test User",
   email: "anchor_interactive_test@example.com",
-  password: "password123",
+  password: "Qx7#vLmp92Zt",
   role: "student",
 };
 
