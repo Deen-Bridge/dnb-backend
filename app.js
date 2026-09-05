@@ -20,6 +20,7 @@ import {
 } from "./src/middlewares/security.js";
 import { sanitizeInput } from "./src/middlewares/validate.js";
 import { rtlMiddleware } from "./src/middlewares/rtl.js";
+import { trackActivity } from "./src/middlewares/analytics/activityTracker.js";
 import {
   errorHandler,
   notFound,
@@ -65,6 +66,7 @@ import courseBundleRoutes from "./src/routes/course-bundle.routes.js";
 import certificateRoutes from "./src/routes/certificate.routes.js";
 import badgeRoutes from "./src/routes/badge.routes.js";
 import achievementRoutes from "./src/routes/api/achievements.js";
+import activeUsersRoutes from "./src/routes/analytics/activeUsersRoutes.js";
 import contentPerformanceRoutes from "./src/routes/analytics/contentPerformanceRoutes.js";
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
@@ -195,6 +197,10 @@ app.use(hppMiddleware);
 app.use(sanitizeInput);
 app.use(rtlMiddleware);
 
+// Issue #243 — Real-time active-user tracking. Runs for every request and
+// only does work when a valid Bearer token is present (see the middleware).
+app.use(trackActivity);
+
 // Issue #246 — Capture page visits across the platform. Applied globally after
 // request parsing so every navigation (GET) is recorded for journey analysis;
 // fire-and-forget and GET-only, so it never blocks or mutates responses.
@@ -290,6 +296,8 @@ app.use(versionMiddleware);
 app.use("/api/v1", generousLimiter, v1Router);
 app.use("/api/v2", generousLimiter, v2Router);
 
+// Issue #243 — Real-time platform analytics (active users).
+app.use("/api/analytics", generousLimiter, activeUsersRoutes);
 // Issue #244 — Content performance analytics (views, engagement, completion).
 app.use("/api/analytics", generousLimiter, contentPerformanceRoutes);
 
