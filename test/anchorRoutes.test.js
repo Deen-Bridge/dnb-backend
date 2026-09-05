@@ -16,15 +16,19 @@ const testUser = {
   password: "Qx7#vLmp92Zt",
   role: "student",
 };
+const originalAnchorDomains = process.env.ANCHOR_HOME_DOMAINS;
 
 // app.js skips connectDB() under NODE_ENV=test; this suite manages its own connection.
 beforeAll(async () => {
   await mongoose.connect(process.env.MONGO_URI);
+  process.env.ANCHOR_HOME_DOMAINS = HOME_DOMAIN;
 });
 
 afterAll(async () => {
   await User.deleteMany({ email: testUser.email });
   await PendingUser.deleteMany({ email: testUser.email });
+  if (originalAnchorDomains === undefined) delete process.env.ANCHOR_HOME_DOMAINS;
+  else process.env.ANCHOR_HOME_DOMAINS = originalAnchorDomains;
   await mongoose.disconnect();
 });
 
