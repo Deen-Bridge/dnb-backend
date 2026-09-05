@@ -2,6 +2,7 @@ import request from "supertest";
 import mongoose from "mongoose";
 import app from "../app.js";
 import User from "../src/models/User.js";
+import PendingUser from "../src/models/PendingUser.js";
 import AnchorTransaction from "../src/models/AnchorTransaction.js";
 
 const HOME_DOMAIN = "testanchor.stellar.org";
@@ -25,13 +26,17 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await User.deleteMany({ email: { $in: [userA.email, userB.email] } });
+  await PendingUser.deleteMany({ email: { $in: [userA.email, userB.email] } });
   await AnchorTransaction.deleteMany({ homeDomain: HOME_DOMAIN });
   await mongoose.disconnect();
 });
 
 const registerAndGetToken = async (user) => {
   await User.deleteMany({ email: user.email });
-  const res = await request(app).post("/api/auth/register").send(user);
+  await PendingUser.deleteMany({ email: user.email });
+  await request(app).post("/api/auth/register").send(user);
+  const pending = await PendingUser.findOne({ email: user.email });
+  const res = await request(app).get(`/api/auth/verify-email/${pending.verificationToken}`);
   return { accessToken: res.body.accessToken, userId: res.body.user.id };
 };
 

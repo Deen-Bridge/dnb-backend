@@ -44,6 +44,7 @@ const axios = (await import("axios")).default;
 const StellarSdk = await import("@stellar/stellar-sdk");
 const { default: app } = await import("../app.js");
 const { default: User } = await import("../src/models/User.js");
+const { default: PendingUser } = await import("../src/models/PendingUser.js");
 const { default: AnchorTransaction } = await import(
   "../src/models/AnchorTransaction.js"
 );
@@ -71,6 +72,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await User.deleteMany({ email: testUser.email });
+  await PendingUser.deleteMany({ email: testUser.email });
   await AnchorTransaction.deleteMany({ homeDomain: HOME_DOMAIN });
   await mongoose.disconnect();
 });
@@ -111,7 +113,10 @@ const mockAnchorDiscovery = () => {
 const setupUserWithSession = async () => {
   process.env.ANCHOR_HOME_DOMAINS = HOME_DOMAIN;
   await User.deleteMany({ email: testUser.email });
-  const registerRes = await request(app).post("/api/auth/register").send(testUser);
+  await PendingUser.deleteMany({ email: testUser.email });
+  await request(app).post("/api/auth/register").send(testUser);
+  const pending = await PendingUser.findOne({ email: testUser.email });
+  const registerRes = await request(app).get(`/api/auth/verify-email/${pending.verificationToken}`);
   const publicKey = StellarSdk.Keypair.random().publicKey();
   await User.findByIdAndUpdate(registerRes.body.user.id, {
     stellarWallet: { publicKey, connectedAt: new Date(), network: "testnet" },
@@ -129,7 +134,10 @@ describe("Anchor interactive deposit/withdrawal flows", () => {
   it("returns 401 with requiresReauth when no anchor session is stored", async () => {
     process.env.ANCHOR_HOME_DOMAINS = HOME_DOMAIN;
     await User.deleteMany({ email: testUser.email });
-    const registerRes = await request(app).post("/api/auth/register").send(testUser);
+    await PendingUser.deleteMany({ email: testUser.email });
+    await request(app).post("/api/auth/register").send(testUser);
+    const pending = await PendingUser.findOne({ email: testUser.email });
+    const registerRes = await request(app).get(`/api/auth/verify-email/${pending.verificationToken}`);
     await User.findByIdAndUpdate(registerRes.body.user.id, {
       stellarWallet: {
         publicKey: StellarSdk.Keypair.random().publicKey(),
