@@ -39,7 +39,11 @@ server.listen(PORT, () => {
 });
 
 startJobs().catch((err) => logger.error(err, "Background job startup failed"));
-startAnchorPoller().catch((err) => logger.error(err, "Anchor poller startup failed"));
+try {
+  startAnchorPoller();
+} catch (err) {
+  logger.error(err, "Anchor poller startup failed");
+}
 
 // Start payment ingestion worker if enabled
 let stopIngestionWorker;

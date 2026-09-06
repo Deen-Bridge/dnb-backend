@@ -49,6 +49,7 @@ jobs:
       - name: Run mutation tests
         run: npx stryker run
         env:
+          NODE_OPTIONS: --experimental-vm-modules
           NODE_ENV: test
           PORT: 5000
           MONGO_URI: mongodb://localhost:27017/deenbridge_mutation
