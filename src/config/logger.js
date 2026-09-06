@@ -27,6 +27,8 @@ const logger = pino({
       "token",
       "signedXdr",
       "JWT_SECRET",
+      "jwt",
+      "anchorJwt",
     ],
     censor: "[REDACTED]",
   },

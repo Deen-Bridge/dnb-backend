@@ -1,0 +1,61 @@
+/*
+ * Deen-Bridge branding for Swagger UI.
+ * Loaded at startup by src/config/swagger.js and injected via customCss,
+ * so it must be plain CSS (no external assets required).
+ */
+
+/* Top bar — dark-green brand background with DeenBridge wordmark */
+.topbar {
+  background-color: #092601;
+  border-bottom: 3px solid #1c5a10;
+}
+
+.topbar .topbar-wrapper #logo img,
+.topbar .topbar-wrapper #logo span {
+  display: none;
+}
+
+.topbar .topbar-wrapper #logo::after {
+  content: "DeenBridge";
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.topbar .download-url-wrapper .select-label select {
+  border-color: #1c5a10;
+}
+
+/* Buttons and links */
+.btn.execute {
+  background-color: #092601;
+  border-color: #092601;
+  color: #ffffff;
+}
+
+.btn.execute:hover {
+  background-color: #1c5a10;
+  border-color: #1c5a10;
+}
+
+.opblock-summary-description,
+.parameter__name,
+.response-col_description {
+  color: inherit;
+}
+
+a.nostyle,
+.info a,
+.opblock-tag a {
+  color: #092601;
+}
+
+.scheme-container .schemes > label {
+  color: #092601;
+}
+
+/* Authorize dialog button accent */
+.auth-btn svg {
+  fill: #092601;
+}

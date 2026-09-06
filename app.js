@@ -48,6 +48,8 @@ import stellarDonationRoutes from "./src/routes/stellar/donationRoutes.js";
 import stellarOnrampRoutes from "./src/routes/stellar/onrampRoutes.js";
 import stellarPledgeRoutes from "./src/routes/stellar/pledgeRoutes.js";
 import stellarGiftRoutes from "./src/routes/stellar/giftRoutes.js";
+import stellarAnchorRoutes from "./src/routes/stellar/anchorRoutes.js";
+import stellarReportsRoutes from "./src/routes/stellar/reportsRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js";
@@ -71,6 +73,7 @@ import contentPerformanceRoutes from "./src/routes/analytics/contentPerformanceR
 import { healthCheck, ping } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
+import searchAnalyticsRoutes from "./src/routes/analytics/search.js";
 
 // Issue #212 — Hashtag trending
 import hashtagRoutes from "./src/routes/hashtagRoutes.js";
@@ -269,6 +272,8 @@ app.use("/api/stellar/donation", generousLimiter, stellarDonationRoutes);
 app.use("/api/stellar/onramp", generousLimiter, stellarOnrampRoutes);
 app.use("/api/stellar/pledges", generousLimiter, stellarPledgeRoutes);
 app.use("/api/stellar/gifts", generousLimiter, stellarGiftRoutes);
+app.use("/api/stellar/anchor", standardLimiter, stellarAnchorRoutes);
+app.use("/api/stellar/reports", standardLimiter, stellarReportsRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
 
 // Outbound webhook management API (admin-gated)
@@ -280,6 +285,9 @@ app.use("/api/internal/ai", internalAiRoutes);
 // MongoDB connection-pool metrics (Prometheus text format) — see
 // docs/connection-pool-metrics.md for scrape config + Grafana panels.
 app.use("/metrics/database", databaseMetricsRoutes);
+
+// Issue #245 - Search analytics (admin-gated).
+app.use("/api/analytics/search", generousLimiter, searchAnalyticsRoutes);
 
 // Admin — no rate limit
 app.use("/admin/jobs", jobsRoutes);

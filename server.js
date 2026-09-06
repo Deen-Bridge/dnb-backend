@@ -1,9 +1,12 @@
 import dotenv from "dotenv";
+import http from "http";
 import logger from "./src/config/logger.js";
 import connectDB from "./src/config/db.js";
 import validateEnv from "./src/config/validateEnv.js";
 import { initRedis, closeRedis } from "./src/config/redis.js";
 import { startJobs, stopJobs } from "./src/jobs/queue.js";
+import { initSockets, closeSockets } from "./src/sockets/index.js";
+import { startAnchorPoller, stopAnchorPoller } from "./src/jobs/anchorPoller.js";
 import {
   handleUncaughtException,
   handleUnhandledRejection,
@@ -27,13 +30,16 @@ initRedis().catch((err) => {
   );
 });
 
-const server = app.listen(PORT, () => {
+const server = http.createServer(app);
+initSockets(server);
+server.listen(PORT, () => {
   logger.info(`🚀🕌 DeenBridge API running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV}`);
   logger.info(`Process ID: ${process.pid}`);
 });
 
 startJobs().catch((err) => logger.error(err, "Background job startup failed"));
+startAnchorPoller().catch((err) => logger.error(err, "Anchor poller startup failed"));
 
 // Start payment ingestion worker if enabled
 let stopIngestionWorker;
@@ -81,6 +87,8 @@ const gracefulShutdown = async (signal) => {
     logger.info("HTTP server closed");
 
     await stopJobs();
+    await stopAnchorPoller();
+    await closeSockets();
 
     if (stopIngestionWorker) {
       await stopIngestionWorker();
