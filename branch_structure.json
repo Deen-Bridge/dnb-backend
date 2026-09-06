@@ -1,0 +1,15 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "fix/issue-466-performance-add-max-page-size-guards-to-list",
+    "main"
+  ],
+  "parent": {
+    "fix/issue-466-performance-add-max-page-size-guards-to-list": "main",
+    "main": null
+  },
+  "order": [
+    "main",
+    "fix/issue-466-performance-add-max-page-size-guards-to-list"
+  ]
+}

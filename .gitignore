@@ -33,4 +33,6 @@ Memory.md
 Handoff.md
 PRD.md
 Architecture.md
-scratch/
+scratch/branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
