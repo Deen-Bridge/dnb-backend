@@ -9,4 +9,4 @@ if [ ! -d "node_modules/@stryker-mutator" ]; then
   npm install --no-save @stryker-mutator/core @stryker-mutator/jest-runner
 fi
 
-NODE_ENV=test npx stryker run
+NODE_OPTIONS="${NODE_OPTIONS:-} --experimental-vm-modules" NODE_ENV=test npx stryker run
