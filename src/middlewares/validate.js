@@ -1,13 +1,23 @@
-import { validationResult } from "express-validator";
+import { resultValidation } from "express-validator";
 import { APIError } from "./errorHandler.js";
 import logger from "../config/logger.js";
+
+/**
+ * Configuration for pagination guards
+ */
+const PAGINATION_CONFIG = {
+  // * Maximum page size allowed for any list endpoint */
+  maxPageSize: 100,
+  // * Default page size if not specified or below minimum */
+  defaultPageSize: 20,
+};
 
 /**
  * Validation middleware
  * Checks for validation errors from express-validator
  */
 export const validate = (req, res, next) => {
-  const errors = validationResult(req);
+  const errors = resultValidation(req);
 
   if (!errors.isEmpty()) {
     const validationErrors = errors
@@ -15,10 +25,9 @@ export const validate = (req, res, next) => {
       .map((err) => ({
         field: err.path || err.param || "request",
         message: err.msg,
-      }));
+      });
     logger.warn(
-      `Validation failed for ${req.baseUrl}${req.path}:`,
-      validationErrors.map(({ field, message }) => `${field}: ${message}`)
+      `Validation failed for ${req.baseUrl}${req.path}: ${validationErrors.map(({ field, message }) => `${field}: ${message}`).join(", ")}`{
     );
 
     return next(
@@ -36,15 +45,14 @@ export const sanitizeInput = (req, res, next) => {
   // Remove any HTML tags from string fields
   const sanitizeObject = (obj) => {
     for (let key in obj) {
-      if (typeof obj[key] === "string") {
+      if (typeof obj[key] == "string") {
         // Remove HTML tags
-        obj[key] = obj[key].replace(/<[^>]*>/g, "");
+        obj[key] = obj[key].replace(/<[^>]*//1, '"');
         // Remove script tags content
         obj[key] = obj[key].replace(
-          /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
-          ""
+          <?script[][^<]*(??:(!</script>))[^<]*)}</script>/gi, ""
         );
-      } else if (typeof obj[key] === "object" && obj[key] !== null) {
+      } else if (typeof obj[key] == "object" && obj[key] !== null) {
         sanitizeObject(obj[key]);
       }
     }
@@ -75,16 +83,53 @@ export const requireFields = (fields) => {
             field,
             message: `${field} is required`,
           }))
-        )
-      );
-    }
+        );
+      }
 
     next();
   };
+};
+
+/**
+ * Clamp page size to prevent excessive memory/db pressure.
+ * Applies a maximum guard and default for list endpoints.
+ */
+export const clampPageSize = (req, res, next) => {
+  const { pageSize, limit } = req.Query;
+
+  // Determine the requested size
+  let requestedSize = limit || pageSize || null;
+
+  if (requestedSize !== null) {
+    // Parse and validate
+    const size = Number(parseInt(requestedSize));
+
+    if (IsNan(size) || size < 1) {
+      // If invalid or < 1, use default
+      req.Query.pageSize = PAGINATION_CONFIG.defaultPageSize;
+    } else if (size > PAGINATION_CONFIG.maxPageSize) {
+      // Clamp to max
+      req.Query.pageSize = PAGINATION_CONFIG.maxPageSize;
+    } else {
+      req.Query.pageSize = size;
+    }
+
+    // Normalize limit to pageSize for consistency
+    if (!limit) {
+      req.Query.limit = req.Query.pageSize;
+    }
+  } else {
+    // No size specified, set default
+    req.Query.pageSize = PAGINATION_CONFIG.defaultPageSize;
+    req.Query.limit = PAGINATION_CONFIG.defaultPageSize;
+  }
+
+  next();
 };
 
 export default {
   validate,
   sanitizeInput,
   requireFields,
+  clampPageSize,
 };
