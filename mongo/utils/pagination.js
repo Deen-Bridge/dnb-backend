@@ -11,7 +11,7 @@
  *   - **Consistency.** API consumers get a predictable payload structure
  *     whether a collection uses offset or cursor pagination.
  *   - **Flexibility.** Seamlessly handles offset mode (`page`, `offset`, `limit`)
- *     and cursor mode (`cursor`, `after`, `before`).
+ *     and cursor mode (`cursor`, `after`, `before`), with bounded page sizes.
  *   - **Decoupled execution.** Storage-agnostic: repository code injects an
  *     `executor` and optional `countExecutor`, keeping pagination logic pure.
  *
@@ -33,7 +33,7 @@
  *     nextCursor: "...",    // token for next page (cursor mode)
  *     prevCursor: "..."     // token for previous page (cursor mode)
  *   },
- *   // Top-level aliases for direct access & backward compatibility
+ *   // Top-level aliases for direct access and backward compatibility
  *   total: 100,
  *   page: 1,
  *   limit: 20,
@@ -103,7 +103,7 @@ export function resolveLimit(value, defaultLimit = DEFAULT_LIMIT, maxLimit = MAX
 export function formatPaginationMeta({
   total = null,
   page = null,
-  limit = DEFAULT_LIMIT,
+  limit,
   totalPages = null,
   offset = null,
   hasNext = false,
@@ -193,8 +193,7 @@ export async function paginateOffset({
   if (typeof executor !== "function") {
     throw new TypeError("paginateOffset: executor function is required");
   }
-
-  const limit = resolveLimit(rawLimit);
+  const limit = resolveLimit(rawLimit, DEFAULT_LIMIT, MAX_LIMIT);
   let page = parseInt(rawPage, 10);
   if (Number.isNaN(page) || page < 1) {
     page = 1;
@@ -217,7 +216,7 @@ export async function paginateOffset({
 
   // Execute query and count concurrently if countExecutor available
   const promises = [
-    executor({ filter, sort: sortSpec, limit, skip: offset }),
+    executor({ filter, sort: sortSpec, limit, skip: offset, maxLimit: MAX_LIMIT }),
   ];
 
   const shouldCount = typeof precomputedTotal !== "number" && typeof countExecutor === "function";
@@ -293,8 +292,7 @@ export async function paginateCursor({
   if (typeof executor !== "function") {
     throw new TypeError("paginateCursor: executor function is required");
   }
-
-  const limit = resolveLimit(rawLimit);
+  const limit = resolveLimit(rawLimit, DEFAULT_LIMIT, MAX_LIMIT);
   const activeAfter = after || cursor || null;
 
   // Resolve sort order numeric direction

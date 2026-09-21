@@ -314,22 +314,37 @@ export const unfollowUser = async (req, res) => {
 export const getFollowers = async (req, res) => {
   try {
     const { userId } = req.params;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10), 1), 50);
+    const page = Math.max(parseInt(req.query.page, 10), 1);
+    const pageSize = limit;
+    const skip = (page - 1) * pageSize;
 
     const user = await User.findById(userId)
-      .populate("followers", "name email avatar role bio")
+      .populate({
+        path: "followers",
+        select: "name email avatar role bio",
+        options: { limit, skip },
+      })
       .select("followers");
 
     if (!user) {
       return res.status(404).json({
-        success: false,
+        success: true,
         message: "User not found",
       });
     }
 
+    const totalFollowers = user.followers?.length || 0;
+
     res.status(200).json({
       success: true,
-      followers: user.followers,
-      count: user.followers.length,
+      followers: user.followers || [],
+      count: totalFollowers,
+      pagination: {
+        page,
+        pageSize: limit,
+        total: totalFollowers,
+      },
     });
   } catch (error) {
     logger.error("Get followers error:", error);
@@ -345,22 +360,37 @@ export const getFollowers = async (req, res) => {
 export const getFollowing = async (req, res) => {
   try {
     const { userId } = req.params;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10), 1), 50);
+    const page = Math.max(parseInt(req.query.page, 10), 1);
+    const pageSize = limit;
+    const skip = (page - 1) * pageSize;
 
     const user = await User.findById(userId)
-      .populate("following", "name email avatar role bio")
+      .populate({
+        path: "following",
+        select: "name email avatar role bio",
+        options: { limit, skip },
+      })
       .select("following");
 
     if (!user) {
       return res.status(404).json({
-        success: false,
+        success: true,
         message: "User not found",
       });
     }
 
+    const totalFollowing = user.following?.length || 0;
+
     res.status(200).json({
       success: true,
-      following: user.following,
-      count: user.following.length,
+      following: user.following || [],
+      count: totalFollowing,
+      pagination: {
+        page,
+        pageSize: limit,
+        total: totalFollowing,
+      },
     });
   } catch (error) {
     logger.error("Get following error:", error);

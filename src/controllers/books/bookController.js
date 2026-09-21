@@ -9,6 +9,7 @@ import contentMetricsService from "../../services/analytics/contentMetricsServic
 import { bookService } from "../../services/book.service.js";
 import { createNewBookNotification } from "../notificationController.js";
 import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
+import { paginate } from "../../utils/pagination.js";
 
 // Magic-byte types accepted for the book's text file.
 const BOOK_FILE_MIME_TYPES = ["application/pdf", "application/epub+zip"];
@@ -129,49 +130,29 @@ export const getBooks = async (req, res) => {
       filter.category = req.query.category;
     }
 
-    const pageParam = req.query.page ? parseInt(req.query.page, 10) : null;
-    const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : null;
-    const isPaginated = pageParam !== null || limitParam !== null;
-
     const selectFields =
       "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
 
-    if (isPaginated) {
-      const page = Math.max(pageParam || 1, 1);
-      const limit = Math.min(Math.max(limitParam || 20, 1), 100);
-      const skip = (page - 1) * limit;
+    const { page, limit, skip } = paginate(req.query);
 
-      const [books, total] = await Promise.all([
-        Book.find(filter)
-          .select(selectFields)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .populate("author", "name avatar bio")
-          .populate("reviews.user", "name avatar")
-          .lean(),
-        Book.countDocuments(filter),
-      ]);
+    const [books, total] = await Promise.all([
+      Book.find(filter)
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("author", "name avatar bio")
+        .populate("reviews.user", "name avatar")
+        .lean(),
+      Book.countDocuments(filter),
+    ]);
 
-      const hasMore = skip + books.length < total;
-      return res.status(200).json({
-        success: true,
-        page,
-        limit,
-        total,
-        hasMore,
-        data: books,
-      });
-    }
-
-    const books = await Book.find(filter)
-      .select(selectFields)
-      .sort({ createdAt: -1 })
-      .populate("author", "name avatar bio")
-      .populate("reviews.user", "name avatar")
-      .lean();
-
-    res.status(200).json({ success: true, data: books });
+    const hasMore = skip + books.length < total;
+    return res.status(200).json({
+      success: true,
+      pagination: { page, limit, total, hasMore },
+      data: books,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -203,13 +184,35 @@ export const getBooksByAuthor = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing author id" });
     }
+
     const selectFields =
       "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
-    const books = await Book.find({ author: authorId })
-      .select(selectFields)
-      .sort({ createdAt: -1 })
-      .populate("author", "name avatar bio")
-      .lean();
+
+    const { page, limit, skip } = paginate(req.query);
+
+    const [books, total] = await Promise.all([
+      Book.find({ author: authorId })
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("author", "name avatar bio")
+        .lean(),
+      Book.countDocuments({ author: authorId }),
+    ]);
+
+    const hasMore = skip + books.length < total;
+    return res.status(200).json({
+      success: true,
+      pagination: { page, limit, total, hasMore },
+      data: books,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// delete book by id
     // An empty result set is a successful query, not a failure.
     res.status(200).json({ success: true, data: books || [] });
   } catch (error) {
@@ -405,7 +408,7 @@ export const fetchRecommendedBooks = async (req, res) => {
         .select(selectFields)
         .populate("author", "name email avatar bio")
         .sort({ readCount: -1 })
-        .limit(10)
+        .limit(50)
         .lean();
 
       return res.status(200).json({

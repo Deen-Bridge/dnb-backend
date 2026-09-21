@@ -12,6 +12,8 @@ import {
   categoryValidationError,
   resolveActiveCategory,
 } from "../../services/categoryService.js";
+import { normalizePagination } from "../../utils/pagination.js";
+import { PAGINATION_DEFAULTS } from "../../utils/pagination.js";
 
 /**
  * Normalize + defensively validate an optional prerequisites array of course
@@ -104,47 +106,35 @@ export const getCourses = async (req, res) => {
       if (!categoryDoc) return res.status(404).json({ success: false, message: "Category not found" });
       filter.categoryRef = categoryDoc._id;
     }
-    const pageParam = req.query.page ? parseInt(req.query.page, 10) : null;
-    const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : null;
-    const isPaginated = pageParam !== null || limitParam !== null;
+    const { page, limit, skip } = normalizePagination(req.query, {
+      defaultLimit: PAGINATION_DEFAULTS.DEFAULT_LIMIT,
+      maxLimit: PAGINATION_DEFAULTS.MAX_LIMIT,
+    });
 
+    const { page, limit, skip } = normalizePagination(req.query);
     const selectFields =
       "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt";
 
-    if (isPaginated) {
-      const page = Math.max(pageParam || 1, 1);
-      const limit = Math.min(Math.max(limitParam || 20, 1), 100);
-      const skip = (page - 1) * limit;
+    const [courses, total] = await Promise.all([
+      Course.find(filter)
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("createdBy", "name email avatar")
+        .lean(),
+      Course.countDocuments(filter),
+    ]);
 
-      const [courses, total] = await Promise.all([
-        Course.find(filter)
-          .select(selectFields)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .populate("createdBy", "name email avatar")
-          .lean(),
-        Course.countDocuments(filter),
-      ]);
-
-      const hasMore = skip + courses.length < total;
-      return res.status(200).json({
-        success: true,
-        page,
-        limit,
-        total,
-        hasMore,
-        data: courses,
-      });
-    }
-
-    const courses = await Course.find(filter)
-      .select(selectFields)
-      .sort({ createdAt: -1 })
-      .populate("createdBy", "name email avatar")
-      .lean();
-
-    res.status(200).json({ success: true, data: courses });
+    const hasMore = skip + courses.length < total;
+    return res.status(200).json({
+      success: true,
+      page,
+      limit,
+      total,
+      hasMore,
+      data: courses,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -198,18 +188,35 @@ export const getCoursesByUser = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Invalid user ID format" });
     }
+    const { page, limit, skip } = normalizePagination(req.query, {
+      defaultLimit: PAGINATION_DEFAULTS.DEFAULT_LIMIT,
+      maxLimit: PAGINATION_DEFAULTS.MAX_LIMIT,
+    });
 
-    logger.info("✅ Finding courses...");
-    const courses = await Course.find({ createdBy })
-      .select(
-        "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt"
-      )
-      .sort({ createdAt: -1 })
-      .populate("createdBy", "name avatar bio")
-      .lean();
+    const { page, limit, skip } = normalizePagination(req.query);
+    const selectFields =
+      "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt";
 
-    // An empty result set is a successful query, not a failure.
-    res.status(200).json({ success: true, data: courses || [] });
+    const [courses, total] = await Promise.all([
+      Course.find({ createdBy })
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("createdBy", "name avatar bio")
+        .lean(),
+      Course.countDocuments({ createdBy }),
+    ]);
+
+    const hasMore = skip + courses.length < total;
+    return res.status(200).json({
+      success: true,
+      page,
+      limit,
+      total,
+      hasMore,
+      data: courses,
+    });
   } catch (error) {
     logger.error("❌ Unexpected Error in getCoursesByUser:", error);
     res.status(500).json({ success: false, message: error.message });
