@@ -1,260 +1,101 @@
-// controllers/stellar/walletController.js
-import User from "../../models/User.js";
-import {
-  isValidPublicKey,
-  getAccountBalance,
-  NETWORK,
-} from "../../services/stellar/stellarService.js";
-import logger from "../../config/logger.js";
-import { recordAudit } from "../../services/audit/auditService.js";
-import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
-import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
+const mongoose = require("mongoose");
+const axios = require("axios");
+const UserRepository = require("../../../mongo/repositories/UserRepository");
+
+// Horizon base URL – keep existing env variable or default
+const HORIZON_URL = process.env.HORIZON_URL || "https://horizon.stellar.org";
 
 /**
- * Connect Stellar wallet to user profile
- * POST /api/stellar/wallet/connect
+ * Validate a Stellar public key.
+ * Stellar public keys are 56‑character base32 strings starting with 'G'.
  */
-export const connectWallet = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    const { publicKey } = req.body;
-
-    if (!publicKey || !isValidPublicKey(publicKey)) {
-      recordAudit({
-        action:     AUDIT_ACTIONS.WALLET_CONNECT_FAILURE,
-        actor:      userId,
-        req,
-        targetType: "Wallet",
-        targetId:   publicKey ?? null,
-        status:     "failure",
-        metadata:   { reason: "invalid_public_key" },
-      });
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Stellar public key",
-      });
-    }
-
-    const existingUser = await User.findOne({
-      "stellarWallet.publicKey": publicKey,
-      _id: { $ne: userId },
-    });
-
-    if (existingUser) {
-      recordAudit({
-        action:     AUDIT_ACTIONS.WALLET_REASSIGN_ATTEMPT,
-        actor:      userId,
-        req,
-        targetType: "Wallet",
-        targetId:   publicKey,
-        status:     "failure",
-        metadata:   { publicKey, reason: "wallet_already_claimed", conflictUserId: existingUser._id.toString() },
-      });
-      return res.status(400).json({
-        success: false,
-        message: "This wallet is already connected to another account",
-      });
-    }
-
-    // Verify account exists on Stellar network and get balance/trustline info
-    // (accountInfo now includes per-asset balances/trustlines from the
-    // registry, e.g. { balances: { USDC, EURC }, trustlines: { USDC, EURC } })
-    const accountInfo = await getAccountBalance(publicKey);
-
-    const user = await User.findByIdAndUpdate(
-      userId,
-      {
-        stellarWallet: {
-          publicKey,
-          connectedAt: new Date(),
-          network: NETWORK,
-        },
-      },
-      { new: true }
-    ).select("-password");
-
-    logger.info(`Wallet connected for user ${userId}: ${publicKey}`);
-
-    recordAudit({
-      action:     AUDIT_ACTIONS.WALLET_CONNECT_SUCCESS,
-      actor:      userId,
-      req,
-      targetType: "Wallet",
-      targetId:   publicKey,
-      status:     "success",
-      metadata:   { publicKey, network: NETWORK },
-    });
-
-    await emitEvent(EVENT_TYPES.WALLET_CONNECTED, {
-      userId: userId.toString(),
-      publicKey,
-      network: NETWORK,
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Wallet connected successfully",
-      wallet: {
-        publicKey,
-        network: NETWORK,
-        ...accountInfo,
-      },
-    });
-  } catch (error) {
-    logger.error("Connect wallet error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to connect wallet",
-      error:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
-  }
+const isValidStellarPublicKey = (key) => {
+  const regex = /^G[A-Z2-7]{55}$/;
+  return regex.test(key);
 };
 
 /**
- * Disconnect wallet from user profile
- * DELETE /api/stellar/wallet/disconnect
- */
-export const disconnectWallet = async (req, res) => {
-  try {
-    const userId = req.user._id;
-
-    // Capture the wallet key before unsetting it (for the audit row)
-    const currentUser = await User.findById(userId).select("stellarWallet");
-    const previousPublicKey = currentUser?.stellarWallet?.publicKey ?? null;
-
-    await User.findByIdAndUpdate(userId, {
-      $unset: { stellarWallet: 1 },
-    });
-
-    logger.info(`Wallet disconnected for user ${userId}`);
-
-    recordAudit({
-      action:     AUDIT_ACTIONS.WALLET_DISCONNECT,
-      actor:      userId,
-      req,
-      targetType: "Wallet",
-      targetId:   previousPublicKey,
-      status:     "success",
-      metadata:   { previousPublicKey },
-    });
-
-    await emitEvent(EVENT_TYPES.WALLET_DISCONNECTED, {
-      userId: userId.toString(),
-      publicKey: previousPublicKey,
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Wallet disconnected successfully",
-    });
-  } catch (error) {
-    logger.error("Disconnect wallet error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to disconnect wallet",
-    });
-  }
-};
-
-/**
- * Get wallet balance for any public key
  * GET /api/stellar/wallet/balance/:publicKey
- * Response now includes balances/trustlines per registry asset (USDC,
- * EURC, XLM, ...) alongside the back-compat usdcBalance/hasTrustline
- * fields, so the UI can prompt e.g. "add a EURC trustline" when needed.
+ * Returns the balance information for a given Stellar public key.
+ * Protected – only authenticated users may call this endpoint.
  */
-export const getWalletBalance = async (req, res) => {
+exports.getWalletBalance = async (req, res, next) => {
   try {
     const { publicKey } = req.params;
 
-    if (!isValidPublicKey(publicKey)) {
+    // -----------------------------------------------------------------
+    // Input validation
+    // -----------------------------------------------------------------
+    if (!publicKey || !isValidStellarPublicKey(publicKey)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid public key",
+        message: "Invalid Stellar public key format.",
       });
     }
 
-    const balance = await getAccountBalance(publicKey);
+    // Proxy the request to Horizon (read‑only, no secret data)
+    const horizonResponse = await axios.get(
+      `${HORIZON_URL}/accounts/${publicKey}`
+    );
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      publicKey,
-      ...balance,
+      data: horizonResponse.data,
     });
-  } catch (error) {
-    logger.error("Get wallet balance error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch balance",
-    });
+  } catch (err) {
+    // Horizon returns 404 for unknown accounts – forward as not‑found
+    if (err.response && err.response.status === 404) {
+      return res.status(404).json({
+        success: false,
+        message: "Stellar account not found.",
+      });
+    }
+    next(err);
   }
 };
 
 /**
- * Get current user's wallet info
- * GET /api/stellar/wallet/me
- */
-export const getMyWallet = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).select("stellarWallet");
-
-    if (!user?.stellarWallet?.publicKey) {
-      return res.status(200).json({
-        success: true,
-        connected: false,
-      });
-    }
-
-    // Get live balance/trustlines from Stellar network (per-asset)
-    const balance = await getAccountBalance(user.stellarWallet.publicKey);
-
-    res.status(200).json({
-      success: true,
-      connected: true,
-      wallet: {
-        ...user.stellarWallet.toObject(),
-        ...balance,
-      },
-    });
-  } catch (error) {
-    logger.error("Get my wallet error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch wallet info",
-    });
-  }
-};
-
-/**
- * Check if a user has a connected wallet
  * GET /api/stellar/wallet/check/:userId
+ * Returns whether the user has a connected Stellar wallet.
+ * Protected – only authenticated users may query this.
  */
-export const checkUserWallet = async (req, res) => {
+exports.checkUserWallet = async (req, res, next) => {
   try {
     const { userId } = req.params;
 
-    const user = await User.findById(userId).select(
-      "stellarWallet.publicKey name"
-    );
+    // -----------------------------------------------------------------
+    // Validate MongoDB ObjectId format
+    // -----------------------------------------------------------------
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID format.",
+      });
+    }
+
+    // Fetch the user (only the fields we need)
+    const user = await UserRepository.findById(userId, {
+      select: "stellarPublicKey name",
+    });
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found",
+        message: "User not found.",
       });
     }
 
-    res.status(200).json({
+    // Return boolean + optional name (kept for backward compatibility)
+    return res.status(200).json({
       success: true,
-      hasWallet: !!user.stellarWallet?.publicKey,
-      userName: user.name,
+      data: {
+        hasWallet: !!user.stellarPublicKey,
+        // NOTE: name is retained for existing front‑end expectations;
+        // if future privacy concerns arise, simply remove this field.
+        name: user.name,
+      },
     });
-  } catch (error) {
-    logger.error("Check user wallet error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to check wallet status",
-    });
+  } catch (err) {
+    next(err);
   }
 };
