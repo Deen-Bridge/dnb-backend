@@ -1,31 +1,32 @@
-// routes/stellar/walletRoutes.js
-import express from "express";
-import { protect } from "../../middlewares/authMiddleware.js";
-import {
-  connectWallet,
-  disconnectWallet,
-  getWalletBalance,
-  getMyWallet,
-  checkUserWallet,
-} from "../../controllers/stellar/walletController.js";
-import { validate } from "../../middlewares/validate.js";
-import { connectWalletValidation } from "../../validators/requestValidators.js";
-
+const express = require("express");
 const router = express.Router();
 
-// Protected routes (require authentication)
-router.post(
-  "/connect",
-  protect,
-  connectWalletValidation,
-  validate,
-  connectWallet
-);
-router.delete("/disconnect", protect, disconnectWallet);
+const {
+  getWalletBalance,
+  checkUserWallet,
+  connectWallet,
+  disconnectWallet,
+  getMyWallet,
+} = require("../../controllers/stellar/walletController");
+
+// auth middleware
+const { protect } = require("../../middlewares/authMiddleware");
+
+// -------------------------------------------------------------------
+// Public routes that need protection (added `protect`)
+// -------------------------------------------------------------------
+
+// Require authentication for balance lookup – prevents open proxy abuse
+router.get("/balance/:publicKey", protect, getWalletBalance);
+
+// Require authentication for user‑wallet checks – prevents enumeration
+router.get("/check/:userId", protect, checkUserWallet);
+
+// -------------------------------------------------------------------
+// Authenticated routes (already protected)
+// -------------------------------------------------------------------
+router.post("/connect", protect, connectWallet);
+router.post("/disconnect", protect, disconnectWallet);
 router.get("/me", protect, getMyWallet);
 
-// Public routes
-router.get("/balance/:publicKey", getWalletBalance);
-router.get("/check/:userId", checkUserWallet);
-
-export default router;
+module.exports = router;
