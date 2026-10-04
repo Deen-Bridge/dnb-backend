@@ -1,6 +1,4 @@
 /**
- * @jest-environment node
- *
  * Tests for the QueryBuilder utility (#180).
  */
 
