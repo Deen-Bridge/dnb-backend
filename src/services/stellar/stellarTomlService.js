@@ -65,8 +65,9 @@ export function buildStellarToml() {
   // ── Soroban contracts ──
   // Scholarship escrow is separate from the Sadaqah payment fund. This custom
   // field is not part of SEP-1; wallets ignore it, but explorers can discover it.
-  const escrowContract =
-    process.env.SCHOLARSHIP_ESCROW_CONTRACT_ID || process.env.GIVING_ESCROW_CONTRACT_ID;
+  // Do not relabel the legacy giving escrow as the scholarship escrow. The
+  // campaign uses a separate contract and publishes only its dedicated ID.
+  const escrowContract = process.env.SCHOLARSHIP_ESCROW_CONTRACT_ID;
   const isValidContractId =
     typeof escrowContract === "string" && /^C[A-Z2-7]{55}$/.test(escrowContract.trim());
   if (isValidContractId) {
