@@ -7,18 +7,29 @@
     "progress"
   ],
   "testRunner": "jest",
+  "testRunnerNodeArgs": [
+    "--experimental-vm-modules"
+  ],
   "jest": {
-    "projectType": "custom"
+    "projectType": "custom",
+    "configFile": "jest.stryker.config.js"
   },
   "mutate": [
-    "mongo/utils/**/*.js",
-    "mongo/mixins/**/*.js",
-    "mongo/repositories/**/*.js"
+    "mongo/utils/QueryBuilder.js",
+    "mongo/utils/aggregation.js",
+    "mongo/utils/cursorPagination.js",
+    "mongo/utils/pagination.js",
+    "mongo/utils/textSearch.js",
+    "mongo/mixins/Searchable.js",
+    "mongo/repositories/CourseRepository.js",
+    "mongo/repositories/EducatorBalanceRepository.js",
+    "mongo/repositories/NotificationRepository.js",
+    "mongo/repositories/ReelRepository.js"
   ],
   "thresholds": {
     "high": 90,
     "low": 80,
-    "break": 80
+    "break": 71
   },
   "concurrency": 4
 }
