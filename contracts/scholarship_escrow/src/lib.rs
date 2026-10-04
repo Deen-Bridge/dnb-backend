@@ -4,6 +4,16 @@ use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, token, Address, Env, Vec,
 };
 
+// Persistent Soroban entries have a finite TTL. The maintainer refreshes the
+// contract's shared entries and a bounded donor batch before entries archive.
+const STORAGE_TTL_THRESHOLD: u32 = 100_000;
+const STORAGE_TTL_BUMP: u32 = 500_000;
+const DONOR_TTL_BATCH_SIZE: u32 = 25;
+const MAX_DONORS: u32 = 256;
+const MAX_MILESTONES: u32 = 100;
+// Keeps contribution * refund_pool within i128 for the pro-rata calculation.
+const MAX_CAMPAIGN_STROOPS: i128 = 1_000_000_000_000_000_000;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -24,6 +34,10 @@ pub enum Error {
     AlreadyRefunded = 14,
     NoRefundAvailable = 15,
     ArithmeticOverflow = 16,
+    DonorLimitExceeded = 17,
+    CampaignLimitExceeded = 18,
+    MilestoneLimitExceeded = 19,
+    ActorsMustDiffer = 20,
 }
 
 #[contracttype]
@@ -113,11 +127,17 @@ impl ScholarshipEscrow {
         if env.storage().persistent().has(&DataKey::State) {
             return Err(Error::AlreadyInitialized);
         }
+        if arbiter == beneficiary {
+            return Err(Error::ActorsMustDiffer);
+        }
 
         arbiter.require_auth();
 
         if milestones.is_empty() {
             return Err(Error::EmptyMilestones);
+        }
+        if milestones.len() > MAX_MILESTONES {
+            return Err(Error::MilestoneLimitExceeded);
         }
         if expiry <= env.ledger().sequence() {
             return Err(Error::InvalidExpiry);
@@ -134,6 +154,9 @@ impl ScholarshipEscrow {
             milestone_total = milestone_total
                 .checked_add(milestone.amount)
                 .ok_or(Error::MilestoneTotalOverflow)?;
+        }
+        if milestone_total > MAX_CAMPAIGN_STROOPS {
+            return Err(Error::CampaignLimitExceeded);
         }
 
         let state = EscrowState {
@@ -155,6 +178,7 @@ impl ScholarshipEscrow {
         env.storage()
             .persistent()
             .set(&DataKey::Donors, &Vec::<Address>::new(&env));
+        Self::extend_core_ttl(&env);
 
         Initialized {
             arbiter,
@@ -201,6 +225,9 @@ impl ScholarshipEscrow {
             .get(&DataKey::Donors)
             .unwrap_or_else(|| Vec::new(&env));
         if !donors.contains(&donor) {
+            if donors.len() >= MAX_DONORS {
+                return Err(Error::DonorLimitExceeded);
+            }
             donors.push_back(donor.clone());
             env.storage().persistent().set(&DataKey::Donors, &donors);
         }
@@ -211,6 +238,8 @@ impl ScholarshipEscrow {
         state.funded_total = funded_total;
         env.storage().persistent().set(&DataKey::State, &state);
         env.storage().persistent().set(&donor_key, &donor_total);
+        Self::extend_core_ttl(&env);
+        Self::extend_key_ttl(&env, &donor_key);
 
         Funded {
             donor,
@@ -267,6 +296,7 @@ impl ScholarshipEscrow {
             .persistent()
             .set(&DataKey::Milestones, &milestones);
         env.storage().persistent().set(&DataKey::State, &state);
+        Self::extend_core_ttl(&env);
 
         MilestoneApproved {
             index,
@@ -359,11 +389,14 @@ impl ScholarshipEscrow {
         }
 
         env.storage().persistent().set(&claimed_key, &true);
-        env.storage()
-            .persistent()
-            .set(&DataKey::DonorRefund(donor.clone()), &amount);
+        let donor_refund_key = DataKey::DonorRefund(donor.clone());
+        env.storage().persistent().set(&donor_refund_key, &amount);
         state.refunded_total = refunded_total;
         env.storage().persistent().set(&DataKey::State, &state);
+        Self::extend_core_ttl(&env);
+        Self::extend_key_ttl(&env, &donor_key);
+        Self::extend_key_ttl(&env, &claimed_key);
+        Self::extend_key_ttl(&env, &donor_refund_key);
 
         Refunded {
             donor,
@@ -392,6 +425,15 @@ impl ScholarshipEscrow {
         milestones.get(index).unwrap()
     }
 
+    pub fn milestone_count(env: Env) -> u32 {
+        let milestones: Vec<Milestone> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Milestones)
+            .unwrap();
+        milestones.len()
+    }
+
     pub fn donor_contribution(env: Env, donor: Address) -> i128 {
         env.storage()
             .persistent()
@@ -399,8 +441,58 @@ impl ScholarshipEscrow {
             .unwrap_or(0)
     }
 
+    /// Refresh shared state and one bounded page of donor records before they
+    /// archive. Call repeatedly with the returned cursor until it returns 0.
+    /// Permissionless so a campaign maintainer can use a separate fee-paying
+    /// account without adding a custodial key to this contract.
+    pub fn maintain_ttl(env: Env, start_index: u32) -> Result<u32, Error> {
+        Self::load_state(&env);
+        Self::extend_core_ttl(&env);
+
+        let donors: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Donors)
+            .unwrap_or_else(|| Vec::new(&env));
+        let end_index = core::cmp::min(
+            start_index.saturating_add(DONOR_TTL_BATCH_SIZE),
+            donors.len(),
+        );
+        for index in start_index..end_index {
+            let donor = donors.get(index).ok_or(Error::ArithmeticOverflow)?;
+            let contribution_key = DataKey::DonorContribution(donor.clone());
+            let refund_key = DataKey::DonorRefund(donor.clone());
+            let claimed_key = DataKey::RefundClaimed(donor);
+            Self::extend_key_ttl(&env, &contribution_key);
+            Self::extend_key_ttl(&env, &refund_key);
+            Self::extend_key_ttl(&env, &claimed_key);
+        }
+        if end_index >= donors.len() {
+            Ok(0)
+        } else {
+            Ok(end_index)
+        }
+    }
+
     fn load_state(env: &Env) -> EscrowState {
         env.storage().persistent().get(&DataKey::State).unwrap()
+    }
+
+    fn extend_core_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(STORAGE_TTL_THRESHOLD, STORAGE_TTL_BUMP);
+        Self::extend_key_ttl(env, &DataKey::State);
+        Self::extend_key_ttl(env, &DataKey::Milestones);
+        Self::extend_key_ttl(env, &DataKey::Donors);
+    }
+
+    fn extend_key_ttl(env: &Env, key: &DataKey) {
+        if env.storage().persistent().has(key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_BUMP);
+        }
     }
 
     fn ensure_active(env: &Env, state: &EscrowState) -> Result<(), Error> {
@@ -417,6 +509,7 @@ mod test {
     extern crate std;
 
     use super::*;
+    use soroban_sdk::testutils::storage::{Instance as _, Persistent};
     use soroban_sdk::{
         testutils::{Address as _, AuthorizedFunction, Events as _, Ledger as _},
         token::StellarAssetClient,
@@ -518,6 +611,57 @@ mod test {
         assert_eq!(state.milestone_total, 1_000);
         assert_eq!(ctx.client().milestone(&0).amount, 600);
         assert!(!ctx.client().milestone(&0).released);
+    }
+
+    #[test]
+    fn maintenance_refreshes_shared_state_and_donor_ttls() {
+        let ctx = context();
+        ctx.client().fund(&ctx.donor_a, &100);
+
+        // Move close to the TTL threshold while keeping the entries live.
+        ctx.env
+            .ledger()
+            .set_sequence_number(NOW + STORAGE_TTL_BUMP - STORAGE_TTL_THRESHOLD / 2);
+        let old_ttl = ctx.env.as_contract(&ctx.contract_id, || {
+            ctx.env.storage().persistent().get_ttl(&DataKey::State)
+        });
+        assert!(old_ttl < STORAGE_TTL_THRESHOLD);
+
+        assert_eq!(ctx.client().maintain_ttl(&0), 0);
+        let (state_ttl, donor_ttl, milestone_ttl, instance_ttl) =
+            ctx.env.as_contract(&ctx.contract_id, || {
+                (
+                    ctx.env.storage().persistent().get_ttl(&DataKey::State),
+                    ctx.env
+                        .storage()
+                        .persistent()
+                        .get_ttl(&DataKey::DonorContribution(ctx.donor_a.clone())),
+                    ctx.env.storage().persistent().get_ttl(&DataKey::Milestones),
+                    ctx.env.storage().instance().get_ttl(),
+                )
+            });
+        assert!(state_ttl >= STORAGE_TTL_BUMP - 1);
+        assert!(donor_ttl >= STORAGE_TTL_BUMP - 1);
+        assert!(milestone_ttl >= STORAGE_TTL_BUMP - 1);
+        assert!(instance_ttl >= STORAGE_TTL_BUMP - 1);
+    }
+
+    #[test]
+    fn maintenance_returns_bounded_donor_batch_cursors() {
+        let ctx = context();
+        let mut donors = Vec::new(&ctx.env);
+        for _ in 0..DONOR_TTL_BATCH_SIZE + 1 {
+            donors.push_back(Address::generate(&ctx.env));
+        }
+        ctx.env.as_contract(&ctx.contract_id, || {
+            ctx.env
+                .storage()
+                .persistent()
+                .set(&DataKey::Donors, &donors);
+        });
+
+        assert_eq!(ctx.client().maintain_ttl(&0), DONOR_TTL_BATCH_SIZE);
+        assert_eq!(ctx.client().maintain_ttl(&DONOR_TTL_BATCH_SIZE), 0);
     }
 
     #[test]
@@ -757,6 +901,55 @@ mod test {
         assert_eq!(
             client.try_init(
                 &arbiter,
+                &arbiter,
+                &token,
+                &soroban_sdk::vec![
+                    &env,
+                    Milestone {
+                        amount: 1,
+                        released: false,
+                    }
+                ],
+                &EXPIRY,
+            ),
+            Err(Ok(Error::ActorsMustDiffer))
+        );
+        let mut too_many_milestones = soroban_sdk::Vec::new(&env);
+        for _ in 0..=MAX_MILESTONES {
+            too_many_milestones.push_back(Milestone {
+                amount: 1,
+                released: false,
+            });
+        }
+        assert_eq!(
+            client.try_init(
+                &arbiter,
+                &beneficiary,
+                &token,
+                &too_many_milestones,
+                &EXPIRY
+            ),
+            Err(Ok(Error::MilestoneLimitExceeded))
+        );
+        assert_eq!(
+            client.try_init(
+                &arbiter,
+                &beneficiary,
+                &token,
+                &soroban_sdk::vec![
+                    &env,
+                    Milestone {
+                        amount: MAX_CAMPAIGN_STROOPS + 1,
+                        released: false,
+                    }
+                ],
+                &EXPIRY,
+            ),
+            Err(Ok(Error::CampaignLimitExceeded))
+        );
+        assert_eq!(
+            client.try_init(
+                &arbiter,
                 &beneficiary,
                 &token,
                 &soroban_sdk::vec![
@@ -825,5 +1018,27 @@ mod test {
             ),
             Err(Ok(Error::AlreadyInitialized))
         );
+    }
+
+    #[test]
+    fn donor_count_limit_is_enforced_before_transfer() {
+        let ctx = context();
+        let mut donors = Vec::new(&ctx.env);
+        for _ in 0..MAX_DONORS {
+            donors.push_back(Address::generate(&ctx.env));
+        }
+        ctx.env.as_contract(&ctx.contract_id, || {
+            ctx.env
+                .storage()
+                .persistent()
+                .set(&DataKey::Donors, &donors);
+        });
+
+        assert_eq!(
+            ctx.client().try_fund(&ctx.donor_a, &1),
+            Err(Ok(Error::DonorLimitExceeded))
+        );
+        assert_eq!(ctx.client().state().funded_total, 0);
+        assert_eq!(ctx.token_client().balance(&ctx.contract_id), 0);
     }
 }

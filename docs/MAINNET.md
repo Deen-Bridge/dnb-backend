@@ -185,3 +185,41 @@ and vice versa.
 - Circle USDC: [USDC on Stellar](https://www.circle.com/en/usdc/stellar)
 - Config source of truth: `src/config/stellar.js`, asset registry:
   `src/config/assets.js`
+
+## 7. Scholarship escrow (separate product)
+
+Scholarship contributions use a Soroban escrow contract and USDC Stellar Asset
+Contract (SAC). They are separate from Sadaqah, which remains a direct classic
+Stellar payment to `DONATION_WALLET_PUBLIC_KEY`. Switching the payment stack to
+mainnet does not deploy or initialize a scholarship escrow.
+
+For a mainnet scholarship campaign, first deploy and initialize a new contract
+on mainnet using the reviewed workflow in `contracts/README.md`. Derive the USDC
+SAC address for the mainnet Circle issuer; never reuse a testnet SAC or escrow
+contract ID. Then configure the backend deployment with:
+
+```dotenv
+STELLAR_NETWORK=mainnet
+SOROBAN_RPC_URL=https://<trusted-mainnet-soroban-rpc>
+SCHOLARSHIP_ESCROW_CONTRACT_ID=C...
+```
+
+Configure `NEXT_PUBLIC_STELLAR_NETWORK=mainnet` in the frontend. The contract
+must be initialized with the intended mainnet USDC SAC address, beneficiary,
+arbiter, immutable milestone amounts, and expiry ledger. Confirm all public
+addresses and the refund/release policy before a donor signs a transaction.
+The backend prepares wallet-signed transactions; it must not hold donor or
+arbiter secret keys. Keep Sadaqah destination and configuration independent of
+these scholarship settings.
+
+Do not advertise scholarship funding as live until the mainnet contract ID is
+configured and the dashboard can read its initialized state from the selected
+mainnet Soroban RPC. Verify funding, milestone release, and post-expiry refund
+with a deliberately small live transaction and the public explorer.
+
+Scholarship applicant selection is a private, off-chain process documented in
+[`scholarship-applications.md`](./scholarship-applications.md). Keep the round
+closed until its eligibility rules are public. Select a beneficiary through at
+least two independent admin reviews before initializing the immutable escrow;
+then review award amount, milestone evidence, arbiter, expiry, and refund terms.
+Never publish application statements or private evidence on Stellar.

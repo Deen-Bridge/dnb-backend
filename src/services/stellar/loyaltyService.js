@@ -22,6 +22,7 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 import logger from "../../config/logger.js";
 import { resolveStellarNetwork } from "../../config/stellar.js";
+import { prepareSorobanInvocation } from "./sorobanService.js";
 
 /** Env var holding the deployed loyalty contract id (C…55-char StrKey). */
 export const LOYALTY_CONTRACT_ENV = "LOYALTY_CONTRACT_ID";
@@ -135,16 +136,14 @@ const activityScVal = (activity) => {
 const buildInvokeTx = async (sourcePublicKey, buildOp, options = {}) => {
   const { server, networkPassphrase } = loyaltyRpc();
   const contract = loyaltyContract();
-
-  const account = await server.getAccount(sourcePublicKey);
-  const tx = new StellarSdk.TransactionBuilder(account, {
-    fee: StellarSdk.BASE_FEE,
+  const prepared = await prepareSorobanInvocation({
+    server,
     networkPassphrase,
-    memo: options.memo ? StellarSdk.Memo.text(options.memo) : undefined,
-  })
-    .addOperation(buildOp(contract))
-    .setTimeout(180)
-    .build();
+    sourcePublicKey,
+    operation: buildOp(contract),
+    memo: options.memo,
+    timeoutSeconds: 180,
+  });
 
   logger.debug(
     { sourcePublicKey, contractId: contract.contractId() },
@@ -152,9 +151,10 @@ const buildInvokeTx = async (sourcePublicKey, buildOp, options = {}) => {
   );
 
   return {
-    xdr: tx.toXDR(),
+    xdr: prepared.xdr,
     contractId: contract.contractId(),
-    networkPassphrase,
+    networkPassphrase: prepared.networkPassphrase,
+    resourceFee: prepared.resourceFee,
   };
 };
 

@@ -63,17 +63,17 @@ export function buildStellarToml() {
   lines.push(`# TRANSFER_SERVER_SEP0024 = "..."  # Populated by SEP-24 (#46)`);
 
   // ── Soroban contracts ──
-  // DeenBridge On-Chain Giving escrow: non-custodial USDC escrow for scholarships
-  // and community events. Custom field (not part of SEP-1) — wallets ignore it, but
-  // it makes the deployed contract discoverable to anyone reading the toml.
-  const escrowContract = process.env.GIVING_ESCROW_CONTRACT_ID;
+  // Scholarship escrow is separate from the Sadaqah payment fund. This custom
+  // field is not part of SEP-1; wallets ignore it, but explorers can discover it.
+  const escrowContract =
+    process.env.SCHOLARSHIP_ESCROW_CONTRACT_ID || process.env.GIVING_ESCROW_CONTRACT_ID;
   const isValidContractId =
     typeof escrowContract === "string" && /^C[A-Z2-7]{55}$/.test(escrowContract.trim());
   if (isValidContractId) {
-    lines.push(`GIVING_ESCROW_CONTRACT = "${escrowContract.trim()}"`);
+    lines.push(`SCHOLARSHIP_ESCROW_CONTRACT = "${escrowContract.trim()}"`);
   } else {
     lines.push(
-      `# GIVING_ESCROW_CONTRACT = "C..."  # Set GIVING_ESCROW_CONTRACT_ID (Soroban escrow)`
+      `# SCHOLARSHIP_ESCROW_CONTRACT = "C..."  # Set SCHOLARSHIP_ESCROW_CONTRACT_ID`
     );
   }
   lines.push(``);
