@@ -2,11 +2,12 @@
 
 ## Scope
 
-This document defines the Stage 1 Soroban contract for a scholarship escrow. The
+This document defines the Soroban contract for a scholarship escrow. The
 contract holds a Stellar Asset Contract (SAC) representation of the scholarship
 asset. It does not custody private keys, create wallets, or perform classic
-Stellar payments. The later JavaScript and API stages will build unsigned
-Soroban invocation transactions around this contract.
+Stellar payments. The backend prepares unsigned Soroban transactions for the
+separate `/api/stellar/scholarships` flow; the connected donor or arbiter signs
+them with a Stellar wallet.
 
 All monetary values are integer `i128` values in the token's smallest unit.
 For the USDC integration that unit is a stroop-like seven-decimal unit, matching
@@ -80,6 +81,16 @@ The contract stores:
 - the immutable milestone vector;
 - the list of donor addresses;
 - each donor's cumulative contribution, refund amount, and claim status.
+
+Persistent contract entries have finite TTLs. State-changing calls refresh the
+shared state and entries they touch; `maintain_ttl(start_index)` refreshes
+shared entries and up to 25 donor records. A campaign maintainer must submit
+permissionless maintenance calls at least every two weeks while the campaign
+is active, paging through all donors until the method returns `0`. These
+transactions require a fee-paying account and successful on-chain inclusion.
+The contract caps donor count at 256, milestone count at 100, and milestone
+total at `10^18` stroops to bound storage maintenance, refund scans, and checked
+pro-rata arithmetic.
 
 The `Initialized`, `Funded`, `MilestoneApproved`, and `Refunded` events expose
 every state-changing operation. Donor, milestone index, and beneficiary-facing
@@ -162,10 +173,17 @@ number of distinct funders, so deployment should set practical funding and
 resource limits. A future version can use a separate claim registry or Merkle
 distribution if scholarship escrows need very large donor sets.
 
-## Stage Boundaries
+## Application Integration
 
-This Stage 1 change intentionally stops at the design and contract foundation.
-Stage 2 must review this state machine before adding the Soroban RPC service,
-SAC deployment, and wallet signing walkthrough. Stage 3 can then add API
-endpoints, transaction persistence, and live state reconciliation without
-changing the contract's trust model.
+The backend exposes a separate `/api/stellar/scholarships` flow that reads the
+configured escrow state, prepares unsigned Soroban transactions, accepts
+wallet-signed submissions, and reconciles transaction status against Soroban
+RPC. The Scholarships dashboard consumes that API. The current deployment
+supports one configured campaign; each additional campaign needs its own
+initialized contract instance and application configuration.
+
+Sadaqah remains a separate direct classic Stellar payment flow to the configured
+donation wallet. It does not call this escrow contract and must not be described
+as scholarship funding. Mainnet activation still requires a separately deployed
+and initialized mainnet escrow, mainnet USDC SAC address, trusted Soroban RPC,
+and review of the beneficiary, arbiter, milestones, and expiry policy.

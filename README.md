@@ -143,15 +143,13 @@ at it. It documents auth requirements, path and query parameters, request bodies
 schemas and status codes, reusable schemas for the core models, the standard error shape, and
 the endpoints whose response envelope is still non-standard.
 
-## 🌊 Contributing & Drips Wave
-
-This repository is hoping to  participates in the **[Stellar Drips Wave](https://www.drips.network/wave/stellar)** bounty program — contributors earn Points (and real rewards) for resolving this repo's issues during a Wave, with complexity tiers set in the Drips Wave app.
+## Contributing
 
 - All pull requests target the **`dev`** branch (`main` is releases only)
 - CI (tests) must pass before review
-- One contributor per issue — request it through the campaign (Drips Wave / GrantFox OSS); the maintainer assigns it. Please don't open a PR for an issue you haven't been assigned.
+- Claim or confirm an issue with the maintainers before starting substantial work.
 
-Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow, coding standards, and Wave rules.
+Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow and coding standards.
 
 ## 📜 License
 
