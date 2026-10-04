@@ -33,4 +33,7 @@ Memory.md
 Handoff.md
 PRD.md
 Architecture.md
-scratch/
+scratch/
+# Stryker mutation testing
+.stryker-tmp/
+reports/mutation/
