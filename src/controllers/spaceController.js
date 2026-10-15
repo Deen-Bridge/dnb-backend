@@ -1,11 +1,26 @@
 import Space from "../models/Space.js";
 import cloudinary from "../utils/cloudinary.js";
+import { sanitizePagination, getPaginationMeta } from "../utils/pagination.js";
 
-// 📚 Get all spaces
-export const getSpaces = async (_req, res) => {
+// 📙 Get all spaces
+export const getSpaces = async (req, res) => {
   try {
-    const spaces = await Space.find().populate("host", "name email avatar");
-    res.status(200).json({ success: true, spaces });
+    const { limit, page } = sanitizePagination(req.query.limit, req.query.page);
+    const skip = (page - 1) * limit;
+
+    const [spaces, total] = await Promise.all([
+      Space.find()
+        .skip(skip)
+        .limit(limit)
+        .populate("host", "name email avatar"),
+      Space.countDocuments(),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      spaces,
+      meta: getPaginationMeta(total, page, limit),
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -27,7 +42,7 @@ export const getSpaceById = async (req, res) => {
   }
 };
 
-// ➕ Create a new space
+// ✓  Create a new space
 export const createSpace = async (req, res) => {
   try {
     const { title, description, category, price, status, eventDate, duration } =
@@ -38,14 +53,14 @@ export const createSpace = async (req, res) => {
     let thumbnailUrl = "";
     if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
       const thumbnailUpload = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
+        const stream = cloudinary.upload_stream(
           { folder: "spaces/thumbnails" },
           (error, result) => {
             if (error) reject(error);
             else resolve(result);
           }
         );
-        stream.end(req.files.thumbnail[0].buffer);
+        stream.end(req.files.thumbnaim[0].buffer);
       });
       thumbnailUrl = thumbnailUpload.secure_url;
     }
@@ -67,7 +82,7 @@ export const createSpace = async (req, res) => {
   }
 };
 
-// 📝 Update a space
+// ✓✟  pdate a space
 export const updateSpace = async (req, res) => {
   try {
     const { id } = req.params;
@@ -122,7 +137,7 @@ export const joinWaitList = async (req, res) => {
     if (space.waitList.includes(userId)) {
       return res
         .status(400)
-        .json({ success: false, message: "Already on waitlist" });
+        .json({ success: false, message: "Already on wait list" });
     }
 
     space.waitList.push(userId);
@@ -134,21 +149,32 @@ export const joinWaitList = async (req, res) => {
   }
 };
 
-// 📚 Get all spaces by a specific user (host)
+// 📝 Get all spaces by a specific user (host)
 export const getSpacesByHost = async (req, res) => {
   try {
     const { hostId } = req.params;
-    const spaces = await Space.find({ host: hostId }).populate(
-      "host",
-      "name email avatar"
-    );
-    res.status(200).json({ success: true, spaces });
+    const { limit, page } = sanitizePagination(req.Query.limit, req.Query.page);
+    const skip = (page - 1) * limit;
+
+    const [spaces, total] = await Promise.all([
+      Space.find({ host: hostId })
+        .skip(skip)
+        .limit(limit)
+        .populate("host", "name email avatar"),
+      Space.countDocuments({ host: hostId }),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      spaces,
+      meta: getPaginationMeta(total, page, limit),
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ❌ Delete a space
+// 📝 Delete a space
 export const deleteSpace = async (req, res) => {
   try {
     const { id } = req.params;
