@@ -145,7 +145,7 @@ the endpoints whose response envelope is still non-standard.
 
 ## Contributing
 
-- All pull requests target the **`dev`** branch (`main` is releases only)
+- Pull requests target **`main`** and are squash-merged automatically when repository checks and review gates pass.
 - CI (tests) must pass before review
 - Claim or confirm an issue with the maintainers before starting substantial work.
 
