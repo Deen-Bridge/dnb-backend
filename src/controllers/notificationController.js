@@ -295,21 +295,22 @@ export const getUserNotifications = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    const notifications = await Notification.find(query)
-      .populate("sender", "name avatar")
-      .populate("data.courseId", "title thumbnail")
-      .populate("data.bookId", "title image")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const total = await Notification.countDocuments(query);
-    const unreadCount = await Notification.countDocuments({
-      recipient: userId,
-      isRead: false,
-      isDeleted: false,
-    });
+    const [notifications, total, unreadCount] = await Promise.all([
+      Notification.find(query)
+        .populate("sender", "name avatar")
+        .populate("data.courseId", "title thumbnail")
+        .populate("data.bookId", "title image")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Notification.countDocuments(query),
+      Notification.countDocuments({
+        recipient: userId,
+        isRead: false,
+        isDeleted: false,
+      }),
+    ]);
 
     res.status(200).json({
       success: true,

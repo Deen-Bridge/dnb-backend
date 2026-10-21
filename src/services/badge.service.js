@@ -20,7 +20,9 @@ export class BadgeService {
     const completedProgresses = await CourseProgress.find({
       user: userId,
       $or: [{ percentComplete: 100 }, { completedAt: { $ne: null } }],
-    }).populate("course", "category");
+    })
+      .populate("course", "category")
+      .lean();
 
     const completedCount = completedProgresses.length;
 
@@ -33,7 +35,12 @@ export class BadgeService {
     }
 
     const maxCategoryCount = Math.max(0, ...Object.values(categoryCounts));
-    const badges = await Badge.find();
+    const [badges, ownedBadges] = await Promise.all([
+      Badge.find().lean(),
+      // One batched lookup instead of a findOne() per eligible badge.
+      UserBadge.find({ user: userId }).select("badge").lean(),
+    ]);
+    const ownedBadgeIds = new Set(ownedBadges.map((ub) => String(ub.badge)));
     const newlyAwarded = [];
 
     for (const badge of badges) {
@@ -46,8 +53,7 @@ export class BadgeService {
       }
 
       if (isEligible) {
-        const existing = await UserBadge.findOne({ user: userId, badge: badge._id });
-        if (!existing) {
+        if (!ownedBadgeIds.has(String(badge._id))) {
           try {
             const userBadge = await UserBadge.create({
               user: userId,
