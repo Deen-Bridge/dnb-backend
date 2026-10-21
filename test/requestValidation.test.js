@@ -65,8 +65,15 @@ jest.unstable_mockModule("../src/controllers/stellar/reconciliationController.js
   reconciliationStatus: controller("reconciliationStatus"),
 }));
 jest.unstable_mockModule("../src/controllers/stellar/walletController.js", () => walletHandlers);
+let authEnabled = true;
 jest.unstable_mockModule("../src/middlewares/authMiddleware.js", () => ({
-  protect: (req, _res, next) => {
+  protect: (req, res, next) => {
+    if (!authEnabled) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized to access this route",
+      });
+    }
     req.user = { _id: new mongoose.Types.ObjectId(), role: "student" };
     next();
   },
@@ -217,5 +224,33 @@ describe("Request validation", () => {
     ]);
 
     expect(walletHandlers.connectWallet).not.toHaveBeenCalled();
+  });
+
+  it("enforces authentication on wallet balance and check endpoints", async () => {
+    authEnabled = false;
+
+    const unauthBalance = await request(mount("/wallet", walletRoutes))
+      .get("/wallet/balance/GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5");
+    expect(unauthBalance.status).toBe(401);
+    expect(unauthBalance.body.success).toBe(false);
+
+    const unauthCheck = await request(mount("/wallet", walletRoutes))
+      .get(`/wallet/check/${new mongoose.Types.ObjectId()}`);
+    expect(unauthCheck.status).toBe(401);
+    expect(unauthCheck.body.success).toBe(false);
+
+    expect(walletHandlers.getWalletBalance).not.toHaveBeenCalled();
+    expect(walletHandlers.checkUserWallet).not.toHaveBeenCalled();
+
+    authEnabled = true;
+    const authBalance = await request(mount("/wallet", walletRoutes))
+      .get("/wallet/balance/GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5");
+    expect(authBalance.status).toBe(200);
+    expect(walletHandlers.getWalletBalance).toHaveBeenCalledTimes(1);
+
+    const authCheck = await request(mount("/wallet", walletRoutes))
+      .get(`/wallet/check/${new mongoose.Types.ObjectId()}`);
+    expect(authCheck.status).toBe(200);
+    expect(walletHandlers.checkUserWallet).toHaveBeenCalledTimes(1);
   });
 });
