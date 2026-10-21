@@ -80,6 +80,8 @@ Changes merged to `main` may be deployed to production. Keep pull requests focus
 
 ### JavaScript/Node.js
 
+The backend is JavaScript (ESM); write `.js`, not `.ts`. See [ADR 0001](docs/decisions/0001-javascript-source-of-truth.md).
+
 - Use ES6+ features
 - Use async/await for asynchronous code
 - Follow existing file structure
