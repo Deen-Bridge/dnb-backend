@@ -32,6 +32,11 @@ const courseSchema = new mongoose.Schema(
       default: "USDC",
       enum: getSupportedCodes(),
     },
+    views: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     rating: {
       type: Number,
       default: 0,
@@ -74,6 +79,11 @@ const courseSchema = new mongoose.Schema(
       required: true,
     },
     enrolledUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    // Courses a learner must COMPLETE before they can enroll in this course.
+    prerequisites: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Course" }],
+      default: [],
+    },
     sections: [
       {
         title: String,
@@ -88,6 +98,14 @@ const courseSchema = new mongoose.Schema(
         ],
       },
     ],
+    status: {
+      type: String,
+      enum: ["draft", "published", "archived"],
+      default: "draft",
+    },
+    publishedAt: {
+      type: Date,
+    },
   },
 
   { timestamps: true }
@@ -95,4 +113,10 @@ const courseSchema = new mongoose.Schema(
 
 courseSchema.index({ title: "text", description: "text", category: "text" }, { weights: { title: 5 } });
 courseSchema.index({ rating: -1 });
+courseSchema.index({ status: 1, createdAt: -1 });
+courseSchema.index({ createdBy: 1 });
+courseSchema.index({ category: 1, status: 1 }); // legacy string-category filter
+courseSchema.index({ categoryRef: 1, status: 1 });
+courseSchema.index({ enrolledUsers: 1 });
+
 export default mongoose.model("Course", courseSchema);

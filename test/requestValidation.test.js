@@ -78,6 +78,7 @@ jest.unstable_mockModule("../src/middlewares/security.js", () => {
     refreshLimiter: passThrough,
     twoFactorLimiter: passThrough,
     emailAuthLimiter: passThrough,
+    standardLimiter: passThrough,
     captchaGate: () => passThrough,
   };
 });

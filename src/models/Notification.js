@@ -27,6 +27,9 @@ const notificationSchema = new mongoose.Schema(
         "welcome", // Welcome notification
         "recommendation", // New recommendation
         "pledge_due", // Recurring sadaqah cycle ready to sign
+        "course_update", // Course update or announcement
+        "course_announcement",
+        "bulk",
       ],
       required: true,
     },
@@ -84,5 +87,6 @@ const notificationSchema = new mongoose.Schema(
 notificationSchema.index({ recipient: 1, createdAt: -1 });
 notificationSchema.index({ recipient: 1, isRead: 1 });
 notificationSchema.index({ recipient: 1, isDeleted: 1 });
+notificationSchema.index({ recipient: 1, isDeleted: 1, createdAt: -1 });
 
 export default mongoose.model("Notification", notificationSchema);
