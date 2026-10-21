@@ -3,6 +3,7 @@ import {
   getTrendingHashtags,
   getReelsByHashtag,
 } from "../services/hashtagService.js";
+import { parsePagination } from "../utils/pagination.js";
 
 /**
  * GET /api/hashtags/trending
@@ -26,10 +27,10 @@ export const getTrending = async (req, res, next) => {
  */
 export const getReelsByTag = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page, limit } = parsePagination(req.query);
     const result = await getReelsByHashtag(req.params.tag, {
-      page: Number(page),
-      limit: Number(limit),
+      page,
+      limit,
     });
     res.json({ success: true, ...result });
   } catch (err) {

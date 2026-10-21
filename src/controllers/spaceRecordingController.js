@@ -7,6 +7,7 @@ import {
   deleteRecording,
 } from "../services/spaceRecordingService.js";
 import logger from "../config/logger.js";
+import { parsePagination } from "../utils/pagination.js";
 
 /**
  * POST /api/spaces/:spaceId/recordings
@@ -43,10 +44,10 @@ export const finaliseSpaceRecording = async (req, res, next) => {
  */
 export const getSpaceRecordings = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page, limit } = parsePagination(req.query);
     const result = await listRecordingsForSpace(req.params.spaceId, {
-      page: Number(page),
-      limit: Number(limit),
+      page,
+      limit,
     });
     res.json({ success: true, ...result });
   } catch (err) {
