@@ -54,7 +54,7 @@ The platform is composed of three services:
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js >= 22 (matches CI; run `nvm use` to pick up the version from `.nvmrc`)
 - MongoDB (local or Atlas)
 - Redis (optional, for caching) — see [docs/redis.md](docs/redis.md) for setup
 

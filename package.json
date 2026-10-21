@@ -22,6 +22,9 @@
   "keywords": [],
   "author": "zeemscript",
   "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
   "description": "",
   "dependencies": {
     "@stellar/stellar-sdk": "^16.0.1",
