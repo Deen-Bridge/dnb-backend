@@ -115,6 +115,7 @@ courseSchema.index({ title: "text", description: "text", category: "text" }, { w
 courseSchema.index({ rating: -1 });
 courseSchema.index({ status: 1, createdAt: -1 });
 courseSchema.index({ createdBy: 1 });
+courseSchema.index({ category: 1, status: 1 }); // legacy string-category filter
 courseSchema.index({ categoryRef: 1, status: 1 });
 courseSchema.index({ enrolledUsers: 1 });
 
