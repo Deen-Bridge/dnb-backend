@@ -227,6 +227,7 @@ app.get("/", (req, res) => {
 
 app.get("/ping", ping);
 app.get("/health", healthCheck);
+app.get("/readyz", healthCheck);
 app.use("/health/database", databaseHealthRoutes);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter
