@@ -226,6 +226,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/ping", ping);
+app.get("/livez", ping);
 app.get("/health", healthCheck);
 app.use("/health/database", databaseHealthRoutes);
 
