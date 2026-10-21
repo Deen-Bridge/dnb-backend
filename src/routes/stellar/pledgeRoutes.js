@@ -16,7 +16,7 @@ router.use(protect);
 router.get("/", listPledges);
 router.get("/stats", getPledgeStats);
 router.post("/", idempotency(), createPledge);
-router.patch("/:id/status", updatePledgeStatus);
+router.patch("/:id/status", idempotency(), updatePledgeStatus);
 router.get("/:id/cycles", listPledgeCycles);
 router.post("/cycles/:cycleId/initialize", idempotency(), initializePledgeCycle);
 router.post("/cycles/:cycleId/submit", idempotency(), submitPledgeCycle);

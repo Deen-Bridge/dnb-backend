@@ -107,6 +107,8 @@ dashboard is available at `/admin/jobs`.
 | `npm test` | Run the Jest + Supertest suite |
 | `npm run seed` | Seed sample data |
 
+See the [database seeding guide](docs/seeding.md) for all seed and data scripts, including the destructive `db:seed:reset` / `db:seed:clean`.
+
 ## 🔗 API Overview
 
 | Area | Base Route |

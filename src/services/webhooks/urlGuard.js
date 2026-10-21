@@ -44,6 +44,13 @@ export const isPrivateAddress = (ip) => {
     // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) — re-check the embedded v4.
     const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) return isPrivateAddress(mapped[1]);
+    // WHATWG URL normalizes the embedded v4 to hex (::ffff:7f00:1).
+    const mappedHex = addr.match(/::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mappedHex) {
+      const hi = parseInt(mappedHex[1], 16);
+      const lo = parseInt(mappedHex[2], 16);
+      return isPrivateAddress(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+    }
     return false;
   }
   return false;
@@ -71,7 +78,9 @@ export const validateWebhookUrl = (rawUrl) => {
     throw new Error("Webhook URL must use https");
   }
 
-  const hostname = url.hostname.toLowerCase();
+  // URL.hostname keeps the brackets around IPv6 literals; strip them so
+  // net.isIP recognises the address.
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (!hostname) {
     throw new Error("Webhook URL must include a host");
   }
@@ -111,7 +120,7 @@ export const assertDeliverableUrl = async (rawUrl) => {
     return { ok: true };
   }
 
-  const hostname = url.hostname.toLowerCase();
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (net.isIP(hostname)) {
     // Already validated as a public literal above.
     return { ok: true };
