@@ -203,6 +203,8 @@ transactionSchema.pre("save", function (next) {
 
 // Indexes for efficient queries
 transactionSchema.index({ buyer: 1, status: 1 });
+transactionSchema.index({ buyer: 1, createdAt: -1 }); // history listing/export sorted by date
+transactionSchema.index({ creator: 1, createdAt: -1 }); // creator earnings/payout listing
 transactionSchema.index({ creator: 1, status: 1 });
 transactionSchema.index({ itemType: 1, itemId: 1 });
 transactionSchema.index({ type: 1, status: 1, createdAt: -1 }); // Donation stats
