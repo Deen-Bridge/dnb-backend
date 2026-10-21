@@ -27,6 +27,7 @@ import {
 } from "./src/middlewares/errorHandler.js";
 
 import authRoutes from "./src/routes/authRoutes.js";
+import securityQuestionsRoutes from "./src/routes/securityQuestionsRoutes.js";
 import courseRoutes from "./src/routes/courses/courseRoutes.js";
 import courseAnalyticsRoutes from "./src/routes/courses/analyticsRoutes.js";
 import quizRoutes from "./src/routes/courses/quizRoutes.js";
@@ -231,6 +232,7 @@ app.use("/health/database", databaseHealthRoutes);
 app.use("/.well-known", wellKnownRoutes);
 
 // Auth routes — strict
+app.use("/api/auth", securityQuestionsRoutes); // per-route authLimiter
 app.use("/api/auth", authLimiter, authRoutes);
 
 // Mutation routes — standard limiter
