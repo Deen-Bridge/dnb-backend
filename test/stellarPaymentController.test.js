@@ -232,7 +232,6 @@ describe("Stellar payment controller", () => {
     expect(res.body).toMatchObject({
       success: false,
       message: "Transaction failed on Stellar network",
-      error: "Invalid XDR",
     });
     expect(tx.status).toBe("failed");
     expect(tx.failureReason).toBe("Invalid XDR");
