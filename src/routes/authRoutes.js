@@ -33,6 +33,16 @@ import {
   registerValidation,
   loginValidation,
 } from "../validators/requestValidators.js";
+import {
+  requestPasswordResetValidation,
+  resendVerificationValidation,
+  resetPasswordValidation,
+  refreshValidation,
+  changePasswordValidation,
+  verify2FAValidation,
+  disable2FAValidation,
+  stellarVerifyValidation,
+} from "../validators/authValidators.js";
 
 const router = express.Router();
 
@@ -49,13 +59,20 @@ router.post(
   registerUser
 );
 router.post("/login", loginValidation, validate, loginUser);
-router.post("/request-password-reset", requestPasswordReset);
-router.post("/reset-password", resetPassword);
+router.post(
+  "/request-password-reset",
+  requestPasswordResetValidation,
+  validate,
+  requestPasswordReset
+);
+router.post("/reset-password", resetPasswordValidation, validate, resetPassword);
 router.get("/verify-email/:token", verifyEmail);
 router.post(
   "/resend-verification",
   emailAuthLimiter,
   captchaGate(),
+  resendVerificationValidation,
+  validate,
   resendVerification
 );
 
@@ -67,23 +84,53 @@ router.post("/2fa/verify", twoFactorLimiter, (req, res, next) => {
     return protect(req, res, next);
   }
   next();
-}, verify2FA);
-router.post("/2fa/login", twoFactorLimiter, verify2FA);
-router.post("/2fa/disable", protect, twoFactorLimiter, disable2FA);
+}, verify2FAValidation, validate, verify2FA);
+router.post(
+  "/2fa/login",
+  twoFactorLimiter,
+  verify2FAValidation,
+  validate,
+  verify2FA
+);
+router.post(
+  "/2fa/disable",
+  protect,
+  twoFactorLimiter,
+  disable2FAValidation,
+  validate,
+  disable2FA
+);
 
 // Stellar SEP-10 Web Authentication ("Sign in with Stellar"). Returns 503 when
 // the feature is unconfigured (SEP10_SIGNING_SECRET/domains unset). See #25.
 router.get("/stellar/challenge", getStellarChallenge);
-router.post("/stellar/verify", verifyStellarChallenge);
+router.post(
+  "/stellar/verify",
+  stellarVerifyValidation,
+  validate,
+  verifyStellarChallenge
+);
 
 // Token refresh route with dedicated refresh rate limit
-router.post("/refresh", refreshLimiter, refreshSession);
+router.post(
+  "/refresh",
+  refreshLimiter,
+  refreshValidation,
+  validate,
+  refreshSession
+);
 
 // Protected session management routes
 router.post("/logout", protect, logoutUser);
 router.get("/sessions", protect, getSessions);
 router.delete("/sessions/:sessionId", protect, revokeSession);
 router.delete("/sessions", protect, revokeAllOtherSessions);
-router.put("/change-password", protect, changePassword);
+router.put(
+  "/change-password",
+  protect,
+  changePasswordValidation,
+  validate,
+  changePassword
+);
 
 export default router;
