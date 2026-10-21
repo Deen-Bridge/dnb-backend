@@ -14,7 +14,7 @@ Reference for every Socket.io event defined under `src/sockets/`. Derived from t
 | `reading-progress.socket.js` | `/reading-progress` | **No** (see note) |
 | `space-poll.socket.js` / `.ts` | `/space-polls` | **No** (see note) |
 
-> **Note (verified by grep):** `initUserPreferencesSocket`, `initReadingProgressSocket` and `initSpacePollSocket` are not imported or called anywhere outside `src/sockets/`, and `emitPreferenceUpdate` / `emitProgress` have no callers outside their own files. `initSockets` only registers the payment gateway. Until those init functions are called with the `io` instance, the namespaces below are not active. The `.ts` files mirror the `.js` files with type annotations (the `.ts` poll file imports `space-poll.service.ts`); this catalog follows the `.js` behavior. Whether the `.ts` variants are built or used is **unverified**.
+> **Note (verified by grep):** `initUserPreferencesSocket`, `initReadingProgressSocket` and `initSpacePollSocket` are not imported or called anywhere outside `src/sockets/`, and `emitPreferenceUpdate` / `emitProgress` have no callers outside their own files. `initSockets` only registers the payment gateway. Until those init functions are called with the `io` instance, the namespaces below are not active.
 
 ## Server bootstrap (`index.js`)
 
