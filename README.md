@@ -35,7 +35,7 @@ The platform is composed of three services:
 - ⭐ **Stellar Payments** — USDC payment initialize → sign → submit → on-chain verify flow
 - ⛽ **Fee Sponsorship** — optional platform-paid network fees via fee-bump, with a structural whitelist and spend caps ([docs](docs/fee-sponsorship.md))
 - 👛 **Wallet Management** — connect Freighter, xBull, or Albedo; balance and trustline checks
-- 💬 **Real-time** — Socket.io messaging and notifications
+- 💬 **Real-time** — Socket.io messaging and notifications ([socket events](docs/socket-events.md))
 - ☁️ **Media** — Cloudinary uploads for avatars, covers, books, and reels
 - 🛡️ **Hardened** — helmet, rate limiting, sanitization (mongo-sanitize, hpp, xss), CORS
 
