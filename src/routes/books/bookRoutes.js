@@ -12,6 +12,8 @@ import {
   updateBookReview,
   deleteBookReview,
   streamBookPreview,
+  uploadBookAudio,
+  streamBookAudio,
 } from "../../controllers/books/bookController.js";
 import {
   toggleBookBookmark,
@@ -34,7 +36,10 @@ import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 const router = express.Router();
 
 // Cache key generators
-const booksListCacheKey = () => `${CACHE_KEYS.BOOKS}list`;
+const booksListCacheKey = (req) => {
+  const queryStr = new URLSearchParams(req.query).toString();
+  return `${CACHE_KEYS.BOOKS}list:${queryStr || "all"}`;
+};
 const bookDetailCacheKey = (req) => `${CACHE_KEYS.BOOK}${req.params.id}`;
 const booksByAuthorCacheKey = (req) =>
   `${CACHE_KEYS.BOOKS}author:${req.params.authorId}`;
@@ -47,10 +52,24 @@ router.post(
   uploadBook.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "file", maxCount: 1 },
+    { name: "audio", maxCount: 1 },
   ]),
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOKS}*`, `${CACHE_KEYS.EDUCATORS}*`]),
   createBook
 );
+
+// Upload / replace the audiobook audio for an existing book (owner-only).
+router.put(
+  "/:id/audio",
+  protect,
+  uploadBook.single("audio"),
+  authorizeOwnership({ model: Book, ownerField: "author", resourceType: "Book" }),
+  invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
+  uploadBookAudio
+);
+
+// Stream the audiobook audio (same access rules as the book preview).
+router.get("/:id/audio", protect, streamBookAudio);
 
 // getting all books - cached for 15 minutes
 router.get("/", cacheMiddleware(CACHE_TTL.BOOKS, booksListCacheKey), getBooks);
@@ -58,9 +77,15 @@ router.get("/", cacheMiddleware(CACHE_TTL.BOOKS, booksListCacheKey), getBooks);
 // get recommended books for user - cached for 5 minutes
 router.get(
   "/recom",
-  cacheMiddleware(CACHE_TTL.SHORT, () => `${CACHE_KEYS.BOOKS}recommended`),
+  cacheMiddleware(CACHE_TTL.SHORT, (req) => {
+    const interests = req.query?.interests;
+    return interests
+      ? `${CACHE_KEYS.BOOKS}recommended:${interests}`
+      : `${CACHE_KEYS.BOOKS}recommended:popular`;
+  }),
   fetchRecommendedBooks
 );
+router.post("/recom", fetchRecommendedBooks);
 
 // Bookmarks (must come before dynamic :id routes)
 router.get("/bookmarks", protect, getBookmarkedBooks);
@@ -144,6 +169,31 @@ router.delete(
   invalidateCacheMiddleware([`${CACHE_KEYS.BOOK}*`, `${CACHE_KEYS.BOOKS}*`]),
   deleteBookReview
 );
+
+import {
+  createHighlight,
+  getHighlights,
+  deleteHighlight,
+  createNote,
+  getNotes,
+  deleteNote,
+  getHighlightsAndNotes,
+  searchHighlightsAndNotes,
+  exportHighlights,
+} from "../../controllers/highlight.controller.js";
+
+// Highlights & Notes Endpoints (placed before dynamic :id routes where needed)
+router.get("/highlights-notes/search", protect, searchHighlightsAndNotes);
+router.delete("/highlights/:id", protect, deleteHighlight);
+router.delete("/notes/:id", protect, deleteNote);
+
+router.post("/:bookId/highlights", protect, createHighlight);
+router.get("/:bookId/highlights", protect, getHighlights);
+router.post("/:bookId/notes", protect, createNote);
+router.get("/:bookId/notes", protect, getNotes);
+router.get("/:bookId/highlights-notes", protect, getHighlightsAndNotes);
+router.get("/:bookId/highlights-notes/search", protect, searchHighlightsAndNotes);
+router.get("/:bookId/highlights/export", protect, exportHighlights);
 
 export default router;
 
