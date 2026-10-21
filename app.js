@@ -225,6 +225,9 @@ app.get("/", (req, res) => {
 
 app.get("/ping", ping);
 app.get("/health", healthCheck);
+// Readiness is intentionally separate from the lightweight ping endpoint so
+// load balancers can drain instances whose dependencies are unavailable.
+app.get("/readyz", healthCheck);
 app.use("/health/database", databaseHealthRoutes);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter
