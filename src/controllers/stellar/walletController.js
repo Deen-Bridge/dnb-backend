@@ -1,4 +1,5 @@
 // controllers/stellar/walletController.js
+import mongoose from "mongoose";
 import User from "../../models/User.js";
 import {
   isValidPublicKey,
@@ -234,9 +235,20 @@ export const checkUserWallet = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const user = await User.findById(userId).select(
-      "stellarWallet.publicKey name"
-    );
+    // Owner-or-admin only. Decide before touching the DB so the response is
+    // identical whether or not the target user exists (no enumeration signal).
+    const isOwner = req.user?._id?.toString() === userId;
+    const isAdmin = req.user?.role === "admin";
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+      });
+    }
+
+    const user = mongoose.isValidObjectId(userId)
+      ? await User.findById(userId).select("stellarWallet.publicKey name")
+      : null;
 
     if (!user) {
       return res.status(404).json({
