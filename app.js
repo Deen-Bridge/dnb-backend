@@ -98,6 +98,7 @@ import userJourneyRoutes from "./src/routes/analytics/user-journey.js";
 import { trackPageVisit } from "./src/middlewares/analytics/journey-tracker.js";
 
 const app = express();
+app.disable("x-powered-by");
 
 app.set("trust proxy", 1);
 
