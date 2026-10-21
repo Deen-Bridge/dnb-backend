@@ -1,0 +1,97 @@
+/* RTL layout support — applied when dir="rtl" is present on <html> */
+
+[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+[dir="rtl"] .text-start,
+[dir="rtl"] .text-left {
+  text-align: right !important;
+}
+
+[dir="rtl"] .text-end,
+[dir="rtl"] .text-right {
+  text-align: left !important;
+}
+
+[dir="rtl"] .ms-1,
+[dir="rtl"] .ms-sm-1 {
+  margin-left: 0 !important;
+  margin-right: 0.25rem !important;
+}
+
+[dir="rtl"] .me-1,
+[dir="rtl"] .me-sm-1 {
+  margin-right: 0 !important;
+  margin-left: 0.25rem !important;
+}
+
+[dir="rtl"] .ps-1,
+[dir="rtl"] .ps-sm-1 {
+  padding-left: 0 !important;
+  padding-right: 0.25rem !important;
+}
+
+[dir="rtl"] .pe-1,
+[dir="rtl"] .pe-sm-1 {
+  padding-right: 0 !important;
+  padding-left: 0.25rem !important;
+}
+
+[dir="rtl"] .float-start {
+  float: right !important;
+}
+
+[dir="rtl"] .float-end {
+  float: left !important;
+}
+
+[dir="rtl"] .ms-auto {
+  margin-left: 0 !important;
+  margin-right: auto !important;
+}
+
+[dir="rtl"] .me-auto {
+  margin-right: 0 !important;
+  margin-left: auto !important;
+}
+
+[dir="rtl"] .border-start {
+  border-left: none !important;
+  border-right: var(--bs-border-width, 1px) solid var(--bs-border-color, #dee2e6) !important;
+}
+
+[dir="rtl"] .border-end {
+  border-right: none !important;
+  border-left: var(--bs-border-width, 1px) solid var(--bs-border-color, #dee2e6) !important;
+}
+
+[dir="rtl"] .start-0 {
+  left: auto !important;
+  right: 0 !important;
+}
+
+[dir="rtl"] .end-0 {
+  right: auto !important;
+  left: 0 !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [dir="rtl"] .slide-enter-from-left {
+    animation-name: slideInFromRight;
+  }
+  [dir="rtl"] .slide-enter-from-right {
+    animation-name: slideInFromLeft;
+  }
+}
+
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes slideInFromLeft {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}

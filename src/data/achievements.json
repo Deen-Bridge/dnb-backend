@@ -1,0 +1,7 @@
+[
+  {"slug":"first-donation","name":"First Gift","description":"Made your first confirmed donation","category":"donation","tier":"bronze","criteriaType":"donations","threshold":1,"xp":100},
+  {"slug":"ten-donations","name":"Generous Heart","description":"Made 10 confirmed donations","category":"donation","tier":"silver","criteriaType":"donations","threshold":10,"xp":500},
+  {"slug":"fifty-donations","name":"Pillar of Giving","description":"Made 50 confirmed donations","category":"donation","tier":"gold","criteriaType":"donations","threshold":50,"xp":1500},
+  {"slug":"first-course","name":"First Steps","description":"Completed your first course","category":"learning","tier":"bronze","criteriaType":"courses_completed","threshold":1,"xp":100},
+  {"slug":"ten-courses","name":"Knowledge Seeker","description":"Completed 10 courses","category":"learning","tier":"gold","criteriaType":"courses_completed","threshold":10,"xp":1000}
+]
