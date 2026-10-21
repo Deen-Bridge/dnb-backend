@@ -7,6 +7,7 @@ import { getRedisClient, isRedisReady } from "../config/redis.js";
 import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
+import { dispatchWebPush } from "../services/webPush.service.js";
 
 /**
  * SSE Connections Map
@@ -166,6 +167,11 @@ export const sendNotificationToUser = async (userId, notificationData) => {
 
     // Dispatch via SSE
     await dispatchSSENotification(userId, notification);
+
+    // Web Push (non-blocking; gated on the user's push preference)
+    dispatchWebPush(userId, notification).catch((err) =>
+      logger.error("Web Push dispatch error:", err)
+    );
 
     return notification;
   } catch (error) {

@@ -22,6 +22,17 @@ import completionRoutes, {
   getUserCompletion,
 } from "./api/users/completion.js";
 import preferencesRoutes from "./api/users/preferences.js";
+import { validate } from "../middlewares/validate.js";
+import {
+  upsertPushSubscription,
+  deletePushSubscription,
+  updatePushPreference,
+} from "../controllers/pushSubscriptionController.js";
+import {
+  subscribeValidator,
+  unsubscribeValidator,
+  preferenceValidator,
+} from "../validators/pushSubscriptionValidators.js";
 import {
   cacheMiddleware,
   invalidateCacheMiddleware,
@@ -41,6 +52,11 @@ const followingCacheKey = (req) =>
 // User preferences routes (must be before /:id)
 router.use("/me/preferences", preferencesRoutes);
 router.use("/preferences", preferencesRoutes);
+
+// Web Push subscriptions (must be before /:id)
+router.post("/push-subscription", protect, subscribeValidator, validate, upsertPushSubscription);
+router.delete("/push-subscription", protect, unsubscribeValidator, validate, deletePushSubscription);
+router.patch("/push-subscription/preferences", protect, preferenceValidator, validate, updatePushPreference);
 
 // Get personalized recommendations - cached for 10 minutes (must be before /:id)
 router.get(
