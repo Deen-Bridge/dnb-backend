@@ -11,21 +11,29 @@ import {
   claimSubmit,
 } from "../../controllers/stellar/giftController.js";
 
+import { validate } from "../../middlewares/validate.js";
+import {
+  initializeGiftValidation,
+  submitGiftValidation,
+  giftClaimInitializeValidation,
+  giftClaimSubmitValidation,
+} from "../../validators/paymentValidators.js";
+
 const router = express.Router();
 
 // All gift routes require authentication.
 router.use(protect);
 
 // Gift flow (sender funds a claimable balance for the recipient)
-router.post("/initialize", idempotency(), initializeGift);
-router.post("/submit", idempotency(), submitGift);
+router.post("/initialize", initializeGiftValidation, validate, idempotency(), initializeGift);
+router.post("/submit", submitGiftValidation, validate, idempotency(), submitGift);
 
 // Gift listing / detail
 router.get("/", listGifts);
-router.get("/:id", getGift);
+router.get("/:id", giftClaimInitializeValidation, validate, getGift);
 
 // Claim / reclaim flow
-router.post("/:id/claim/initialize", idempotency(), claimInitialize);
-router.post("/:id/claim/submit", idempotency(), claimSubmit);
+router.post("/:id/claim/initialize", giftClaimInitializeValidation, validate, idempotency(), claimInitialize);
+router.post("/:id/claim/submit", giftClaimSubmitValidation, validate, idempotency(), claimSubmit);
 
 export default router;
