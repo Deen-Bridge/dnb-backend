@@ -58,6 +58,7 @@ import notificationAnalyticsRoutes from "./src/routes/notificationAnalyticsRoute
 import jobsRoutes from "./src/routes/jobsRoutes.js";
 import internalAiRoutes from "./src/routes/internal/aiRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
+import cspReportRoutes from "./src/routes/security/cspReportRoutes.js";
 import auditRoutes from "./src/routes/admin/auditRoutes.js";
 import educatorRoutes from "./src/routes/educatorRoutes.js";
 import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
@@ -296,6 +297,8 @@ app.use("/api/analytics/search", generousLimiter, searchAnalyticsRoutes);
 // Admin — no rate limit
 app.use("/admin/jobs", jobsRoutes);
 app.use("/api/admin/audit", auditRoutes);
+// Issue #140 - CSP violation reports (unauthenticated POST, admin-only stats)
+app.use("/api/security/csp-report", standardLimiter, cspReportRoutes);
 app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
 app.use("/api/admin/moderation", adminModerationRoutes);
 
