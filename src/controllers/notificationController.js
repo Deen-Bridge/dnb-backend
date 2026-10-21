@@ -7,6 +7,7 @@ import { getRedisClient, isRedisReady } from "../config/redis.js";
 import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
+import { recordEvent } from "../services/notificationAnalytics.service.js";
 
 /**
  * SSE Connections Map
@@ -166,6 +167,15 @@ export const sendNotificationToUser = async (userId, notificationData) => {
 
     // Dispatch via SSE
     await dispatchSSENotification(userId, notification);
+
+    // Analytics (non-blocking; recordEvent never throws)
+    recordEvent({
+      notificationId: notification._id,
+      userId,
+      type: notification.type,
+      channel: "in_app",
+      event: "sent",
+    });
 
     return notification;
   } catch (error) {
