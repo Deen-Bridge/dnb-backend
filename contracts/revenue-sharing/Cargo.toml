@@ -1,0 +1,15 @@
+[package]
+name = "revenue-sharing"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Deen Bridge revenue sharing: split incoming token payments among recipients by basis points"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = "=27.0.6"
+
+[dev-dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["testutils"] }
