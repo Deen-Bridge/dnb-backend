@@ -26,6 +26,18 @@ import {
   initializePaymentValidation,
   submitPaymentValidation,
 } from "../../validators/requestValidators.js";
+import {
+  quoteValidation,
+  preflightValidation,
+  pathPaymentValidation,
+  transactionIdParamValidation,
+  requestRefundValidation,
+  refundIdParamValidation,
+  submitRefundValidation,
+  rejectRefundValidation,
+  arbitrateDisputeValidation,
+} from "../../validators/paymentValidators.js";
+
 
 const router = express.Router();
 
@@ -33,11 +45,12 @@ const router = express.Router();
 router.use(protect);
 
 // Payment flow
-router.post("/quote", getQuote);
-router.post("/preflight", getPaymentPreflight);
+router.post("/quote", quoteValidation, validate, getQuote);
+router.post("/preflight", preflightValidation, validate, getPaymentPreflight);
 router.post(
   "/initialize",
   initializePaymentValidation,
+  pathPaymentValidation,
   validate,
   idempotency(),
   initializePayment
@@ -52,18 +65,27 @@ router.post(
 
 // Transaction management
 router.get("/transactions", getTransactionHistory);
-router.get("/transactions/:transactionId", getTransaction);
-router.delete("/transactions/:transactionId", cancelTransaction);
+router.get("/transactions/:transactionId", transactionIdParamValidation, validate, getTransaction);
+router.delete(
+  "/transactions/:transactionId",
+  transactionIdParamValidation,
+  validate,
+  idempotency(),
+  cancelTransaction
+);
 
 // Refund & Dispute flow
-router.post("/transactions/:id/refund-request", idempotency(), requestRefund);
-router.post("/refunds/:refundId/build", idempotency(), buildRefundXdr);
-router.post("/refunds/:refundId/submit", idempotency(), submitRefund);
-router.post("/refunds/:refundId/reject", idempotency(), rejectRefund);
-router.post("/refunds/:refundId/dispute", idempotency(), escalateDispute);
+router.post("/transactions/:id/refund-request", requestRefundValidation, validate, idempotency(), requestRefund);
+router.post("/refunds/:refundId/build", refundIdParamValidation, validate, idempotency(), buildRefundXdr);
+router.post("/refunds/:refundId/submit", submitRefundValidation, validate, idempotency(), submitRefund);
+router.post("/refunds/:refundId/reject", rejectRefundValidation, validate, idempotency(), rejectRefund);
+router.post("/refunds/:refundId/dispute", refundIdParamValidation, validate, idempotency(), escalateDispute);
 router.patch(
   "/refunds/:refundId/arbitrate",
   authorizeRoles("admin"),
+  arbitrateDisputeValidation,
+  validate,
+  idempotency(),
   arbitrateDispute
 );
 

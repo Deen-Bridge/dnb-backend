@@ -15,10 +15,8 @@ if (fs.existsSync(envPath)) {
 
 // Force NODE_ENV to test to ensure we don't accidentally connect to production
 process.env.NODE_ENV = "test";
-
-// Keep Stellar fixtures deterministic even when a developer's shell or local
-// dotenv file is configured for mainnet.
-process.env.STELLAR_NETWORK = "testnet";
+process.env.MONGOMS_VERSION = "7.0.14";
+process.env.MONGOMS_CHECK_MD5 = "false";
 
 // Prevent tests from sending real emails or connecting to external services
 for (const variable of [
@@ -32,7 +30,8 @@ for (const variable of [
 
 // The app is deliberately importable without a database. Individual
 // integration suites opt into MongoMemoryServer or the CI Mongo service.
-process.env.JWT_SECRET = "test-secret-key-at-least-32-characters-long";
+process.env.JWT_SECRET =
+  process.env.JWT_SECRET || "test-secret-key-at-least-32-characters-long";
 process.env.PORT = process.env.PORT || "5000";
 process.env.CLOUDINARY_CLOUD_NAME =
   process.env.CLOUDINARY_CLOUD_NAME || "test_cloud";
