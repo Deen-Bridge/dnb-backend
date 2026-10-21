@@ -4,8 +4,8 @@
   "main": "app.js",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --forceExit",
-    "start": "node --import dotenv/config server.js",
-    "dev": "nodemon --import dotenv/config server.js",
+    "start": "node api.js && node --import dotenv/config server.js",
+    "dev": "node api.js && nodemon --import dotenv/config server.js",
     "seed": "node src/scripts/seedDatabase.js",
     "db:seed": "node mongo/seeds/index.js",
     "db:seed:minimal": "node mongo/seeds/index.js --minimal",

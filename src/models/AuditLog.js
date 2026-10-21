@@ -81,6 +81,10 @@ export const AUDIT_ACTIONS = Object.freeze({
 
   // Bulk notifications (issue #123)
   NOTIFICATION_BULK_SENT:    "notification.bulk_sent",
+
+  // Book catalog moderation (issue #314)
+  BOOK_TAKEDOWN: "book.takedown",
+  BOOK_RESTORE:  "book.restore",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);

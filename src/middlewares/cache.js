@@ -35,10 +35,14 @@ export const cacheMiddleware = (
 
       // Override res.json to cache the response
       res.json = (data) => {
-        // Cache the response
-        setCache(cacheKey, data, ttl).catch((err) => {
-          logger.error("Error caching response:", err);
-        });
+        // Respect responses that explicitly opt out of shared caching, such as
+        // viewer-specific access checks for moderated content.
+        const cacheControl = String(res.getHeader("Cache-Control") || "");
+        if (!cacheControl.includes("no-store")) {
+          setCache(cacheKey, data, ttl).catch((err) => {
+            logger.error("Error caching response:", err);
+          });
+        }
 
         // Call original json method
         return originalJson(data);

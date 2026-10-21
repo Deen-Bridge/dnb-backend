@@ -185,7 +185,10 @@ describe("getBooks / getBook / getBooksByAuthor", () => {
     Book.countDocuments.mockResolvedValue(5);
     const res = mockRes();
     await getBooks({ query: { category: "History", page: "2", limit: "500" } }, res);
-    expect(Book.find).toHaveBeenCalledWith({ category: "History" });
+    expect(Book.find).toHaveBeenCalledWith({
+      category: "History",
+      status: { $ne: "taken-down" },
+    });
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ page: 2, limit: 100, total: 5, hasMore: false })
     );
@@ -220,7 +223,10 @@ describe("getBooks / getBook / getBooksByAuthor", () => {
     Book.find.mockReturnValue(query([{ title: "A" }]));
     const ok = mockRes();
     await getBooksByAuthor({ params: { authorId: OWNER_ID } }, ok);
-    expect(Book.find).toHaveBeenCalledWith({ author: OWNER_ID });
+    expect(Book.find).toHaveBeenCalledWith({
+      author: OWNER_ID,
+      status: { $ne: "taken-down" },
+    });
     expect(ok.status).toHaveBeenCalledWith(200);
 
     const bad = mockRes();

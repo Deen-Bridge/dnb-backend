@@ -42,6 +42,11 @@ const buildApp = () => {
     handlerCalls += 1;
     res.json({ q: req.query.q, n: handlerCalls });
   });
+  app.get("/private", cacheMiddleware(60), (req, res) => {
+    handlerCalls += 1;
+    res.set("Cache-Control", "no-store");
+    res.json({ n: handlerCalls });
+  });
   app.post("/items", cacheMiddleware(60), (req, res) => {
     handlerCalls += 1;
     res.status(201).json({ created: true });

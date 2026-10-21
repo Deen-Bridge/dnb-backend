@@ -42,6 +42,31 @@ export const protect = async (req, res, next) => {
   }
 };
 
+// Attaches req.user when a valid bearer token is present, but never rejects an
+// anonymous request. Public catalog routes use this to apply purchaser/author
+// visibility rules for taken-down books without forcing a login.
+export const protectOptional = async (req, _res, next) => {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer")) {
+    return next();
+  }
+
+  try {
+    const token = header.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(decoded.userId).select("-password");
+    if (user) {
+      req.user = user;
+      req.sessionId = decoded.sessionId;
+      req.is2FAVerified = decoded.is2FAVerified === true;
+    }
+  } catch {
+    // Invalid/expired tokens on public routes are treated as anonymous.
+  }
+
+  next();
+};
+
 export const authorizeRoles = (...roles) => {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {

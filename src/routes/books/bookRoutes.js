@@ -14,6 +14,9 @@ import {
   streamBookPreview,
   uploadBookAudio,
   streamBookAudio,
+  getAdminBooks,
+  takeDownBook,
+  restoreBook,
 } from "../../controllers/books/bookController.js";
 import {
   toggleBookBookmark,
@@ -21,7 +24,12 @@ import {
   checkIfBookBookmarked,
   removeBookBookmark,
 } from "../../controllers/books/bookmarkBookController.js";
-import { protect, requireVerifiedEducator } from "../../middlewares/authMiddleware.js";
+import {
+  protect,
+  protectOptional,
+  authorizeRoles,
+  requireVerifiedEducator,
+} from "../../middlewares/authMiddleware.js";
 import {
   authorizeOwnership,
   authorizeReviewOwnership,
@@ -74,6 +82,10 @@ router.get("/:id/audio", protect, streamBookAudio);
 // getting all books - cached for 15 minutes
 router.get("/", cacheMiddleware(CACHE_TTL.BOOKS, booksListCacheKey), getBooks);
 
+// Admin catalog listing (includes taken-down books). Must be registered before
+// the dynamic "/:id" route.
+router.get("/admin", protect, authorizeRoles("admin"), getAdminBooks);
+
 // get recommended books for user - cached for 5 minutes
 router.get(
   "/recom",
@@ -107,8 +119,34 @@ router.get(
 router.get("/:id/preview", protect, streamBookPreview);
 router.get(
   "/:id",
+  protectOptional,
   cacheMiddleware(CACHE_TTL.BOOKS, bookDetailCacheKey),
   getBook
+);
+
+// Catalog moderation controls. Every success invalidates the public catalog,
+// detail, recommended and educator caches so the change is visible immediately.
+router.patch(
+  "/:id/take-down",
+  protect,
+  authorizeRoles("admin"),
+  invalidateCacheMiddleware([
+    `${CACHE_KEYS.BOOKS}*`,
+    `${CACHE_KEYS.BOOK}*`,
+    `${CACHE_KEYS.EDUCATORS}*`,
+  ]),
+  takeDownBook
+);
+router.patch(
+  "/:id/restore",
+  protect,
+  authorizeRoles("admin"),
+  invalidateCacheMiddleware([
+    `${CACHE_KEYS.BOOKS}*`,
+    `${CACHE_KEYS.BOOK}*`,
+    `${CACHE_KEYS.EDUCATORS}*`,
+  ]),
+  restoreBook
 );
 
 // delete a book - invalidates book caches

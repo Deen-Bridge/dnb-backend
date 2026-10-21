@@ -67,6 +67,45 @@ const bookSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  // Catalog moderation state. Books default to active; a take-down hides the
+  // book from catalog and reading views while preserving it for admins, the
+  // author, and purchasers whose licence still permits access.
+  status: {
+    type: String,
+    enum: ["active", "taken-down"],
+    default: "active",
+    index: true,
+  },
+  statusBeforeTakedown: {
+    type: String,
+    enum: ["active", "taken-down"],
+    default: "active",
+  },
+  takenDownReason: {
+    type: String,
+    enum: ["content-violation", "dmca", "quality-issues", "other"],
+    default: null,
+  },
+  takenDownNote: {
+    type: String,
+    default: null,
+    maxlength: 1000,
+  },
+  takenDownAt: {
+    type: Date,
+    default: null,
+  },
+  takenDownBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
+  // Licensing switch: when false, even existing purchasers lose reading
+  // access for the duration of the take-down.
+  purchaserAccessAllowed: {
+    type: Boolean,
+    default: true,
+  },
   image: {
     type: String,
     required: true,
@@ -108,6 +147,7 @@ bookSchema.index({ title: "text", description: "text", category: "text" }, { wei
 bookSchema.index({ rating: -1 });
 bookSchema.index({ author: 1 });
 bookSchema.index({ category: 1 });
+bookSchema.index({ status: 1, createdAt: -1 });
 bookSchema.index({ createdAt: -1 });
 
 const Book = mongoose.model("Book", bookSchema);

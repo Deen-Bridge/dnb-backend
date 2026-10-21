@@ -9,9 +9,49 @@ import contentMetricsService from "../../services/analytics/contentMetricsServic
 import { bookService } from "../../services/book.service.js";
 import { createNewBookNotification } from "../notificationController.js";
 import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
+import { recordAudit } from "../../services/audit/auditService.js";
+import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
 
 // Magic-byte types accepted for the book's text file.
 const BOOK_FILE_MIME_TYPES = ["application/pdf", "application/epub+zip"];
+
+const BOOK_STATUS = Object.freeze({
+  ACTIVE: "active",
+  TAKEN_DOWN: "taken-down",
+});
+
+const TAKE_DOWN_REASONS = new Set([
+  "content-violation",
+  "dmca",
+  "quality-issues",
+  "other",
+]);
+
+const isTakenDown = (book) => book?.status === BOOK_STATUS.TAKEN_DOWN;
+
+const authorIdOf = (book) =>
+  book?.author?._id?.toString?.() || book?.author?.toString?.() || null;
+
+const isBookPurchaser = async (userId, bookId) => {
+  if (!userId) return false;
+  const user = await User.findById(userId).select("purchasedBooks");
+  return Boolean(
+    user?.purchasedBooks?.some(
+      (entry) => entry.bookId?.toString() === bookId.toString()
+    )
+  );
+};
+
+// A taken-down book is still readable by admins, its author, and existing
+// purchasers when the licence policy allows it.
+const canReadTakenDownBook = async (book, user) => {
+  if (!isTakenDown(book)) return true;
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  if (authorIdOf(book) === user._id?.toString?.()) return true;
+  if (book.purchaserAccessAllowed === false) return false;
+  return isBookPurchaser(user._id, book._id);
+};
 
 //cretae a book
 export const createBook = async (req, res) => {
@@ -124,7 +164,9 @@ export const createBook = async (req, res) => {
 // get all books in the store
 export const getBooks = async (req, res) => {
   try {
-    const filter = {};
+    // Public catalog never exposes taken-down books. `$ne` also keeps legacy
+    // documents that predate the status field visible.
+    const filter = { status: { $ne: BOOK_STATUS.TAKEN_DOWN } };
     if (req.query.category) {
       filter.category = req.query.category;
     }
@@ -185,6 +227,15 @@ export const getBook = async (req, res) => {
     .lean();
   if (!book) return res.status(404).json({ success: false, message: "Book not found" });
 
+  if (isTakenDown(book)) {
+    // Moderation state and viewer-specific access must never be cached under
+    // the shared public detail key.
+    res.set("Cache-Control", "no-store");
+    if (!(await canReadTakenDownBook(book, req.user))) {
+      return res.status(404).json({ success: false, message: "Book not found" });
+    }
+  }
+
   // Track a book view for content-performance analytics (issue #244),
   // fire-and-forget so a failed metric write never blocks the response.
   contentMetricsService
@@ -205,7 +256,10 @@ export const getBooksByAuthor = async (req, res) => {
     }
     const selectFields =
       "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
-    const books = await Book.find({ author: authorId })
+    const books = await Book.find({
+      author: authorId,
+      status: { $ne: BOOK_STATUS.TAKEN_DOWN },
+    })
       .select(selectFields)
       .sort({ createdAt: -1 })
       .populate("author", "name avatar bio")
@@ -216,6 +270,121 @@ export const getBooksByAuthor = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Admin catalog listing: includes taken-down books and moderation metadata.
+export const getAdminBooks = catchAsync(async (req, res) => {
+  const filter = {};
+  if (req.query.status) filter.status = req.query.status;
+
+  const selectFields =
+    "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration status statusBeforeTakedown takenDownReason takenDownNote takenDownAt takenDownBy purchaserAccessAllowed createdAt updatedAt";
+
+  const books = await Book.find(filter)
+    .select(selectFields)
+    .sort({ createdAt: -1 })
+    .populate("author", "name avatar bio email")
+    .lean();
+
+  res.status(200).json({ success: true, data: books });
+});
+
+// Take down a book: hides it from the catalog and reading views while
+// preserving its prior state for the restore flow.
+export const takeDownBook = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { reason, note = null, purchaserAccessAllowed = true } = req.body ?? {};
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return next(new APIError("Invalid book id", 400));
+  }
+  if (!TAKE_DOWN_REASONS.has(reason)) {
+    return next(new APIError("A valid take-down reason is required", 400));
+  }
+
+  const book = await Book.findById(id);
+  if (!book) {
+    return next(new APIError("Book not found", 404));
+  }
+  if (isTakenDown(book)) {
+    return next(new APIError("Book is already taken down", 409));
+  }
+
+  const previousStatus = book.status || BOOK_STATUS.ACTIVE;
+  book.statusBeforeTakedown = previousStatus;
+  book.status = BOOK_STATUS.TAKEN_DOWN;
+  book.takenDownReason = reason;
+  book.takenDownNote = note;
+  book.takenDownAt = new Date();
+  book.takenDownBy = req.user?._id ?? null;
+  book.purchaserAccessAllowed = purchaserAccessAllowed !== false;
+  await book.save();
+
+  recordAudit({
+    action: AUDIT_ACTIONS.BOOK_TAKEDOWN,
+    actor: req.user?._id ?? null,
+    req,
+    targetType: "Book",
+    targetId: book._id.toString(),
+    status: "success",
+    metadata: {
+      reason,
+      previousStatus,
+      newStatus: BOOK_STATUS.TAKEN_DOWN,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Book taken down",
+    data: book,
+  });
+});
+
+// Restore a taken-down book to the state it had before moderation.
+export const restoreBook = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return next(new APIError("Invalid book id", 400));
+  }
+
+  const book = await Book.findById(id);
+  if (!book) {
+    return next(new APIError("Book not found", 404));
+  }
+  if (!isTakenDown(book)) {
+    return next(new APIError("Book is not taken down", 409));
+  }
+
+  const previousStatus = book.status;
+  book.status = book.statusBeforeTakedown || BOOK_STATUS.ACTIVE;
+  book.statusBeforeTakedown = BOOK_STATUS.ACTIVE;
+  book.takenDownReason = null;
+  book.takenDownNote = null;
+  book.takenDownAt = null;
+  book.takenDownBy = null;
+  book.purchaserAccessAllowed = true;
+  await book.save();
+
+  recordAudit({
+    action: AUDIT_ACTIONS.BOOK_RESTORE,
+    actor: req.user?._id ?? null,
+    req,
+    targetType: "Book",
+    targetId: book._id.toString(),
+    status: "success",
+    metadata: {
+      previousStatus,
+      newStatus: book.status,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Book restored",
+    data: book,
+  });
+});
 
 // delete book by id
 export const deleteBook = catchAsync(async (req, res, next) => {
@@ -302,14 +471,21 @@ export const streamBookAudio = async (req, res) => {
         .json({ success: false, message: "Audiobook audio not found" });
     }
 
-    let hasAccess = book.price === 0;
+    let hasAccess = false;
 
-    if (userId) {
-      if (book.author?._id?.toString() === userId.toString()) {
-        hasAccess = true;
-      } else {
-        const user = await User.findById(userId).select("purchasedBooks");
-        if (user?.purchasedBooks?.some((entry) => entry.bookId.toString() === id)) {
+    if (isTakenDown(book)) {
+      const isAdmin = req.user?.role === "admin";
+      const isAuthor = authorIdOf(book) === userId?.toString();
+      const purchaserAllowed =
+        book.purchaserAccessAllowed !== false &&
+        (await isBookPurchaser(userId, book._id));
+      hasAccess = isAdmin || isAuthor || purchaserAllowed;
+    } else {
+      hasAccess = book.price === 0;
+      if (userId) {
+        if (authorIdOf(book) === userId.toString()) {
+          hasAccess = true;
+        } else if (await isBookPurchaser(userId, book._id)) {
           hasAccess = true;
         }
       }
@@ -401,7 +577,7 @@ export const fetchRecommendedBooks = async (req, res) => {
     const hasInterests = interests.length > 0;
 
     if (!hasInterests) {
-      const books = await Book.find()
+      const books = await Book.find({ status: { $ne: BOOK_STATUS.TAKEN_DOWN } })
         .select(selectFields)
         .populate("author", "name email avatar bio")
         .sort({ readCount: -1 })
@@ -419,6 +595,7 @@ export const fetchRecommendedBooks = async (req, res) => {
 
     const recommended = await Book.find({
       category: { $in: interests },
+      status: { $ne: BOOK_STATUS.TAKEN_DOWN },
     })
       .select(selectFields)
       .populate("author", "name email avatar bio")
@@ -460,14 +637,21 @@ export const streamBookPreview = async (req, res) => {
         .json({ success: false, message: "Book file not found" });
     }
 
-    let hasAccess = book.price === 0;
+    let hasAccess = false;
 
-    if (userId) {
-      if (book.author?._id?.toString() === userId.toString()) {
-        hasAccess = true;
-      } else {
-        const user = await User.findById(userId).select("purchasedBooks");
-        if (user?.purchasedBooks?.some((entry) => entry.bookId.toString() === id)) {
+    if (isTakenDown(book)) {
+      const isAdmin = req.user?.role === "admin";
+      const isAuthor = authorIdOf(book) === userId?.toString();
+      const purchaserAllowed =
+        book.purchaserAccessAllowed !== false &&
+        (await isBookPurchaser(userId, book._id));
+      hasAccess = isAdmin || isAuthor || purchaserAllowed;
+    } else {
+      hasAccess = book.price === 0;
+      if (userId) {
+        if (authorIdOf(book) === userId.toString()) {
+          hasAccess = true;
+        } else if (await isBookPurchaser(userId, book._id)) {
           hasAccess = true;
         }
       }
