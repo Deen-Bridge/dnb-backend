@@ -53,7 +53,11 @@ router.post(
 // Transaction management
 router.get("/transactions", getTransactionHistory);
 router.get("/transactions/:transactionId", getTransaction);
-router.delete("/transactions/:transactionId", cancelTransaction);
+router.delete(
+  "/transactions/:transactionId",
+  idempotency(),
+  cancelTransaction
+);
 
 // Refund & Dispute flow
 router.post("/transactions/:id/refund-request", idempotency(), requestRefund);
@@ -64,6 +68,7 @@ router.post("/refunds/:refundId/dispute", idempotency(), escalateDispute);
 router.patch(
   "/refunds/:refundId/arbitrate",
   authorizeRoles("admin"),
+  idempotency(),
   arbitrateDispute
 );
 

@@ -7,7 +7,8 @@ info:
     url: https://github.com/Deen-Bridge/dnb-backend/blob/main/LICENSE
   description: |
     REST API for DeenBridge: authentication and sessions, courses, the book library,
-    community spaces, reels, search, Stellar USDC payments, refunds and disputes,
+    community spaces, reels, search, Stellar USDC payments, scholarship escrow,
+    refunds and disputes,
     educator payouts, media upload signing and the SEP-1 metadata document.
 
     Provenance of this document:
@@ -62,12 +63,18 @@ tags:
     description: Payment quote, build, submit, history, refunds and disputes
   - name: Donations
     description: Sadaqah donations and aggregate stats
+  - name: Scholarship Escrow
+    description: Wallet-signed contributions, milestone releases, refunds, and live Soroban escrow state. Separate from direct Sadaqah payments.
   - name: Payouts
     description: Educator balances, statements and payout batches
   - name: Uploads
     description: Signed Cloudinary upload parameters
   - name: Jobs
     description: Token protected background job dashboard
+  - name: Notifications
+    description: Real-time and bulk notifications
+  - name: Certificates
+    description: Verifiable course completion certificates
 security:
   - bearerAuth: []
 components:
@@ -135,6 +142,11 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: Stellar or Soroban network service is unavailable or not configured
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     UnprocessableEntity:
       description: Request payload mismatch for idempotency key
       content:
@@ -160,9 +172,46 @@ components:
       description: Standard error shape produced by the central error handler
       properties:
         success: { type: boolean, examples: [false] }
-        message: { type: string }
-        data: { description: Null on error responses }
-        stack: { type: string, description: Present only outside production }
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              enum:
+                - VALIDATION_ERROR
+                - NOT_FOUND
+                - UNAUTHORIZED
+                - FORBIDDEN
+                - CONFLICT
+                - RATE_LIMITED
+                - PAYLOAD_TOO_LARGE
+                - REQUEST_TIMEOUT
+                - NETWORK_UNAVAILABLE
+                - PAYMENT_FAILED
+                - PAYMENT_REJECTED
+                - WALLET_MISMATCH
+                - WALLET_NOT_CONNECTED
+                - ITEM_NOT_FOUND
+                - ALREADY_PURCHASED
+                - INSUFFICIENT_BALANCE
+                - STALE_XDR
+                - INVALID_XDR
+                - SPONSORSHIP_REJECTED
+                - INTERNAL_ERROR
+                - DATABASE_ERROR
+                - EXTERNAL_SERVICE_ERROR
+            message: { type: string, description: Human-readable error message }
+            details:
+              type: array
+              description: Optional field-level validation errors
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+        stack: { type: string, description: Present only in development }
+        reqId: { type: string, description: Request correlation ID }
     SuccessResponse:
       type: object
       description: Standard success envelope. Some list handlers return a bare array instead.
@@ -170,6 +219,29 @@ components:
         success: { type: boolean, examples: [true] }
         message: { type: string }
         data: { description: Payload, shape depends on the endpoint }
+    CursorPagination:
+      type: object
+      description: Cursor-based pagination metadata returned by search endpoints
+      properties:
+        total:
+          type: integer
+          description: Total number of matching documents across all pages
+        has_more:
+          type: boolean
+          description: Whether there are more results beyond the current page
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque cursor to pass as the `cursor` query parameter for the next page. Null when there are no more results.
+        page:
+          type: integer
+          description: Current page number (present only for offset-based fallback)
+        limit:
+          type: integer
+          description: Results per page (present only for offset-based fallback)
+        pages:
+          type: integer
+          description: Total number of pages (present only for offset-based fallback)
     StellarPublicKey:
       type: string
       pattern: "^G[A-Z0-9]{55}$"
@@ -672,6 +744,35 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/users/completion:
+    get:
+      tags: [Users]
+      summary: Get authenticated user's profile completion metrics and suggestions
+      description: Returns completion percentage, weighted field breakdown, and prioritized improvement suggestions.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/users/completion/criteria:
+    get:
+      tags: [Users]
+      summary: Get profile completion scoring criteria and levels
+      description: Public criteria definitions with field weights and progress tier ranges.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/users/completion/{id}:
+    get:
+      tags: [Users]
+      summary: Get profile completion for a specific user
+      description: Evaluates profile completion for the requested user ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/users/recommendations:
     get:
       tags: [Users]
@@ -1007,6 +1108,73 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/courses/{id}/certificate:
+    post:
+      tags: [Courses, Certificates]
+      summary: Generate verifiable course completion certificate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/certificates/{id}:
+    get:
+      tags: [Certificates]
+      summary: Public certificate verification
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/certificates/{id}/download:
+    get:
+      tags: [Certificates]
+      summary: Download PDF certificate
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: PDF binary stream
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/notifications/bulk:
+    post:
+      tags: [Notifications]
+      summary: Send bulk notification to course students (mentor/admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                course_id: { $ref: "#/components/schemas/ObjectId" }
+                title: { type: string }
+                message: { type: string }
+                type: { type: string, default: "course_update" }
+              required: [course_id, title, message]
+      responses:
+        "202": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/books:
     get:
       tags: [Books]
@@ -1064,6 +1232,38 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
       x-envelope-unverified: true
+  /api/books/recom:
+    get:
+      tags: [Books]
+      summary: Fetch recommended books by user interests or popular fallback
+      security: []
+      parameters:
+        - name: interests
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Books]
+      summary: Fetch recommended books by user interests payload
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interests:
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/books/bookmarks:
     get:
       tags: [Books]
@@ -1513,8 +1713,29 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: Opaque cursor from a previous response's `pagination.next_cursor` for cursor-based pagination
       responses:
-        "200": { $ref: "#/components/responses/Ok" }
+        "200":
+          description: Search results with cursor-based pagination
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, examples: [true] }
+                      results:
+                        type: object
+                        description: Search results keyed by entity type
+                      pagination:
+                        type: object
+                        description: Pagination metadata per entity type
+                        additionalProperties:
+                          $ref: "#/components/schemas/CursorPagination"
       x-envelope-unverified: true
   /api/search/educators:
     get:
@@ -1528,6 +1749,11 @@ paths:
           schema: { type: string }
         - { $ref: "#/components/parameters/Page" }
         - { $ref: "#/components/parameters/Limit" }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: Opaque cursor from a previous response's `pagination.next_cursor`
       responses:
         "200": { $ref: "#/components/responses/Ok" }
       x-envelope-unverified: true
@@ -2016,6 +2242,282 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/BadRequest" }
         "429": { $ref: "#/components/responses/BadRequest" }
+  /api/stellar/scholarships/applications/config:
+    get:
+      tags: [Scholarship Applications]
+      summary: Read current scholarship round rules and opening status
+      description: Requires a signed-in account. Applications remain closed unless SCHOLARSHIP_APPLICATIONS_OPEN is true and public eligibility and funding/refund terms are configured.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/stellar/scholarships/applications:
+    post:
+      tags: [Scholarship Applications]
+      summary: Submit one private application for the current round
+      description: Stores the requested USDC amount, study goal, need statement, and eligibility confirmation. Does not collect wallet secrets or identity documents.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestedAmountUsdc, studyGoal, needStatement, eligibilityConfirmed]
+              properties:
+                requestedAmountUsdc: { type: string, pattern: "^[1-9][0-9]{0,5}(\\.[0-9]{1,2})?$" }
+                studyGoal: { type: string, minLength: 50, maxLength: 1600 }
+                needStatement: { type: string, minLength: 50, maxLength: 1600 }
+                eligibilityConfirmed: { type: boolean, const: true }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/scholarships/applications/me:
+    get:
+      tags: [Scholarship Applications]
+      summary: Read the caller's current-round application
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/stellar/scholarships/applications/review:
+    get:
+      tags: [Scholarship Applications]
+      summary: List private applications in the admin review queue
+      description: Admin-only; requires the platform's 2FA-verified session.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/stellar/scholarships/applications/{applicationId}/reviews:
+    post:
+      tags: [Scholarship Applications]
+      summary: Submit one independent scored review
+      description: Admin-only; each administrator can score an application once. Scores cover need, study plan, impact, and eligibility fit from 1 to 5.
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scores, recommendation, note]
+              properties:
+                scores:
+                  type: object
+                  required: [need, studyPlan, impact, eligibility]
+                  properties:
+                    need: { type: integer, minimum: 1, maximum: 5 }
+                    studyPlan: { type: integer, minimum: 1, maximum: 5 }
+                    impact: { type: integer, minimum: 1, maximum: 5 }
+                    eligibility: { type: integer, minimum: 1, maximum: 5 }
+                recommendation: { type: string, enum: [support, do_not_support] }
+                note: { type: string, minLength: 20, maxLength: 1200 }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/scholarships/applications/{applicationId}/decision:
+    post:
+      tags: [Scholarship Applications]
+      summary: Record the final scholarship panel decision
+      description: Admin-only. Requires two independent reviews; selection also requires two supporting votes, a majority, an average score of 3/5, and no other selected applicant in the round.
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, reason]
+              properties:
+                decision: { type: string, enum: [selected, not_selected] }
+                reason: { type: string, minLength: 20, maxLength: 1200 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/scholarships/state:
+    get:
+      tags: [Scholarship Escrow]
+      summary: Read the configured scholarship escrow state
+      description: Reads the active campaign directly from the configured Soroban network and RPC endpoint. Requires a signed-in user with a saved Stellar wallet.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/stellar/scholarships/milestones/reports:
+    get:
+      tags: [Scholarship Escrow]
+      summary: Read private milestone progress reports
+      description: Available only to the current campaign beneficiary or its admin arbiter. Reports and supporting links remain off-chain.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/stellar/scholarships/milestones/{index}/reports:
+    post:
+      tags: [Scholarship Escrow]
+      summary: Submit private progress for a milestone
+      description: Only the on-chain beneficiary can submit. A report must be approved by the arbiter before a Stellar release transaction can be prepared.
+      parameters:
+        - name: index
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0, maximum: 99 }
+        - { $ref: "#/components/parameters/IdempotencyKeyHeader" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [summary]
+              properties:
+                summary: { type: string, minLength: 50, maxLength: 2000 }
+                evidenceUrl: { type: string, format: uri, pattern: "^https://", maxLength: 2000 }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/stellar/scholarships/milestones/{index}/reports/{reportId}/review:
+    post:
+      tags: [Scholarship Escrow]
+      summary: Record arbiter review of a milestone report
+      description: Requires an admin 2FA session and the configured on-chain arbiter wallet. Review content is private and off-chain.
+      parameters:
+        - name: index
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0, maximum: 99 }
+        - name: reportId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+        - { $ref: "#/components/parameters/IdempotencyKeyHeader" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, note]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                note: { type: string, minLength: 20, maxLength: 1200 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/stellar/scholarships/contributions/initialize:
+    post:
+      tags: [Scholarship Escrow]
+      summary: Prepare a wallet-signed USDC contribution
+      description: Builds and simulates an unsigned funding invocation for the configured escrow. The donor's connected wallet must sign it; no secret key is held by this API.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKeyHeader" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: string, description: Positive USDC amount with up to seven decimal places }
+              required: [amount]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/stellar/scholarships/contributions/submit:
+    post:
+      tags: [Scholarship Escrow]
+      summary: Submit a signed scholarship transaction
+      description: Checks the signed transaction hash against the prepared contribution before submitting it to Soroban RPC.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKeyHeader" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contributionId: { $ref: "#/components/schemas/ObjectId" }
+                signedXdr: { type: string, description: Wallet-signed transaction envelope in base64 XDR }
+              required: [contributionId, signedXdr]
+      responses:
+        "202": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/stellar/scholarships/contributions/{contributionId}:
+    get:
+      tags: [Scholarship Escrow]
+      summary: Read the caller's scholarship transaction status
+      parameters:
+        - name: contributionId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/stellar/scholarships/refunds/initialize:
+    post:
+      tags: [Scholarship Escrow]
+      summary: Prepare the caller's post-expiry refund claim
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKeyHeader" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/stellar/scholarships/milestones/{index}/release/initialize:
+    post:
+      tags: [Scholarship Escrow]
+      summary: Prepare an arbiter-authorized milestone release
+      description: Admin-only. Requires an arbiter-approved private progress report; the stored wallet must also equal the immutable on-chain arbiter address. The arbiter's wallet signs the returned transaction.
+      parameters:
+        - name: index
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0, maximum: 99 }
+        - { $ref: "#/components/parameters/IdempotencyKeyHeader" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reportId]
+              properties:
+                reportId: { $ref: "#/components/schemas/ObjectId" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /api/payouts/me/balance:
     get:
       tags: [Payouts]

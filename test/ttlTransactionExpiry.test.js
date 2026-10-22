@@ -13,7 +13,9 @@ const makeKey = (prefix) => {
   return "G" + p;
 };
 
-describe("Transaction TTL expiry & lifecycle invariant", () => {
+// Regression tests for https://github.com/Deen-Bridge/dnb-backend/issues/6
+// Confirmed/failed purchase records must never be deleted by the TTL index.
+describe("Transaction TTL expiry & lifecycle invariant (closes #6)", () => {
   let mongoServer;
   let buyer;
   let author;
@@ -251,6 +253,38 @@ describe("Transaction TTL expiry & lifecycle invariant", () => {
       });
       expect(persisted).not.toBeNull();
       expect(persisted.expiresAt).toBeUndefined();
+    });
+
+    it("does not delete a confirmed row even when legacy data has expiresAt in the past (#6)", async () => {
+      // Directly insert a confirmed transaction with an expiresAt that is
+      // already in the past — simulating the exact pre-fix state where the
+      // TTL reaper would delete confirmed purchases after 30 minutes.
+      await Transaction.collection.insertOne({
+        ...baseFields(),
+        stellarTxHash: "legacy-past-expires-hash",
+        status: "confirmed",
+        confirmedAt: new Date(),
+        expiresAt: new Date(Date.now() - 60 * 60 * 1000), // 1 hour ago
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // The partial TTL index should NOT match this row (status is confirmed,
+      // not pending), so even though expiresAt is in the past the reaper
+      // cannot see it.
+      const indexes = await Transaction.collection.indexes();
+      const ttlIndex = indexes.find((idx) => idx.key && idx.key.expiresAt === 1);
+      expect(ttlIndex.partialFilterExpression).toEqual({ status: "pending" });
+
+      const row = await Transaction.findOne({ stellarTxHash: "legacy-past-expires-hash" });
+      expect(row).not.toBeNull();
+      expect(row.status).toBe("confirmed");
+
+      // After migration, expiresAt should be cleared.
+      await fixTtlTransactionExpiry();
+      const rescued = await Transaction.findOne({ stellarTxHash: "legacy-past-expires-hash" });
+      expect(rescued).not.toBeNull();
+      expect(rescued.expiresAt).toBeUndefined();
     });
   });
 });

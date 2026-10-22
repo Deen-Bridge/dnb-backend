@@ -64,7 +64,7 @@ describe("Core auth, authorization, and wallet flows", () => {
       [
         "--input-type=module",
         "--eval",
-        'import("./app.js").then(() => console.log("app-imported"))',
+        'import("./app.js").then(() => { console.log("app-imported"); process.exit(0); }).catch((e) => { console.error(e); process.exit(1); })',
       ],
       {
         cwd: process.cwd(),
