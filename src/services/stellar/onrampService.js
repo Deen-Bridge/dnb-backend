@@ -193,6 +193,12 @@ export const verifyWebhookSignature = (rawBody, signatureHeader) => {
   }
 
   if (timestamp && signature) {
+    // Replay protection: reject stale/future timestamps (seconds or ms).
+    let tsSec = Number(timestamp);
+    if (!Number.isFinite(tsSec)) return false;
+    if (tsSec > 1e12) tsSec = Math.floor(tsSec / 1000);
+    if (Math.abs(Math.floor(Date.now() / 1000) - tsSec) > 300) return false;
+
     const expected = crypto
       .createHmac("sha256", webhookKey)
       .update(`${timestamp}.${payload}`)

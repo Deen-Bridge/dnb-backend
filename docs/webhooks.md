@@ -122,6 +122,15 @@ is additionally resolved in production). Residual limitation: DNS rebinding
 between resolution and connect (TOCTOU) is not fully closed — that would
 require pinning the resolved IP onto the connecting socket.
 
+## Inbound provider callbacks
+
+The only inbound provider callback is the MoonPay on-ramp webhook
+(`POST /api/stellar/onramp/webhook`). It verifies the `Moonpay-Signature-V2`
+HMAC-SHA256 over the raw request body before any processing, in constant time,
+and (as of issue #424) rejects `t=` timestamps more than 5 minutes from server
+time. Missing/invalid signatures return 401. No other inbound webhooks exist
+(the anchor routes are user-authenticated REST, not provider callbacks).
+
 ## Management API
 
 All routes require an authenticated **admin** (`protect` + `authorizeRoles("admin")`).
