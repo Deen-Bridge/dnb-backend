@@ -27,6 +27,7 @@ import {
 } from "./src/middlewares/errorHandler.js";
 
 import authRoutes from "./src/routes/authRoutes.js";
+import webauthnRoutes from "./src/routes/webauthnRoutes.js";
 import courseRoutes from "./src/routes/courses/courseRoutes.js";
 import courseAnalyticsRoutes from "./src/routes/courses/analyticsRoutes.js";
 import quizRoutes from "./src/routes/courses/quizRoutes.js";
@@ -232,6 +233,7 @@ app.use("/.well-known", wellKnownRoutes);
 
 // Auth routes — strict
 app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/auth/webauthn", authLimiter, webauthnRoutes);
 
 // Mutation routes — standard limiter
 app.use("/api/email", standardLimiter, emailRoutes);
