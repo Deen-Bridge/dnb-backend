@@ -8,6 +8,7 @@
 
 import mongoose from "mongoose";
 import logger from "../../src/config/logger.js";
+import { paginateOffset, paginateCursor } from "../utils/pagination.js";
 
 /**
  * Default number of documents returned by pagination methods.
@@ -491,39 +492,26 @@ export default class BaseRepository {
       populate,
       lean = false,
       session,
+      limit,
     } = options;
 
     return this._run("paginate", async () => {
-      const { limit, clamped } = resolveLimit(options.limit);
-      let page = parseInt(rawPage, 10);
-      if (Number.isNaN(page) || page < 1) page = 1;
-      if (clamped || Number.isNaN(parseInt(options.limit, 10))) {
-        this.logger.debug({ requestedLimit: options.limit, resolvedLimit: limit }, "pagination limit clamped");
-      }
-
-      const offset = Number.isFinite(explicitOffset) ? Math.max(0, explicitOffset) : (page - 1) * limit;
-      const direction = String(order).toLowerCase() === "asc" ? 1 : -1;
       const sortField = String(sortBy).trim();
       if (!sortField) {
         throw new RepositoryValidationError("sortBy cannot be empty");
       }
 
-      const [data, total] = await Promise.all([
-        this.findMany(filter, { sort: { [sortField]: direction }, limit, skip: offset, select, populate, lean, session }),
-        this.count(filter, { session }),
-      ]);
-
-      const totalPages = Math.ceil(total / limit);
-      return {
-        data,
-        total,
-        page,
+      return paginateOffset({
+        executor: ({ filter: f, sort: s, limit: l, skip }) =>
+          this.findMany(f, { sort: s, limit: l, skip, select, populate, lean, session }),
+        countExecutor: ({ filter: f }) => this.count(f, { session }),
+        filter,
+        page: rawPage,
+        offset: explicitOffset,
         limit,
-        totalPages,
-        offset,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      };
+        sortBy: sortField,
+        order,
+      });
     });
   }
 
@@ -557,39 +545,33 @@ export default class BaseRepository {
       populate,
       lean = false,
       session,
+      limit,
     } = options;
 
     return this._run("paginateCursor", async () => {
-      const { limit, clamped } = resolveLimit(options.limit);
-      if (clamped) {
-        this.logger.debug({ requestedLimit: options.limit, resolvedLimit: limit }, "cursor pagination limit clamped");
+      if (cursor != null && cursor !== "") {
+        try {
+          this._decodeCursor(cursor);
+        } catch (err) {
+          throw err;
+        }
       }
+
       const direction = String(order).toLowerCase() === "asc" ? 1 : -1;
 
-      const effectiveFilter = { ...filter };
-      if (cursor != null && cursor !== "") {
-        const boundary = this._decodeCursor(cursor);
-        effectiveFilter._id = { ...(filter._id ?? {}), [direction === 1 ? "$gt" : "$lt"]: boundary };
-      }
-
-      const data = await this.findMany(effectiveFilter, {
-        sort: { _id: direction },
-        limit: limit + 1, // fetch one extra to detect hasMore without a second query
-        select,
-        populate,
-        lean,
-        session,
+      const result = await paginateCursor({
+        executor: ({ filter: f, sort: s, limit: l }) =>
+          this.findMany(f, { sort: s, limit: l, select, populate, lean, session }),
+        cursor,
+        limit,
+        sortField: "_id",
+        sortOrder: direction,
+        filter,
       });
 
-      const hasMore = data.length > limit;
-      if (hasMore) data.length = limit;
-      const last = data.at(-1);
-
       return {
-        data,
-        nextCursor: hasMore && last ? this._encodeCursor(last._id) : null,
-        hasMore,
-        limit,
+        ...result,
+        hasMore: result.hasNext,
       };
     });
   }

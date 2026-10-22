@@ -114,10 +114,34 @@ export const connectWalletValidation = [
     .withMessage("publicKey must be a valid Stellar public key"),
 ];
 
+// Optional prerequisites: an array of course ObjectIds a learner must complete
+// before enrolling. Each entry must be a valid ObjectId and (defensively) a
+// course may not list itself as a prerequisite. Shared by course create/update.
+export const prerequisitesValidation = [
+  body("prerequisites")
+    .optional({ values: "undefined" })
+    .isArray()
+    .withMessage("prerequisites must be an array"),
+  body("prerequisites.*")
+    .custom(isValidObjectId)
+    .withMessage("Each prerequisite must be a valid Mongo ObjectId"),
+  body("prerequisites")
+    .optional({ values: "undefined" })
+    .custom((value, { req }) => {
+      if (!Array.isArray(value)) return true;
+      const courseId = req.params?.id;
+      if (courseId && value.some((p) => String(p) === String(courseId))) {
+        throw new Error("A course cannot list itself as a prerequisite");
+      }
+      return true;
+    }),
+];
+
 export default {
   registerValidation,
   loginValidation,
   initializePaymentValidation,
   submitPaymentValidation,
   connectWalletValidation,
+  prerequisitesValidation,
 };

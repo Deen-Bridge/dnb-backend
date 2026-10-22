@@ -48,7 +48,9 @@ router.post(
   validate,
   registerUser
 );
-router.post("/login", loginValidation, validate, loginUser);
+// Apply the same configurable CAPTCHA gate to login as registration. The
+// middleware remains a no-op until CAPTCHA is enabled, preserving local flows.
+router.post("/login", captchaGate(), loginValidation, validate, loginUser);
 router.post("/request-password-reset", requestPasswordReset);
 router.post("/reset-password", resetPassword);
 router.get("/verify-email/:token", verifyEmail);

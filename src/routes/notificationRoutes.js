@@ -1,5 +1,6 @@
 import express from "express";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, authorizeRoles } from "../middlewares/authMiddleware.js";
+import { bulkNotificationLimiter } from "../middlewares/security.js";
 import {
   sseNotifications,
   getUserNotifications,
@@ -7,6 +8,7 @@ import {
   markAllNotificationsAsRead,
   deleteNotification,
   getNotificationSettings,
+  sendBulkNotification,
 } from "../controllers/notificationController.js";
 
 const router = express.Router();
@@ -36,7 +38,13 @@ router.put("/mark-all-read", protect, markAllNotificationsAsRead);
 // Delete notification
 router.delete("/:notificationId", protect,deleteNotification);
 
-// Get notification settings
-router.get("/settings", protect, getNotificationSettings);
+// Bulk notification for course (mentor/admin only)
+router.post(
+  "/bulk",
+  protect,
+  authorizeRoles("mentor", "admin"),
+  bulkNotificationLimiter,
+  sendBulkNotification
+);
 
 export default router; 

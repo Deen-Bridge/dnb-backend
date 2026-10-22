@@ -88,6 +88,14 @@ const METADATA_ALLOWLIST = new Set([
   "url",
   "events",
   "disabledReason",
+
+  // Bulk notifications (issue #123)
+  "courseId",
+  "recipientCount",
+  "jobId",
+  "title",
+  "type",
+  "enrolledCount",
 ]);
 
 /**
