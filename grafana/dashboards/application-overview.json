@@ -1,0 +1,1 @@
+{"title":"DeenBridge overview","panels":[{"title":"HTTP request rate","type":"timeseries"},{"title":"Error rate","type":"timeseries"},{"title":"Latency","type":"timeseries"}]}
