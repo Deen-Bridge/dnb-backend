@@ -35,6 +35,33 @@ const normalizePrerequisites = (prerequisites, selfId) => {
   }
   return { ids };
 };
+/**
+ * Normalize and clamp pagination parameters to safe bounds.
+ * Returns { page, limit, skip } ready for Mongoose query.
+ */
+const normalizePagination = (req) => {
+  const PAGE_SIZE_MAX = 100;
+  const PAGE_SIZE_DEFAULT = 20;
+
+  const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : PAGE_SIZE_DEFAULT;
+  const limit = Math.min(Math.max(limitParam, 1), PAGE_SIZE_MAX);
+
+  const pageParam = req.query.page ? parseInt(req.query.page, 10) : 1;
+  const page = Math.max(pageParam, 1);
+  const skip = (page - 1) * limit;
+
+  return { page, limit, skip };
+};
+
+/**
+ * Normalize and clamp pagination parameters to safe bounds.
+ * Returns { page, limit, skip } ready for Mongoose query.
+ */
+const normalizePagination = (req) => {
+  const PAGE_SIZE_MAX = 100;
+  const PAGE_SIZE_DEFAULT = 20;
+};
+
 
 /**
  * Create a new course
@@ -104,47 +131,32 @@ export const getCourses = async (req, res) => {
       if (!categoryDoc) return res.status(404).json({ success: false, message: "Category not found" });
       filter.categoryRef = categoryDoc._id;
     }
-    const pageParam = req.query.page ? parseInt(req.query.page, 10) : null;
-    const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : null;
-    const isPaginated = pageParam !== null || limitParam !== null;
+    const selectFields = "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt";
+    const { page, limit, skip } = normalizePagination(req);
 
-    const selectFields =
-      "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt";
+    const [courses, total] = await Promise.all([
+      Course.find(filter)
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("createdBy", "name email avatar")
+        .lean(),
+      Course.countDocuments(filter),
+    ]);
 
-    if (isPaginated) {
-      const page = Math.max(pageParam || 1, 1);
-      const limit = Math.min(Math.max(limitParam || 20, 1), 100);
-      const skip = (page - 1) * limit;
+    const hasMore = skip + courses.length < total;
 
-      const [courses, total] = await Promise.all([
-        Course.find(filter)
-          .select(selectFields)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .populate("createdBy", "name email avatar")
-          .lean(),
-        Course.countDocuments(filter),
-      ]);
-
-      const hasMore = skip + courses.length < total;
-      return res.status(200).json({
-        success: true,
+    res.status(200).json({
+      success: true,
+      pagination: {
         page,
-        limit,
+        pageSize: limit,
         total,
         hasMore,
-        data: courses,
-      });
-    }
-
-    const courses = await Course.find(filter)
-      .select(selectFields)
-      .sort({ createdAt: -1 })
-      .populate("createdBy", "name email avatar")
-      .lean();
-
-    res.status(200).json({ success: true, data: courses });
+      },
+      data: courses,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -198,18 +210,349 @@ export const getCoursesByUser = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Invalid user ID format" });
     }
+    const selectFields = "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt";
+    const { page, limit, skip } = normalizePagination(req);
 
     logger.info("✅ Finding courses...");
-    const courses = await Course.find({ createdBy })
-      .select(
-        "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt"
-      )
-      .sort({ createdAt: -1 })
-      .populate("createdBy", "name avatar bio")
-      .lean();
+    const [courses, total] = await Promise.all([
+      Course.find({ createdBy })
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("createdBy", "name avatar bio")
+        .lean(),
+      Course.countDocuments({ createdBy }),
+    ]);
+
+    const hasMore = skip + courses.length < total;
 
     // An empty result set is a successful query, not a failure.
-    res.status(200).json({ success: true, data: courses || [] });
+    res.status(200).json({
+      success: true,
+      pagination: {
+        page,
+        pageSize: limit,
+        total,
+        hasMore,
+      },
+      data: courses,
+    });
+  } catch (error) {
+    logger.error("❌ Unexpected Error in getCoursesByUser:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 📥 Enroll a user in a course (Purchase/Enroll)
+export const enrollInCourse = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+
+    if (!course)
+      return res
+        .status(404)
+        .json({ success: false, message: "Course not found" });
+
+    if (course.enrolledUsers.includes(req.user._id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Already enrolled" });
+    }
+
+    // Prerequisite gate: the learner must have COMPLETED every prerequisite
+    // course (a CourseProgress doc with completedAt set, or percentComplete>=100)
+    // before they can enroll in this (advanced) course.
+    if (Array.isArray(course.prerequisites) && course.prerequisites.length > 0) {
+      const completed = await CourseProgress.find({
+        user: req.user._id,
+        course: { $in: course.prerequisites },
+        $or: [
+          { completedAt: { $ne: null } },
+          { percentComplete: { $gte: 100 } },
+        ],
+      }).select("course");
+
+      const completedIds = new Set(completed.map((p) => p.course.toString()));
+      const missingIds = course.prerequisites.filter(
+        (p) => !completedIds.has(p.toString())
+      );
+
+      if (missingIds.length > 0) {
+        const missingCourses = await Course.find({
+          _id: { $in: missingIds },
+        }).select("title");
+        const titles = missingCourses.map((c) => c.title).join(", ");
+        return res.status(400).json({
+          success: false,
+          message: `Complete these prerequisites first: ${titles}`,
+        });
+      }
+    }
+
+    // Add user to course's enrolledUsers
+    course.enrolledUsers.push(req.user._id);
+    await course.save();
+
+    // Also add to user's purchasedCourses
+    const User = (await import("../../models/User.js")).default;
+    const user = await User.findById(req.user._id);
+    if (user) {
+      const alreadyPurchased = user.purchasedCourses.some(
+        (p) => p.courseId.toString() === course._id.toString()
+      );
+      if (!alreadyPurchased) {
+        user.purchasedCourses.push({
+          courseId: course._id,
+          purchaseDate: new Date(),
+        });
+        await user.save();
+      }
+    }
+
+    await emitEvent(EVENT_TYPES.COURSE_ENROLLED, {
+      courseId: course._id.toString(),
+      itemTitle: course.title,
+      userId: req.user._id.toString(),
+    });
+
+    res
+      .status(200)
+      .json({
+        success: true,
+        message:
+          "Course purchased successfully! You can now access the full content.",
+        course,
+      });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 📝 Edit/Update a course
+export const updateCourse = catchAsync(async (req, res, next) => {
+  const { title, description, category, price, thumbnail, video, prerequisites } =
+    req.body;
+  const courseId = req.params.id;
+
+  logger.info(`Updating course: ${courseId}`);
+
+  // Ownership is enforced by authorizeOwnership middleware (req.resource).
+  const course = req.resource || (await Course.findById(courseId));
+  if (!course) {
+    return next(new APIError("Course not found", 404));
+  }
+
+  const { ids: prerequisiteIds, error: prerequisiteError } =
+    normalizePrerequisites(prerequisites, courseId);
+  if (prerequisiteError) {
+    return next(new APIError(prerequisiteError, 400));
+  }
+
+  // Update fields (URLs from frontend)
+  course.title = title || course.title;
+  course.description = description || course.description;
+  if (category) {
+    const categoryDoc = await resolveActiveCategory(category);
+    if (!categoryDoc && (await categoryTaxonomyExists())) {
+      return next(new APIError(await categoryValidationError(), 400));
+    }
+    course.category = categoryDoc?.name || category;
+    course.categoryRef = categoryDoc?._id;
+  }
+  course.price = price !== undefined ? price : course.price;
+
+  // Update media URLs if provided
+  if (thumbnail) course.thumbnail = thumbnail;
+  if (video) course.video = video;
+
+  // Replace prerequisites only when explicitly provided (keeps update PATCH-like).
+  if (prerequisiteIds !== undefined) course.prerequisites = prerequisiteIds;
+
+  await course.save();
+
+  logger.info(`✅ Course updated successfully: ${courseId}`);
+
+  res.status(200).json({
+    success: true,
+    message: "Course updated successfully",
+    course,
+  });
+});
+
+export {
+  addCourseReview,
+  getCourseReviews,
+  updateCourseReview,
+  deleteCourseReview,
+} from "../reviewController.js";
+
+// Publish a course (draft -> published)
+export const publishCourse = catchAsync(async (req, res, next) => {
+  const course = req.resource || (await Course.findById(req.params.id));
+  if (!course) return next(new APIError("Course not found", 404));
+
+  if (course.status === "published") {
+    return next(new APIError("Course is already published", 400));
+  }
+
+  if (!course.title || !course.description || !course.category) {
+    return next(new APIError("Course must have title, description, and category before publishing", 400));
+  }
+
+  course.status = "published";
+  course.publishedAt = new Date();
+  await course.save();
+
+  res.status(200).json({ success: true, message: "Course published", course });
+});
+
+// Unpublish a course (published -> draft)
+export const unpublishCourse = catchAsync(async (req, res, next) => {
+  const course = req.resource || (await Course.findById(req.params.id));
+  if (!course) return next(new APIError("Course not found", 404));
+
+  if (course.status === "draft") {
+    return next(new APIError("Course is already a draft", 400));
+  }
+
+  course.status = "draft";
+  course.publishedAt = undefined;
+  await course.save();
+
+  res.status(200).json({ success: true, message: "Course unpublished", course });
+});
+
+
+// recommended courses for user based on their profile interest
+export const fetchRecommendedCourses = async (req, res) => {
+  try {
+    const { interests } = req.body;
+    const hasInterests = Array.isArray(interests) && interests.length > 0;
+
+    // This endpoint is POST (interests come in the body), so the shared
+    // cacheMiddleware (GET-only) can't key off req.query - cache explicitly here instead.
+    const cacheKey = hasInterests
+      ? `${CACHE_KEYS.COURSES}recommended:${[...interests].sort().join(",")}`
+      : `${CACHE_KEYS.COURSES}recommended:none`;
+
+    const recommended = await getCacheOrSet(
+      cacheKey,
+      () => Course.find({ category: { $in: interests } }),
+      CACHE_TTL.COURSES
+    );
+
+    res.status(200).json({ success: true, recommended });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+    const { page, limit, skip } = normalizePagination(req);
+
+    const [courses, total] = await Promise.all([
+      Course.find(filter)
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("createdBy", "name email avatar")
+        .lean(),
+      Course.countDocuments(filter),
+    ]);
+
+    const hasMore = skip + courses.length < total;
+
+    res.status(200).json({
+      success: true,
+      pagination: {
+        page,
+        pageSize: limit,
+        total,
+        hasMore,
+      },
+      data: courses,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 📘 Get a single course
+
+export const getCourseById = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id)
+      .populate("createdBy", "name avatar bio")
+      .populate("prerequisites", "title thumbnail")
+      .lean();
+    if (!course)
+      return res
+        .status(404)
+        .json({ success: false, message: "Course not found" });
+
+    // Track a course view for content-performance analytics (issue #244),
+    // fire-and-forget so a failed metric write never blocks or fails the
+    // detail response.
+    contentMetricsService
+      .recordCourseView(course._id)
+      .catch((err) => logger.error("Failed to increment course view count:", err));
+
+    res.status(200).json({ success: true, data: course });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 📘 Get all courses created by a specific user
+
+export const getCoursesByUser = async (req, res) => {
+  logger.info("⚡ Reached getCoursesByUser handler");
+
+  try {
+    const { createdBy } = req.query;
+
+    if (!createdBy) {
+      logger.info("❌ Missing user ID");
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing user id" });
+    }
+
+    // Extra safety to avoid invalid ObjectId crashes
+    if (!mongoose.Types.ObjectId.isValid(createdBy)) {
+      logger.info("❌ Invalid ObjectId format");
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid user ID format" });
+    }
+    const selectFields = "_id title description category categoryRef thumbnail price currency views rating numReviews createdBy status publishedAt createdAt updatedAt";
+    const { page, limit, skip } = normalizePagination(req);
+
+    logger.info("✅ Finding courses...");
+    const [courses, total] = await Promise.all([
+      Course.find({ createdBy })
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("createdBy", "name avatar bio")
+        .lean(),
+      Course.countDocuments({ createdBy }),
+    ]);
+
+    const hasMore = skip + courses.length < total;
+
+    // An empty result set is a successful query, not a failure.
+    res.status(200).json({
+      success: true,
+      pagination: {
+        page,
+        pageSize: limit,
+        total,
+        hasMore,
+      },
+      data: courses,
+    });
   } catch (error) {
     logger.error("❌ Unexpected Error in getCoursesByUser:", error);
     res.status(500).json({ success: false, message: error.message });
