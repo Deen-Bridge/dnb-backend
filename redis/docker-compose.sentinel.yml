@@ -1,0 +1,128 @@
+version: "3.8"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Redis Primary (Master)
+  # ---------------------------------------------------------------------------
+  redis-master:
+    image: redis:7-alpine
+    container_name: redis-master
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis_master_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - redis-net
+
+  # ---------------------------------------------------------------------------
+  # Redis Replica 1
+  # ---------------------------------------------------------------------------
+  redis-replica-1:
+    image: redis:7-alpine
+    container_name: redis-replica-1
+    command: redis-server /usr/local/etc/redis/redis.conf --replicaof redis-master 6379
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis_replica1_data:/data
+    ports:
+      - "6380:6379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - redis-net
+
+  # ---------------------------------------------------------------------------
+  # Redis Replica 2
+  # ---------------------------------------------------------------------------
+  redis-replica-2:
+    image: redis:7-alpine
+    container_name: redis-replica-2
+    command: redis-server /usr/local/etc/redis/redis.conf --replicaof redis-master 6379
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis_replica2_data:/data
+    ports:
+      - "6381:6379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - redis-net
+
+  # ---------------------------------------------------------------------------
+  # Redis Sentinel 1
+  # ---------------------------------------------------------------------------
+  sentinel-1:
+    image: redis:7-alpine
+    container_name: redis-sentinel-1
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    volumes:
+      - ./sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    ports:
+      - "26379:26379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    networks:
+      - redis-net
+
+  # ---------------------------------------------------------------------------
+  # Redis Sentinel 2
+  # ---------------------------------------------------------------------------
+  sentinel-2:
+    image: redis:7-alpine
+    container_name: redis-sentinel-2
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    volumes:
+      - ./sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    ports:
+      - "26380:26379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    networks:
+      - redis-net
+
+  # ---------------------------------------------------------------------------
+  # Redis Sentinel 3
+  # ---------------------------------------------------------------------------
+  sentinel-3:
+    image: redis:7-alpine
+    container_name: redis-sentinel-3
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    volumes:
+      - ./sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    ports:
+      - "26381:26379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    networks:
+      - redis-net
+
+volumes:
+  redis_master_data:
+  redis_replica1_data:
+  redis_replica2_data:
+
+networks:
+  redis-net:
+    driver: bridge

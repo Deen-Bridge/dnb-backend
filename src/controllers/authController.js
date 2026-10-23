@@ -6,6 +6,7 @@ import User from "../models/User.js";
 import PendingUser from "../models/PendingUser.js";
 import Session from "../models/Session.js";
 import { sendOtpEmail, sendVerificationEmail } from "../../services/emails/sendMail.js";
+import * as fail2ban from "../services/fail2ban.service.js";
 import logger from "../config/logger.js";
 import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
@@ -477,6 +478,7 @@ export const loginUser = catchAsync(async (req, res, next) => {
       });
     }
 
+    fail2ban.recordFailure(req.ip).catch(() => {});
     logger.warn(`❌ Login failed - Incorrect password: ${email}`);
     recordAudit({
       action:     AUDIT_ACTIONS.AUTH_LOGIN_FAILURE,

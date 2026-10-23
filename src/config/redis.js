@@ -1,47 +1,88 @@
-import { createClient } from "redis";
+import { createClient, createCluster } from "redis";
 import logger from "./logger.js";
 
 let redisClient = null;
 let isReady = false;
 
 /**
- * Initialize Redis client
+ * Initialize Redis client (supports Standalone, Sentinel proxies, and Redis Cluster)
  */
 export const initRedis = async () => {
   try {
-    // Create Redis client with cloud credentials
-    const redisConfig = process.env.REDIS_URL
-      ? {
-          // Use connection URL if provided
-          url: process.env.REDIS_URL,
-          socket: {
-            reconnectStrategy: (retries) => {
-              if (retries > 10) {
-                logger.error("❌ Redis max reconnection attempts reached");
-                return new Error("Redis max reconnection attempts");
-              }
-              return Math.min(retries * 100, 3000);
-            },
-          },
-        }
-      : {
-          // Use separate credentials (Redis Cloud format)
-          username: process.env.REDIS_USERNAME || "default",
-          password: process.env.REDIS_PASSWORD,
-          socket: {
-            host: process.env.REDIS_HOST || "localhost",
-            port: parseInt(process.env.REDIS_PORT || "6379"),
-            reconnectStrategy: (retries) => {
-              if (retries > 10) {
-                logger.error("❌ Redis max reconnection attempts reached");
-                return new Error("Redis max reconnection attempts");
-              }
-              return Math.min(retries * 100, 3000);
-            },
-          },
-        };
+    const isCluster =
+      process.env.REDIS_IS_CLUSTER === "true" ||
+      Boolean(process.env.REDIS_CLUSTER_NODES);
 
-    redisClient = createClient(redisConfig);
+    if (isCluster) {
+      // Redis Cluster configuration
+      const rootNodes = process.env.REDIS_CLUSTER_NODES
+        ? process.env.REDIS_CLUSTER_NODES.split(",").map((node) => {
+            const trimmed = node.trim();
+            return {
+              url:
+                trimmed.startsWith("redis://") || trimmed.startsWith("rediss://")
+                  ? trimmed
+                  : `redis://${trimmed}`,
+            };
+          })
+        : [
+            {
+              url: `redis://${process.env.REDIS_HOST || "localhost"}:${
+                process.env.REDIS_PORT || "7000"
+              }`,
+            },
+          ];
+
+      redisClient = createCluster({
+        rootNodes,
+        defaults: {
+          password: process.env.REDIS_PASSWORD || undefined,
+          socket: {
+            reconnectStrategy: (retries) => {
+              if (retries > 10) {
+                logger.error("❌ Redis Cluster max reconnection attempts reached");
+                return new Error("Redis Cluster max reconnection attempts");
+              }
+              return Math.min(retries * 100, 3000);
+            },
+          },
+        },
+      });
+    } else {
+      // Standalone / Sentinel-fronted Redis configuration
+      const redisConfig = process.env.REDIS_URL
+        ? {
+            // Use connection URL if provided
+            url: process.env.REDIS_URL,
+            socket: {
+              reconnectStrategy: (retries) => {
+                if (retries > 10) {
+                  logger.error("❌ Redis max reconnection attempts reached");
+                  return new Error("Redis max reconnection attempts");
+                }
+                return Math.min(retries * 100, 3000);
+              },
+            },
+          }
+        : {
+            // Use separate credentials (Redis Cloud format)
+            username: process.env.REDIS_USERNAME || "default",
+            password: process.env.REDIS_PASSWORD,
+            socket: {
+              host: process.env.REDIS_HOST || "localhost",
+              port: parseInt(process.env.REDIS_PORT || "6379"),
+              reconnectStrategy: (retries) => {
+                if (retries > 10) {
+                  logger.error("❌ Redis max reconnection attempts reached");
+                  return new Error("Redis max reconnection attempts");
+                }
+                return Math.min(retries * 100, 3000);
+              },
+            },
+          };
+
+      redisClient = createClient(redisConfig);
+    }
 
     // Error handling
     redisClient.on("error", (err) => {
@@ -74,6 +115,8 @@ export const initRedis = async () => {
     return redisClient;
   } catch (error) {
     logger.error("❌ Failed to connect to Redis:", error);
+    redisClient = null;
+    isReady = false;
     // Don't throw error - app can work without Redis
     return null;
   }

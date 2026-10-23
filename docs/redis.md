@@ -333,6 +333,16 @@ volumes:
   redis_data:
 ```
 
+### High Availability (Sentinel & Cluster)
+
+For production high availability setups (automatic failover, master-replica replication, and sharding), see the dedicated guides and configs in `redis/`:
+- **Architecture & Setup Guide**: [`redis/README.md`](../redis/README.md)
+- **Redis Server Config**: [`redis/redis.conf`](../redis/redis.conf)
+- **Redis Sentinel Config**: [`redis/sentinel.conf`](../redis/sentinel.conf)
+- **Sentinel HA Compose**: [`redis/docker-compose.sentinel.yml`](../redis/docker-compose.sentinel.yml)
+- **Redis Cluster Compose**: [`redis/docker-compose.cluster.yml`](../redis/docker-compose.cluster.yml)
+
+
 ## Troubleshooting
 
 ### Redis not connecting?

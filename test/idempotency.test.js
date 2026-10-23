@@ -111,7 +111,7 @@ describe("Request-Level Idempotency Layer (#93)", () => {
       password: "Password123!",
       role: "student",
       stellarWallet: {
-        publicKey: "GAAZI4TCR3TY5OJHCTJC2A4QSYRZPBTXFDVKT5GLA7IHQMMLVJSSZ26K",
+        publicKey: "GACFKT6OSY6W7CCCWTMLNUKFGOD354JLZRVWG3IK7AEFSOWLPFTACA55",
       },
     });
 

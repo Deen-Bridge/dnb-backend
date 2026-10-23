@@ -1,4 +1,5 @@
 import moderationService from "../services/moderation.service.js";
+import { parsePagination } from "../utils/pagination.js";
 
 export const flagReel = async (req, res) => {
   try {
@@ -26,8 +27,7 @@ export const flagReel = async (req, res) => {
 export const getModerationQueue = async (req, res) => {
   try {
     const status = req.query.status;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 20;
+    const { page, limit } = parsePagination(req.query);
 
     const result = await moderationService.getModerationQueue({
       status,
@@ -72,8 +72,7 @@ export const getModerationHistory = async (req, res) => {
   try {
     const reelId = req.query.reelId;
     const adminId = req.query.adminId;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 20;
+    const { page, limit } = parsePagination(req.query);
 
     const result = await moderationService.getModerationHistory({
       reelId,

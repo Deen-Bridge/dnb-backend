@@ -17,7 +17,6 @@
     "seed:categories": "node src/scripts/seedCategories.js",
     "migrate:categories": "node src/scripts/migrateCategories.js",
     "migrate:review-stats": "node src/migrations/backfillReviewStats.js",
-    "test-redis": "node test-redis.js",
     "payouts:audit": "node src/scripts/auditPayouts.js",
     "worker:ingest": "node src/workers/runIngestionWorker.js",
     "test:mutation": "bash scripts/run-mutation-tests.sh"
@@ -25,6 +24,9 @@
   "keywords": [],
   "author": "zeemscript",
   "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
   "description": "",
   "dependencies": {
     "@stellar/stellar-sdk": "^16.0.1",

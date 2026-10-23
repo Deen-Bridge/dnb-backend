@@ -203,6 +203,6 @@ Profile fields are evaluated against a 100-point scale:
 ## 6. Architecture & Code Structure
 
 - **Calculation Engine**: [`src/utils/profileCompletion.ts`](file:///home/mceesquare/drips/dnb-backend/src/utils/profileCompletion.ts) & [`src/utils/profileCompletion.js`](file:///home/mceesquare/drips/dnb-backend/src/utils/profileCompletion.js)
-- **API Router**: [`src/routes/api/users/completion.ts`](file:///home/mceesquare/drips/dnb-backend/src/routes/api/users/completion.ts) & [`src/routes/api/users/completion.js`](file:///home/mceesquare/drips/dnb-backend/src/routes/api/users/completion.js)
+- **API Router**: [`src/routes/api/users/completion.js`](file:///home/mceesquare/drips/dnb-backend/src/routes/api/users/completion.js)
 - **Types**: [`src/types/profileCompletion.ts`](file:///home/mceesquare/drips/dnb-backend/src/types/profileCompletion.ts)
 - **Test Suite**: [`test/profileCompletion.test.js`](file:///home/mceesquare/drips/dnb-backend/test/profileCompletion.test.js)

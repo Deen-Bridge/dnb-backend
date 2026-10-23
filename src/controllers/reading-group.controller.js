@@ -1,4 +1,5 @@
 import readingGroupService from "../services/reading-group.service.js";
+import { parsePagination } from "../utils/pagination.js";
 
 export const createGroup = async (req, res) => {
   try {
@@ -33,8 +34,7 @@ export const getGroups = async (req, res) => {
     const bookId = req.query.bookId;
     const privacy = req.query.privacy;
     const search = req.query.search || req.query.q;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 20;
+    const { page, limit } = parsePagination(req.query);
 
     const result = await readingGroupService.getGroups({
       bookId,

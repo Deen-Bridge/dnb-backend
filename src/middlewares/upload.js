@@ -1,9 +1,11 @@
 import multer from "multer";
 import { APIError } from "./errorHandler.js";
+import { isSafeUploadName } from "./uploadSafety.js";
 
 const storage = multer.memoryStorage();
 
 const imageFilter = (req, file, cb) => {
+  if (!isSafeUploadName(file.originalname)) return cb(new APIError("Invalid upload filename.", 400));
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
@@ -12,6 +14,7 @@ const imageFilter = (req, file, cb) => {
 };
 
 const bookFilter = (req, file, cb) => {
+  if (!isSafeUploadName(file.originalname)) return cb(new APIError("Invalid upload filename.", 400));
   if (
     file.fieldname === "thumbnail" &&
     file.mimetype.startsWith("image/")

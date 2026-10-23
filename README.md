@@ -35,7 +35,7 @@ The platform is composed of three services:
 - ⭐ **Stellar Payments** — USDC payment initialize → sign → submit → on-chain verify flow
 - ⛽ **Fee Sponsorship** — optional platform-paid network fees via fee-bump, with a structural whitelist and spend caps ([docs](docs/fee-sponsorship.md))
 - 👛 **Wallet Management** — connect Freighter, xBull, or Albedo; balance and trustline checks
-- 💬 **Real-time** — Socket.io messaging and notifications
+- 💬 **Real-time** — Socket.io messaging and notifications ([socket events](docs/socket-events.md))
 - ☁️ **Media** — Cloudinary uploads for avatars, covers, books, and reels
 - 🛡️ **Hardened** — helmet, rate limiting, sanitization (mongo-sanitize, hpp, xss), CORS
 
@@ -54,7 +54,7 @@ The platform is composed of three services:
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js >= 22 (matches CI; run `nvm use` to pick up the version from `.nvmrc`)
 - MongoDB (local or Atlas)
 - Redis (optional, for caching) — see [docs/redis.md](docs/redis.md) for setup
 
@@ -107,6 +107,8 @@ dashboard is available at `/admin/jobs`.
 | `npm test` | Run the Jest + Supertest suite |
 | `npm run seed` | Seed sample data |
 
+See the [database seeding guide](docs/seeding.md) for all seed and data scripts, including the destructive `db:seed:reset` / `db:seed:clean`.
+
 ## 🔗 API Overview
 
 | Area | Base Route |
@@ -143,15 +145,13 @@ at it. It documents auth requirements, path and query parameters, request bodies
 schemas and status codes, reusable schemas for the core models, the standard error shape, and
 the endpoints whose response envelope is still non-standard.
 
-## 🌊 Contributing & Drips Wave
+## Contributing
 
-This repository is hoping to  participates in the **[Stellar Drips Wave](https://www.drips.network/wave/stellar)** bounty program — contributors earn Points (and real rewards) for resolving this repo's issues during a Wave, with complexity tiers set in the Drips Wave app.
-
-- All pull requests target the **`dev`** branch (`main` is releases only)
+- Pull requests target **`main`** and are squash-merged automatically when repository checks and review gates pass.
 - CI (tests) must pass before review
-- One contributor per issue — request it through the campaign (Drips Wave / GrantFox OSS); the maintainer assigns it. Please don't open a PR for an issue you haven't been assigned.
+- Claim or confirm an issue with the maintainers before starting substantial work.
 
-Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow, coding standards, and Wave rules.
+Read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow and coding standards.
 
 ## 📜 License
 
