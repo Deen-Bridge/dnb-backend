@@ -27,6 +27,7 @@ import {
   invalidateCacheMiddleware,
 } from "../middlewares/cache.js";
 import { CACHE_TTL, CACHE_KEYS } from "../utils/cache.js";
+import { exportMyData } from "../controllers/gdprExportController.js";
 
 const router = express.Router();
 
@@ -37,6 +38,9 @@ const followersCacheKey = (req) =>
   `${CACHE_KEYS.USER}${req.params.userId}:followers`;
 const followingCacheKey = (req) =>
   `${CACHE_KEYS.USER}${req.params.userId}:following`;
+
+// GDPR data export for the authenticated account.
+router.get("/me/export", protect, exportMyData);
 
 // User preferences routes (must be before /:id)
 router.use("/me/preferences", preferencesRoutes);
