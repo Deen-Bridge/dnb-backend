@@ -138,6 +138,7 @@ app.get("/metrics", metricsMiddleware);
 app.use(helmetMiddleware);
 app.use(customSecurityHeaders);
 
+/* eslint-disable promise/prefer-await-to-callbacks */
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [

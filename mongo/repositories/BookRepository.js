@@ -96,11 +96,11 @@ export class BookRepository {
     if (select) query.select(select);
 
     let effectiveSkip = skip;
-    if (effectiveSkip == null && page != null && limit != null) {
+    if (effectiveSkip == null && page !== null && limit !== null) {
       effectiveSkip = (Math.max(1, page) - 1) * limit;
     }
-    if (effectiveSkip != null) query.skip(effectiveSkip);
-    if (limit != null) query.limit(limit);
+    if (effectiveSkip !== null) query.skip(effectiveSkip);
+    if (limit !== null) query.limit(limit);
 
     if (populate) {
       const paths = Array.isArray(populate) ? populate : [populate];
@@ -165,10 +165,10 @@ export class BookRepository {
 
     if (freeOnly) {
       filter.price = 0;
-    } else if (maxPrice != null || minPrice != null) {
+    } else if (maxPrice !== null || minPrice !== null) {
       filter.price = {};
-      if (minPrice != null) filter.price.$gte = minPrice;
-      if (maxPrice != null) filter.price.$lte = maxPrice;
+      if (minPrice !== null) filter.price.$gte = minPrice;
+      if (maxPrice !== null) filter.price.$lte = maxPrice;
     }
 
     const query = this.model.find(filter);
@@ -264,7 +264,7 @@ export class BookRepository {
    */
   async findByTags(tags, options = {}) {
     const list = (Array.isArray(tags) ? tags : [tags]).filter(
-      (t) => t != null && String(t).trim() !== ""
+      (t) => t !== null && String(t).trim() !== ""
     );
     if (list.length === 0) {
       throw new Error("BookRepository.findByTags: at least one tag is required");
@@ -307,9 +307,9 @@ export class BookRepository {
       }
     }
 
-    if (tags != null) {
+    if (tags !== null) {
       const list = (Array.isArray(tags) ? tags : [tags]).filter(
-        (t) => t != null && String(t).trim() !== ""
+        (t) => t !== null && String(t).trim() !== ""
       );
       if (list.length > 0) {
         filter.category = {
@@ -320,13 +320,13 @@ export class BookRepository {
       }
     }
 
-    if (minPrice != null || maxPrice != null) {
+    if (minPrice !== null || !== null) {
       filter.price = {};
-      if (minPrice != null) filter.price.$gte = minPrice;
-      if (maxPrice != null) filter.price.$lte = maxPrice;
+      if (minPrice !== null) filter.price.$gte = minPrice;
+      if (maxPrice !== null) filter.price.$lte = maxPrice;
     }
 
-    if (minRating != null) filter.rating = { $gte: minRating };
+    if (minRating !== null) filter.rating = { $gte: minRating };
 
     return this._applyOptions(this.model.find(filter), options).exec();
   }
