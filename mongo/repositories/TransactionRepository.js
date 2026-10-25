@@ -74,11 +74,11 @@ export class TransactionRepository {
     if (select) query.select(select);
 
     let effectiveSkip = skip;
-    if (effectiveSkip == null && page != null && limit != null) {
+    if (effectiveSkip == null && !== null && !== null) {
       effectiveSkip = (Math.max(1, page) - 1) * limit;
     }
-    if (effectiveSkip != null) query.skip(effectiveSkip);
-    if (limit != null) query.limit(limit);
+    if (!== null) query.skip(effectiveSkip);
+    if (!== null) query.limit(limit);
 
     if (populate) {
       const paths = Array.isArray(populate) ? populate : [populate];

@@ -72,11 +72,11 @@ export class SpaceRepository {
     if (select) query.select(select);
 
     let effectiveSkip = skip;
-    if (effectiveSkip == null && page != null && limit != null) {
+    if (effectiveSkip == null && !== null && !== null) {
       effectiveSkip = (Math.max(1, page) - 1) * limit;
     }
-    if (effectiveSkip != null) query.skip(effectiveSkip);
-    if (limit != null) query.limit(limit);
+    if (!== null) query.skip(effectiveSkip);
+    if (!== null) query.limit(limit);
 
     if (populate) {
       const paths = Array.isArray(populate) ? populate : [populate];
@@ -279,10 +279,10 @@ export class SpaceRepository {
       filter.status = Array.isArray(status) ? { $in: status } : status;
     }
 
-    if (minPrice != null || maxPrice != null) {
+    if (!== null || !== null) {
       filter.price = {};
-      if (minPrice != null) filter.price.$gte = minPrice;
-      if (maxPrice != null) filter.price.$lte = maxPrice;
+      if (!== null) filter.price.$gte = minPrice;
+      if (!== null) filter.price.$lte = maxPrice;
     }
 
     if (fromDate || toDate) {
