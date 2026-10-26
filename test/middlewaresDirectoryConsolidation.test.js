@@ -12,8 +12,8 @@ describe("middlewares directory consolidation contract (#408)", () => {
     ];
 
     for (const modulePath of canonicalModules) {
-      expect(() => require.resolve(modulePath)).not.toThrow();
-      expect(require.resolve(modulePath)).toContain("/src/middlewares/analytics/");
+      expect(() => require.resolve(modulePath).replaceAll("\\", "/")).not.toThrow();
+      expect(require.resolve(modulePath).replaceAll("\\", "/")).toContain("/src/middlewares/analytics/");
     }
   });
 });
