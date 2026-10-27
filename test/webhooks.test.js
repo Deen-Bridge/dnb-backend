@@ -43,6 +43,7 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   verifyTransaction: jest.fn(),
   verifyPaymentOperations,
   validateSignedPaymentXdr,
+  validateSignedPaymentXdr,
   findPaymentPaths: jest.fn(),
   applySlippage: jest.fn(),
   NETWORK: "testnet",
@@ -52,12 +53,14 @@ jest.unstable_mockModule("../src/services/stellar/stellarService.js", () => ({
   PLATFORM_WALLET_PUBLIC_KEY: "",
   // Exports pulled in transitively via feeSponsorService (#30) — mirror them
   // so the ESM mock still satisfies every named import in the graph.
+  // so the ESM mock still satisfies every named import in the graph.
   toStroops: jest.fn(),
   resolveAsset: jest.fn(),
   getAccountBalance: jest.fn(),
   networkPassphrase: "Test SDF Network ; September 2015",
 }));
 jest.unstable_mockModule("../src/services/payoutService.js", () => ({
+  recordSaleEarnings,
   recordSaleEarnings,
 }));
 jest.unstable_mockModule("../src/services/stellar/reconciliationService.js", () => ({
@@ -156,6 +159,7 @@ describe("HMAC signing", () => {
   it("generates a v1= signature that verifies against the documented scheme", () => {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const rawBody = JSON.stringify({ hello: "world" });
+    const header = signPayload({ secret: KNOWN_SECRET, timestamp, rawBody });
     const header = signPayload({ secret: KNOWN_SECRET, timestamp, rawBody });
 
     expect(header.startsWith("v1=")).toBe(true);
