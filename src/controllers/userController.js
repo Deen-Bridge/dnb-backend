@@ -314,22 +314,37 @@ export const unfollowUser = async (req, res) => {
 export const getFollowers = async (req, res) => {
   try {
     const { userId } = req.params;
+    const limit = parseInt(req.query.limit, 10) || 20;
+    const pageSize = Math.min(Math.max(limit, 1), 100);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const skip = (page - 1) * pageSize;
 
     const user = await User.findById(userId)
-      .populate("followers", "name email avatar role bio")
+      .populate({
+        path: "followers",
+        select: "name email avatar role bio",
+        options: { limit, skip },
+      })
       .select("followers");
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(404).json({ success: false, message: "User not found" });
     }
+
+    const total = user.followers?.length || 0;
+    const totalPages = Math.ceil(total / pageSize);
 
     res.status(200).json({
       success: true,
       followers: user.followers,
-      count: user.followers.length,
+      total: total,
+      count: total,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+      },
     });
   } catch (error) {
     logger.error("Get followers error:", error);
@@ -345,22 +360,37 @@ export const getFollowers = async (req, res) => {
 export const getFollowing = async (req, res) => {
   try {
     const { userId } = req.params;
+    const limit = parseInt(req.query.limit, 10) || 20;
+    const pageSize = Math.min(Math.max(limit, 1), 100);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const skip = (page - 1) * pageSize;
 
     const user = await User.findById(userId)
-      .populate("following", "name email avatar role bio")
+      .populate({
+        path: "following",
+        select: "name email avatar role bio",
+        options: { limit, skip },
+      })
       .select("following");
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(404).json({ success: false, message: "User not found" });
     }
+
+    const total = user.following?.length || 0;
+    const totalPages = Math.ceil(total / pageSize);
 
     res.status(200).json({
       success: true,
       following: user.following,
-      count: user.following.length,
+      total: total,
+      count: total,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+      },
     });
   } catch (error) {
     logger.error("Get following error:", error);
