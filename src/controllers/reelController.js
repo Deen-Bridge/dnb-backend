@@ -22,6 +22,10 @@ const uploadBufferToCloudinary = (buffer, options) =>
 
     uploadStream.end(buffer);
   });
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+const MIN_PAGE_SIZE = 1;
+
 
 const normalizeTags = (rawTags) => {
   if (!rawTags) return [];
@@ -88,8 +92,8 @@ export const getReels = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(
-      Math.max(parseInt(req.query.limit, 10) || 10, 1),
-      50
+      Math.max(parseInt(req.query.limit, 10) || DEFAULT_PAGE_SIZE, MIN_PAGE_SIZE),
+      MAX_PAGE_SIZE
     );
     const skip = (page - 1) * limit;
     const viewerId = req.user?._id;
@@ -306,8 +310,8 @@ export const getReelComments = async (req, res) => {
     const { id } = req.params;
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(
-      Math.max(parseInt(req.query.limit, 10) || 20, 1),
-      100
+      Math.max(parseInt(req.query.limit, 10) || DEFAULT_PAGE_SIZE, MIN_PAGE_SIZE),
+      MAX_PAGE_SIZE
     );
     const skip = (page - 1) * limit;
 
