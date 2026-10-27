@@ -48,6 +48,7 @@ import { recordAudit } from "../../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../../models/AuditLog.js";
 import { emitEvent, EVENT_TYPES } from "../../services/webhooks/webhookService.js";
 import { ERROR_CODES, buildErrorResponse } from "../../config/errorCodes.js";
+import { parsePagination } from "../../utils/pagination.js";
 
 /**
  * Resolve the item, its creator, and the settlement destination wallet for a
@@ -1102,15 +1103,16 @@ export const submitPayment = async (req, res) => {
 export const getTransactionHistory = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { role = "buyer", page = 1, limit = 20 } = req.query;
+    const { role = "buyer" } = req.query;
+    const { page, limit, skip } = parsePagination(req.query);
 
     const query =
       role === "creator" ? { creator: userId } : { buyer: userId };
 
     const transactions = await Transaction.find(query)
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
+      .skip(skip)
+      .limit(limit)
       .populate("buyer", "name avatar")
       .populate("creator", "name avatar");
 

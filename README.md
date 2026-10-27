@@ -35,7 +35,7 @@ The platform is composed of three services:
 - ⭐ **Stellar Payments** — USDC payment initialize → sign → submit → on-chain verify flow
 - ⛽ **Fee Sponsorship** — optional platform-paid network fees via fee-bump, with a structural whitelist and spend caps ([docs](docs/fee-sponsorship.md))
 - 👛 **Wallet Management** — connect Freighter, xBull, or Albedo; balance and trustline checks
-- 💬 **Real-time** — Socket.io messaging and notifications
+- 💬 **Real-time** — Socket.io messaging and notifications ([socket events](docs/socket-events.md))
 - ☁️ **Media** — Cloudinary uploads for avatars, covers, books, and reels
 - 🛡️ **Hardened** — helmet, rate limiting, sanitization (mongo-sanitize, hpp, xss), CORS
 
@@ -54,7 +54,7 @@ The platform is composed of three services:
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js >= 22 (matches CI; run `nvm use` to pick up the version from `.nvmrc`)
 - MongoDB (local or Atlas)
 - Redis (optional, for caching) — see [docs/redis.md](docs/redis.md) for setup
 
@@ -106,6 +106,8 @@ dashboard is available at `/admin/jobs`.
 | `npm start` | Start in production mode |
 | `npm test` | Run the Jest + Supertest suite |
 | `npm run seed` | Seed sample data |
+
+See the [database seeding guide](docs/seeding.md) for all seed and data scripts, including the destructive `db:seed:reset` / `db:seed:clean`.
 
 ## 🔗 API Overview
 

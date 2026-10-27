@@ -1870,7 +1870,7 @@ paths:
     get:
       tags: [Wallet]
       summary: Horizon balances and trustlines for an account
-      security: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: publicKey
           in: path
@@ -1884,7 +1884,7 @@ paths:
     get:
       tags: [Wallet]
       summary: Whether a user has a connected wallet
-      security: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: userId
           in: path
@@ -1892,6 +1892,8 @@ paths:
           schema: { $ref: "#/components/schemas/ObjectId" }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/stellar/payment/quote:
     post:

@@ -67,6 +67,8 @@ const reelSchema = new Schema(
 );
 
 reelSchema.index({ createdAt: -1 });
+reelSchema.index({ createdBy: 1, createdAt: -1 }); // reels by creator
+reelSchema.index({ tags: 1, status: 1, isRemoved: 1, createdAt: -1 }); // hashtag feed
 reelSchema.index({ description: "text" });
 // Browse all duets/stitches for a given reel, newest first.
 reelSchema.index({ originalReelId: 1, createdAt: -1 });

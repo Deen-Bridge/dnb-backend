@@ -55,6 +55,12 @@ const userPreferencesSchema = new Schema(
       type: notificationSchema,
       default: () => ({}),
     },
+    doNotDisturb: {
+      enabled: { type: Boolean, default: false },
+      start: { type: String, match: /^([01]\d|2[0-3]):[0-5]\d$/, default: "22:00" },
+      end: { type: String, match: /^([01]\d|2[0-3]):[0-5]\d$/, default: "07:00" },
+      timezone: { type: String, default: "UTC" },
+    },
     privacy: {
       type: privacySchema,
       default: () => ({}),

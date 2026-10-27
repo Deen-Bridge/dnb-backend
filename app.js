@@ -54,15 +54,19 @@ import stellarReportsRoutes from "./src/routes/stellar/reportsRoutes.js";
 import payoutRoutes from "./src/routes/payoutRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js";
+import notificationAnalyticsRoutes from "./src/routes/notificationAnalyticsRoutes.js";
 import jobsRoutes from "./src/routes/jobsRoutes.js";
 import internalAiRoutes from "./src/routes/internal/aiRoutes.js";
 import wellKnownRoutes from "./src/routes/wellKnownRoutes.js";
+import cspReportRoutes from "./src/routes/security/cspReportRoutes.js";
 import auditRoutes from "./src/routes/admin/auditRoutes.js";
 import educatorRoutes from "./src/routes/educatorRoutes.js";
 import educatorVerificationRoutes from "./src/routes/educatorVerificationRoutes.js";
 import educatorVerificationAdminRoutes from "./src/routes/admin/educatorVerificationAdminRoutes.js";
 import webhookRoutes from "./src/routes/webhookRoutes.js";
 import adminModerationRoutes from "./src/routes/admin/moderationRoutes.js";
+import blockedIpsRoutes from "./src/routes/admin/blockedIpsRoutes.js";
+import { ipBlockMiddleware } from "./src/middlewares/ipBlock.js";
 import categoryRoutes from "./src/routes/categoryRoutes.js";
 import readingGroupRoutes from "./src/routes/readingGroupRoutes.js";
 import courseBundleRoutes from "./src/routes/course-bundle.routes.js";
@@ -146,6 +150,7 @@ app.get("/metrics", metricsMiddleware);
 app.use(helmetMiddleware);
 app.use(customSecurityHeaders);
 
+/* eslint-disable promise/prefer-await-to-callbacks */
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
@@ -231,7 +236,7 @@ app.use("/health/database", databaseHealthRoutes);
 app.use("/.well-known", wellKnownRoutes);
 
 // Auth routes — strict
-app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/auth", ipBlockMiddleware, authLimiter, authRoutes);
 
 // Mutation routes — standard limiter
 app.use("/api/email", standardLimiter, emailRoutes);
@@ -276,6 +281,7 @@ app.use("/api/stellar/pledges", generousLimiter, stellarPledgeRoutes);
 app.use("/api/stellar/gifts", generousLimiter, stellarGiftRoutes);
 app.use("/api/stellar/anchor", standardLimiter, stellarAnchorRoutes);
 app.use("/api/stellar/reports", standardLimiter, stellarReportsRoutes);
+app.use("/api/notifications/analytics", generousLimiter, notificationAnalyticsRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
 
 // Outbound webhook management API (admin-gated)
@@ -294,8 +300,11 @@ app.use("/api/analytics/search", generousLimiter, searchAnalyticsRoutes);
 // Admin — no rate limit
 app.use("/admin/jobs", jobsRoutes);
 app.use("/api/admin/audit", auditRoutes);
+// Issue #140 - CSP violation reports (unauthenticated POST, admin-only stats)
+app.use("/api/security/csp-report", standardLimiter, cspReportRoutes);
 app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
 app.use("/api/admin/moderation", adminModerationRoutes);
+app.use("/api/admin/blocked-ips", blockedIpsRoutes);
 
 // Issue #215 — Apply version detection middleware globally on /api paths.
 // Must come before versioned router mounts.

@@ -1,0 +1,1 @@
+export function buildPaymentQrPayload({ destination, amount, asset = "USDC" }) { if (!destination || !amount) throw new Error("destination and amount are required"); return `stellar:${destination}?asset_code=${encodeURIComponent(asset)}&amount=${encodeURIComponent(amount)}`; }

@@ -7,6 +7,7 @@ import { getRedisClient, isRedisReady } from "../config/redis.js";
 import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
+import { recordEvent } from "../services/notificationAnalytics.service.js";
 
 /**
  * SSE Connections Map
@@ -167,6 +168,15 @@ export const sendNotificationToUser = async (userId, notificationData) => {
     // Dispatch via SSE
     await dispatchSSENotification(userId, notification);
 
+    // Analytics (non-blocking; recordEvent never throws)
+    recordEvent({
+      notificationId: notification._id,
+      userId,
+      type: notification.type,
+      channel: "in_app",
+      event: "sent",
+    });
+
     return notification;
   } catch (error) {
     logger.error("Error sending notification:", error);
@@ -295,21 +305,22 @@ export const getUserNotifications = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    const notifications = await Notification.find(query)
-      .populate("sender", "name avatar")
-      .populate("data.courseId", "title thumbnail")
-      .populate("data.bookId", "title image")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const total = await Notification.countDocuments(query);
-    const unreadCount = await Notification.countDocuments({
-      recipient: userId,
-      isRead: false,
-      isDeleted: false,
-    });
+    const [notifications, total, unreadCount] = await Promise.all([
+      Notification.find(query)
+        .populate("sender", "name avatar")
+        .populate("data.courseId", "title thumbnail")
+        .populate("data.bookId", "title image")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Notification.countDocuments(query),
+      Notification.countDocuments({
+        recipient: userId,
+        isRead: false,
+        isDeleted: false,
+      }),
+    ]);
 
     res.status(200).json({
       success: true,

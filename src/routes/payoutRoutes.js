@@ -10,6 +10,12 @@ import {
   getMyHistory,
 } from "../controllers/payoutController.js";
 
+import { validate } from "../middlewares/validate.js";
+import {
+  buildPayoutValidation,
+  submitPayoutValidation,
+} from "../validators/paymentValidators.js";
+
 const router = express.Router();
 
 // All routes require authentication
@@ -21,7 +27,7 @@ router.get("/me/statement", getMyStatement);
 router.get("/me/history", getMyHistory);
 
 // Operator endpoints (gated by PAYOUT_ADMIN_USER_IDS allowlist in controller)
-router.post("/build", idempotency(), buildBatch);
-router.post("/:batchId/submit", idempotency(), submitBatch);
+router.post("/build", buildPayoutValidation, validate, idempotency(), buildBatch);
+router.post("/:batchId/submit", submitPayoutValidation, validate, idempotency(), submitBatch);
 
 export default router;

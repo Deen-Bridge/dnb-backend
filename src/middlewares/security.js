@@ -15,6 +15,8 @@ export const helmetMiddleware = helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
+      // Issue #140: browsers POST violations here (see cspReportRoutes.js)
+      reportUri: ["/api/security/csp-report"],
     },
   },
   crossOriginEmbedderPolicy: false,
