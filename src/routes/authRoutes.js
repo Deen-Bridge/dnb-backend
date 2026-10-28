@@ -21,6 +21,7 @@ import {
   getStellarChallenge,
   verifyStellarChallenge,
 } from "../controllers/stellar/sep10Controller.js";
+import { googleSignIn } from "../controllers/googleAuthController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import {
   refreshLimiter,
@@ -42,6 +43,7 @@ import {
   verify2FAValidation,
   disable2FAValidation,
   stellarVerifyValidation,
+  googleAuthValidation,
 } from "../validators/authValidators.js";
 
 const router = express.Router();
@@ -110,6 +112,10 @@ router.post(
   validate,
   verifyStellarChallenge
 );
+
+// "Continue with Google" — signs up or logs in in one step. Returns 503 when
+// GOOGLE_CLIENT_ID is unset, same graceful-degrade pattern as Stellar above.
+router.post("/google", googleAuthValidation, validate, googleSignIn);
 
 // Token refresh route with dedicated refresh rate limit
 router.post(
