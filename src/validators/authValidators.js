@@ -103,6 +103,10 @@ export const stellarVerifyValidation = [
   requiredString("transaction", "Transaction"),
 ];
 
+export const googleAuthValidation = [
+  requiredString("idToken", "ID token"),
+];
+
 export default {
   requestPasswordResetValidation,
   resendVerificationValidation,
@@ -112,4 +116,5 @@ export default {
   verify2FAValidation,
   disable2FAValidation,
   stellarVerifyValidation,
+  googleAuthValidation,
 };

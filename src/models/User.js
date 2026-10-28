@@ -12,9 +12,21 @@ const userSchema = new mongoose.Schema(
       unique: true,
       required: [true, "Email is required"],
     },
+    // Required for email/password accounts; absent for Google-only accounts
+    // (see googleId below).
     password: {
       type: String,
-      required: [true, "Password is required"],
+      required: function () {
+        return !this.googleId;
+      },
+    },
+    // Set when the account was created or linked via "Continue with Google"
+    // (src/controllers/googleAuthController.js). sparse so multiple
+    // non-Google users (no field at all) don't collide on the unique index.
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
     avatar: {
       type: String, // Cloudinary URL for profile picture

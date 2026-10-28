@@ -24,6 +24,12 @@ const authHandlers = {
   setup2FA: controller("setup2FA"),
   verify2FA: controller("verify2FA"),
   disable2FA: controller("disable2FA"),
+  // Not route handlers themselves, but googleAuthController.js (pulled in via
+  // authRoutes.js) imports these helpers from authController.js at module
+  // load time, so the mock must provide them even though this suite never
+  // exercises /auth/google.
+  createSessionAndTokens: jest.fn(),
+  shapeAuthUser: jest.fn(),
 };
 
 const paymentHandlers = {
