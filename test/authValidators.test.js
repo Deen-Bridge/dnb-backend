@@ -18,6 +18,9 @@ jest.unstable_mockModule("../src/controllers/stellar/sep10Controller.js", () => 
   getStellarChallenge: ok("stellarChallenge"),
   verifyStellarChallenge: ok("stellarVerify"),
 }));
+jest.unstable_mockModule("../src/controllers/googleAuthController.js", () => ({
+  googleSignIn: ok("googleSignIn"),
+}));
 jest.unstable_mockModule("../src/middlewares/authMiddleware.js", () => ({
   protect: (req, _res, next) => {
     req.user = { _id: new mongoose.Types.ObjectId(), role: "student" };
@@ -52,6 +55,7 @@ const cases = [
   ["post", "/auth/2fa/login", "verify2FA", { code: 123456, mfaToken: "t" }, { code: { $gt: "" } }, "code"],
   ["post", "/auth/2fa/disable", "disable2FA", { recoveryCode: "abcd" }, { recoveryCode: 5 }, "recoveryCode"],
   ["post", "/auth/stellar/verify", "stellarVerify", { transaction: "AAAA" }, {}, "transaction"],
+  ["post", "/auth/google", "googleSignIn", { idToken: "AAAA" }, {}, "idToken"],
 ];
 
 describe("auth route request validation", () => {
