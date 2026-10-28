@@ -550,9 +550,9 @@ export class ReelRepository extends BaseRepository {
     if (creator) filter.createdBy = creator;
     if (category) filter.category = category;
 
-    if (tags !== null) {
+    if (tags != null) {
       const list = (Array.isArray(tags) ? tags : [tags]).filter(
-        (t) => t !== null && String(t).trim() !== ""
+        (t) => t != null && String(t).trim() !== ""
       );
       if (list.length > 0) {
         filter.tags = { $in: list };
@@ -566,19 +566,19 @@ export class ReelRepository extends BaseRepository {
     // Note: minViews, minLikes, minComments require aggregation
     // For now, we'll do a basic find and filter in memory if needed
     // A production implementation would use aggregation pipeline
-    if (!== null || !== null || !== null) {
+    if (minViews != null || minLikes != null || minComments != null) {
       // Use aggregation for complex filtering
       const pipeline = [{ $match: filter }];
 
-      if (!== null) {
+      if (minViews != null) {
         pipeline.push({ $match: { viewCount: { $gte: minViews } } });
       }
-      if (!== null) {
+      if (minLikes != null) {
         pipeline.push({
           $match: { $expr: { $gte: [{ $size: { $ifNull: ["$likes", []] } }, minLikes] } },
         });
       }
-      if (!== null) {
+      if (minComments != null) {
         pipeline.push({
           $match: { $expr: { $gte: [{ $size: { $ifNull: ["$comments", []] } }, minComments] } },
         });
