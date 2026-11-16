@@ -16,8 +16,12 @@ import { body } from "express-validator";
  */
 
 const MAX_FIELD_LENGTH = 1024;
+// Google Identity Services ID tokens are signed JWTs and can exceed the
+// normal user-input limit. Keep a generous bound while still rejecting
+// unbounded request bodies before verification.
+const GOOGLE_ID_TOKEN_MAX_LENGTH = 8192;
 
-const requiredString = (field, label = field) =>
+const requiredString = (field, label = field, maxLength = MAX_FIELD_LENGTH) =>
   body(field)
     .exists({ values: "null" })
     .withMessage(`${label} is required`)
@@ -28,7 +32,7 @@ const requiredString = (field, label = field) =>
     .custom((value) => value.trim().length > 0)
     .withMessage(`${label} is required`)
     .bail()
-    .isLength({ max: MAX_FIELD_LENGTH })
+    .isLength({ max: maxLength })
     .withMessage(`${label} is too long`);
 
 const optionalString = (field, label = field) =>
@@ -104,7 +108,7 @@ export const stellarVerifyValidation = [
 ];
 
 export const googleAuthValidation = [
-  requiredString("idToken", "ID token"),
+  requiredString("idToken", "ID token", GOOGLE_ID_TOKEN_MAX_LENGTH),
 ];
 
 export default {
