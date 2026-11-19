@@ -142,7 +142,7 @@ live. Do not proceed past a failed step.
    mainnet/testnet Horizon or issuer mismatch aborts startup with the exact
    variable named.
    ```bash
-   curl -s http://localhost:5000/health   # -> {"success":true,"message":"pong"}
+   curl -s http://localhost:5000/health/live   # -> pong
    ```
 2. **Network sanity** — confirm the app resolves mainnet:
    ```bash

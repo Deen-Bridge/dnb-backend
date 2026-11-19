@@ -13,12 +13,25 @@ export const createHealthHandler = ({
   getRedisReady = isRedisReady,
   getUptime = () => process.uptime(),
   getEnvironment = () => process.env.NODE_ENV || "unknown",
+  probe = "readiness",
+  requiredDependencies = ["mongodb", "redis"],
 } = {}) => {
   return (_req, res) => {
     const mongoReadyState = getMongoReadyState();
     const mongoReady = mongoReadyState === 1;
     const redisReady = Boolean(getRedisReady());
-    const healthy = mongoReady && redisReady;
+    const dependencies = {
+      mongodb: {
+        status: mongoReady ? "up" : "down",
+        state: mongoStates[mongoReadyState] || "unknown",
+      },
+      redis: {
+        status: redisReady ? "up" : "degraded",
+      },
+    };
+    const healthy = requiredDependencies.every((dependency) => {
+      return dependency === "mongodb" ? mongoReady : redisReady;
+    });
 
     return res.status(healthy ? 200 : 503).json({
       success: healthy,
@@ -26,24 +39,23 @@ export const createHealthHandler = ({
         ? "All critical dependencies are ready"
         : "One or more critical dependencies are unavailable",
       data: {
+        probe,
         status: healthy ? "healthy" : "unhealthy",
         timestamp: new Date().toISOString(),
         uptime: getUptime(),
         environment: getEnvironment(),
-        dependencies: {
-          mongodb: {
-            status: mongoReady ? "up" : "down",
-            state: mongoStates[mongoReadyState] || "unknown",
-          },
-          redis: {
-            status: redisReady ? "up" : "down",
-          },
-        },
+        dependencies,
       },
     });
   };
 };
 
 export const healthCheck = createHealthHandler();
+export const startupCheck = createHealthHandler({
+  probe: "startup",
+  // MongoDB is required to serve requests. Redis reconnects in the
+  // background, so its outage must not create a startup/restart loop.
+  requiredDependencies: ["mongodb"],
+});
 
 export const ping = (_req, res) => res.status(200).send("pong");

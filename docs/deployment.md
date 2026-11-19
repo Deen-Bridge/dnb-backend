@@ -118,10 +118,9 @@ forced exit happens after 10 seconds. Note the Kubernetes
 - Configure with `REDIS_URL` or `REDIS_HOST`/`REDIS_PORT` (+ optional
   `REDIS_USERNAME`/`REDIS_PASSWORD`).
 - The app continues to start if Redis fails to initialise (a warning is
-  logged), and `.env.example` calls Redis optional. However `/health` reports
-  unhealthy (HTTP 503) when Redis is down, so with Redis down the container
-  and Kubernetes probes will fail. Treat Redis as required wherever `/health`
-  is used for probes.
+  logged), and `.env.example` calls Redis optional. However `/health/ready`
+  reports unhealthy (HTTP 503) when Redis is down, so traffic is removed from
+  the instance while its process remains available to recover.
 - Cluster and sentinel examples: `redis/` and [`redis.md`](./redis.md).
 
 ### Node.js
@@ -137,19 +136,20 @@ Defined in `app.js`, `src/controllers/healthController.js` and
 
 | Endpoint | Behavior |
 | --- | --- |
-| `GET /ping` | Always 200 with body `pong`. Process liveness only; checks no dependency. Used by the keep-awake workflow. |
-| `GET /health` | 200 only when MongoDB `readyState` is connected **and** Redis is ready; otherwise 503. JSON includes per-dependency status, uptime and environment. Used by the Dockerfile `HEALTHCHECK`, the compose healthcheck, the Kubernetes probes and the CI boot check. |
+| `GET /ping` or `/health/live` | Always 200 with body `pong`. Process liveness only; checks no dependency. Used by keep-awake and container liveness probes. |
+| `GET /health` or `/health/ready` | 200 only when MongoDB `readyState` is connected **and** Redis is ready; otherwise 503. JSON includes `probe: readiness`, per-dependency status, uptime and environment. Used for routing readiness and CI's dependency check. |
+| `GET /health/startup` | 200 when MongoDB is ready. Redis is reported as `degraded` while it reconnects, so a recoverable Redis outage cannot create a startup/restart loop. |
 | `GET /health/database` | Runs `checkDatabaseHealth()` (`mongo/utils/healthCheck.js`); 200 if healthy, 503 otherwise. MongoDB only. See [`connection-pool-metrics.md`](./connection-pool-metrics.md). |
 
-Because `/health` includes Redis, it is a readiness check rather than a pure
-liveness check. If Redis outages should not restart pods, a liveness probe on
-`/ping` is an option (not configured today).
+Because `/health` includes Redis, it remains a readiness-compatible alias rather
+than a pure liveness check. Kubernetes uses `/health/live` for liveness,
+`/health/ready` for routing, and `/health/startup` while dependencies initialize.
 
 ## 5. Deploy steps
 
 The repo supports three paths. Which one production uses is **unverified**.
 CONTRIBUTING.md states that changes merged to `main` may be deployed to
-production, and CI must pass first (`ci.yml`: tests plus a boot-and-`/health`
+production, and CI must pass first (`ci.yml`: tests plus a boot-and-`/health/ready`
 check).
 
 ### Docker / Docker Compose
@@ -161,10 +161,9 @@ docker compose ps                # healthchecks
 
 Note: the compose file hard-codes development values (`NODE_ENV=development`,
 a placeholder JWT secret). It is for local use, not production. It publishes
-the app on host port `${PORT:-5000}` mapped to container port 5000, while the
-`Dockerfile` has `EXPOSE 3000` and its `HEALTHCHECK` probes port 3000. Unless
-`PORT` is set to match, the image's built-in healthcheck and the compose
-healthcheck (port 5000) disagree. Set `PORT` explicitly when running the image.
+the app on host port `${PORT:-5000}` mapped to container port 5000. The
+Dockerfile exposes port 5000 and its healthcheck follows `PORT` (default 5000),
+matching the compose and Kubernetes manifests.
 
 Build image only: `docker build -t dnb-backend .`
 
@@ -182,8 +181,9 @@ kubectl rollout status deployment/dnb-backend
 ```
 
 Deployment facts: 3 replicas, `RollingUpdate` with `maxSurge: 1` and
-`maxUnavailable: 0`, container port 5000, `/health` for liveness, readiness
-and startup probes, non-root user 1001, read-only root filesystem (`/tmp` is an
+`maxUnavailable: 0`, container port 5000, `/health/live` for liveness,
+`/health/ready` for readiness, and `/health/startup` for startup, non-root user
+1001, read-only root filesystem (`/tmp` is an
 emptyDir), requests 250m CPU / 256Mi, limits 500m CPU / 512Mi. The service is
 `ClusterIP` on port 80 with `ClientIP` session affinity. There is no Ingress in
 the repo. The image is `dnb-backend:latest` with `IfNotPresent`; no registry or
@@ -217,12 +217,13 @@ No Render config exists in the repo. The keep-awake workflow targets an
 `onrender.com` host, so production may be a Render web service built from
 `main`. Build/start commands, plan and environment setup are **unverified**.
 If using Render, the natural settings from `package.json` are build
-`npm ci` and start `npm start`, with `/health` or `/ping` as the health check
+`npm ci` and start `npm start`, with `/health/ready` for readiness or
+`/health/live` for liveness
 path.
 
 ### After deploying
 
-1. `curl -f https://<host>/health` returns 200 with MongoDB and Redis `up`.
+1. `curl -f https://<host>/health/ready` returns 200 with MongoDB and Redis `up`.
 2. `curl -f https://<host>/health/database` returns 200.
 3. Check logs for `DeenBridge API running` and startup errors from
    `validateEnv` (it exits with code 1 on missing required variables).

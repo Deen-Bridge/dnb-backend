@@ -547,7 +547,7 @@ paths:
                           mongodb:
                             type: object
                             properties:
-                              status: { type: string, enum: [up, down] }
+                              status: { type: string, enum: [up, degraded] }
                               state: { type: string }
                           redis:
                             type: object
@@ -571,10 +571,40 @@ paths:
                       environment: { type: string }
                       dependencies:
                         type: object
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Dependency-free liveness probe
+      description: Returns 200 while the process can accept HTTP requests. It never checks MongoDB or Redis.
+      security: []
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            text/plain:
+              schema: { type: string, example: pong }
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Readiness probe for traffic dependencies
+      description: Returns 200 only when MongoDB and Redis are ready to serve traffic.
+      security: []
+      responses:
+        "200": { description: MongoDB and Redis are ready }
+        "503": { description: MongoDB or Redis is unavailable }
+  /health/startup:
+    get:
+      tags: [Meta]
+      summary: Startup probe for the application process
+      description: Requires MongoDB before traffic can be served, but reports Redis as degraded while it reconnects.
+      security: []
+      responses:
+        "200": { description: The process started and MongoDB is ready }
+        "503": { description: MongoDB is not ready }
   /ping:
     get:
       tags: [Meta]
-      summary: Dependency free liveness probe
+      summary: Legacy alias for the liveness probe
       security: []
       responses:
         "200":
@@ -584,6 +614,33 @@ paths:
               schema:
                 type: string
                 example: pong
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Dependency-free liveness probe
+      security: []
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            text/plain:
+              schema: { type: string, example: pong }
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Readiness probe for traffic dependencies
+      security: []
+      responses:
+        "200": { description: MongoDB and Redis are ready }
+        "503": { description: A traffic dependency is unavailable }
+  /health/startup:
+    get:
+      tags: [Meta]
+      summary: Startup probe for application initialization
+      security: []
+      responses:
+        "200": { description: MongoDB is initialized; Redis may be reconnecting }
+        "503": { description: MongoDB is not initialized }
   /metrics:
     get:
       tags: [Meta]

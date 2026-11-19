@@ -1,6 +1,10 @@
 import express from "express";
 import request from "supertest";
-import { createHealthHandler, ping } from "../src/controllers/healthController.js";
+import {
+  createHealthHandler,
+  ping,
+  startupCheck,
+} from "../src/controllers/healthController.js";
 import {
   metricsMiddleware,
   paymentsInitialized,
@@ -29,6 +33,7 @@ describe("GET /health", () => {
       message: "All critical dependencies are ready",
       data: {
         status: "healthy",
+        probe: "readiness",
         uptime: 42,
         environment: "test",
         dependencies: {
@@ -67,7 +72,7 @@ describe("GET /health", () => {
     const res = await request(app).get("/health");
 
     expect(res.status).toBe(503);
-    expect(res.body.data.dependencies.redis.status).toBe("down");
+    expect(res.body.data.dependencies.redis.status).toBe("degraded");
     expect(res.body.data.dependencies.mongodb.status).toBe("up");
   });
 
@@ -86,6 +91,50 @@ describe("GET /health", () => {
     const res = await request(buildHealthApp()).get("/ping");
     expect(res.status).toBe(200);
     expect(res.text).toBe("pong");
+  });
+
+  it("startup probe reports its distinct probe contract", () => {
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    startupCheck({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ probe: "startup" }),
+      })
+    );
+  });
+
+  it("startup stays available during a recoverable Redis outage", () => {
+    const handler = createHealthHandler({
+      probe: "startup",
+      requiredDependencies: ["mongodb"],
+      getMongoReadyState: () => 1,
+      getRedisReady: () => false,
+    });
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    handler({}, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          probe: "startup",
+          status: "healthy",
+          dependencies: expect.objectContaining({
+            redis: { status: "degraded" },
+          }),
+        }),
+      })
+    );
   });
 });
 

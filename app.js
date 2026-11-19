@@ -75,7 +75,7 @@ import badgeRoutes from "./src/routes/badge.routes.js";
 import achievementRoutes from "./src/routes/api/achievements.js";
 import activeUsersRoutes from "./src/routes/analytics/activeUsersRoutes.js";
 import contentPerformanceRoutes from "./src/routes/analytics/contentPerformanceRoutes.js";
-import { healthCheck, ping } from "./src/controllers/healthController.js";
+import { healthCheck, ping, startupCheck } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
 import searchAnalyticsRoutes from "./src/routes/analytics/search.js";
@@ -230,6 +230,9 @@ app.get("/", (req, res) => {
 
 app.get("/ping", ping);
 app.get("/health", healthCheck);
+app.get("/health/live", ping);
+app.get("/health/ready", healthCheck);
+app.get("/health/startup", startupCheck);
 app.use("/health/database", databaseHealthRoutes);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter

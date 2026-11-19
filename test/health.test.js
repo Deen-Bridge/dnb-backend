@@ -30,6 +30,7 @@ describe("Health endpoints", () => {
       success: true,
       message: "All critical dependencies are ready",
       data: {
+        probe: "readiness",
         status: "healthy",
         timestamp: expect.any(String),
         uptime: 42.5,
@@ -88,9 +89,9 @@ describe("Health endpoints", () => {
                 status: mongoReadyState === 1 ? "up" : "down",
                 state: expectedMongoState,
               },
-              redis: {
-                status: redisReady ? "up" : "down",
-              },
+          redis: {
+            status: redisReady ? "up" : "degraded",
+          },
             },
           },
         })
