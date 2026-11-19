@@ -159,6 +159,7 @@ const corsOptions = {
       "http://localhost:3001",
       "https://deenbridge.vercel.app",
       "http://deenbridge.vercel.app",
+      ...(process.env.CORS_ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean),
     ];
 
     if (!origin) return callback(null, true);
