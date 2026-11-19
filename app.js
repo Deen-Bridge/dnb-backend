@@ -36,7 +36,6 @@ import bookRoutes from "./src/routes/books/bookRoutes.js";
 import recommendedBooksRoutes from "./src/routes/books/recommendedBooksRoutes.js";
 import readingProgressRoutes from "./src/routes/books/readingProgressRoutes.js";
 import spacesRoutes from "./src/routes/spaceRoutes.js";
-import emailRoutes from "./src/routes/emailRoutes.js";
 import purchaseRoutes from "./src/routes/books/purchaseBookRoutes.js";
 import searchRoutes from "./src/routes/searchRoutes.js";
 import callRoutes from "./src/routes/callRoutes.js";
@@ -239,7 +238,6 @@ app.use("/.well-known", wellKnownRoutes);
 app.use("/api/auth", ipBlockMiddleware, authLimiter, authRoutes);
 
 // Mutation routes — standard limiter
-app.use("/api/email", standardLimiter, emailRoutes);
 app.use("/api/purchase", standardLimiter, purchaseRoutes);
 app.use("/api/uploads", standardLimiter, uploadRoutes);
 app.use("/api/payouts", standardLimiter, payoutRoutes);
