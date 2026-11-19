@@ -32,4 +32,7 @@ const moderationLogSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+moderationLogSchema.index({ targetUser: 1, createdAt: -1 });
+moderationLogSchema.index({ createdAt: -1 });
+
 export default mongoose.model("ModerationLog", moderationLogSchema);
