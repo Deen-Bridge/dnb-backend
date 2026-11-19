@@ -3,6 +3,8 @@ import ReadingGroupMember from "../models/reading-group-member.model.js";
 import Book from "../models/Book.js";
 import Notification from "../models/Notification.js";
 
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export class ReadingGroupService {
   async createGroup({
     name,
@@ -49,7 +51,7 @@ export class ReadingGroupService {
     if (bookId) query.book = bookId;
     if (privacy) query.privacy = privacy;
     if (search && search.trim() !== "") {
-      const regex = new RegExp(search, "i");
+      const regex = new RegExp(escapeRegex(search.trim()), "i");
       query.$or = [{ name: regex }, { description: regex }];
     }
 
