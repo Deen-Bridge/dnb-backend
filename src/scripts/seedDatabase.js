@@ -12,9 +12,23 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-// This is a placeholder user ObjectId. If you have existing users,
-// replace this with a real user ID from your database.
-const PLACEHOLDER_USER = new mongoose.Types.ObjectId("6a6bd5bdf43b44b676794be5");
+if (process.env.NODE_ENV === "production") {
+  console.error("The legacy demo seeder is disabled in production.");
+  process.exit(1);
+}
+if (process.env.ALLOW_LEGACY_DEMO_SEED !== "true") {
+  console.error("Set ALLOW_LEGACY_DEMO_SEED=true to run the legacy demo seeder.");
+  process.exit(1);
+}
+
+const configuredOwner = process.env.SEED_OWNER_ID;
+if (!configuredOwner || !mongoose.isValidObjectId(configuredOwner)) {
+  console.error("SEED_OWNER_ID must be a real MongoDB user id.");
+  process.exit(1);
+}
+// Preserve the existing fixture field name while sourcing it from a
+// configured, validated user instead of a dangling hard-coded identifier.
+const PLACEHOLDER_USER = new mongoose.Types.ObjectId(configuredOwner);
 
 const img = (seed) => `https://picsum.photos/seed/${seed}/800/600`;
 
