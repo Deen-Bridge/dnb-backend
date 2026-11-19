@@ -54,6 +54,59 @@ describe("Standardized error response format", () => {
   });
 
   describe("errorHandler middleware", () => {
+    it("does not throw when duplicate-key metadata is malformed", () => {
+      const err = new Error("duplicate");
+      err.code = 11000;
+
+      expect(() => errorHandler(err, req, res, next)).not.toThrow();
+      const body = res.json.mock.calls[0][0];
+      expect(body.error.code).toBe(ERROR_CODES.CONFLICT);
+      expect(body.error.message).toBe("A record with those details already exists.");
+      expect(JSON.stringify(body)).not.toContain("duplicate");
+    });
+
+    it("uses a safe response for unknown environment values", () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = "staging-misconfigured";
+      const err = new Error("driver secret and stack details");
+
+      errorHandler(err, req, res, next);
+
+      const body = res.json.mock.calls[0][0];
+      expect(body.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+      expect(body.error.message).toBe("Something went wrong!");
+      expect(body.stack).toBeUndefined();
+      expect(body.error.details).toBeUndefined();
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it("sanitizes validation details and preserves the correlation id", () => {
+      const err = new Error("raw provider payload");
+      err.name = "ValidationError";
+      err.errors = {
+        "profile.email": { message: "email value leaked" },
+        token: { message: "token leaked" },
+      };
+
+      errorHandler(err, { headers: { "x-request-id": "corr-123" } }, res, next);
+
+      const body = res.json.mock.calls[0][0];
+      expect(body.reqId).toBe("corr-123");
+      expect(body.error.details).toEqual([
+        { field: "profile.email", message: "Invalid value." },
+        { field: "token", message: "Invalid value." },
+      ]);
+      expect(JSON.stringify(body)).not.toContain("leaked");
+    });
+
+    it("forwards errors when the response has already started", () => {
+      const err = new Error("late failure");
+      errorHandler(err, { id: "late-1" }, { headersSent: true }, next);
+
+      expect(next).toHaveBeenCalledWith(err);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
     it("returns standard error envelope for operational errors", () => {
       const err = new APIError("Not found", 404, true);
       errorHandler(err, req, res, next);
@@ -140,6 +193,15 @@ describe("Standardized error response format", () => {
 
       expect(next).toHaveBeenCalledWith(expect.any(Error));
       expect(next.mock.calls[0][0].message).toBe("Async error");
+    });
+
+    it("forwards synchronous handler failures", async () => {
+      const error = new Error("Sync error");
+      const handler = catchAsync(() => { throw error; });
+
+      await handler(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
     });
   });
 });

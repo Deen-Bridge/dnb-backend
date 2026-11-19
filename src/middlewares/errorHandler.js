@@ -26,22 +26,20 @@ export class APIError extends Error {
 }
 
 const handleCastErrorDB = (err) => {
-  const message = `Invalid ${err.path}: ${err.value}`;
-  return new APIError(message, 400);
+  return new APIError("Invalid input data.", 400);
 };
 
 const handleDuplicateFieldsDB = (err) => {
-  const value = err.errmsg?.match(/(["'])(\\?.)*?\1/)[0];
-  const message = `Duplicate field value: ${value}. Please use another value!`;
-  return new APIError(message, 409);
+  return new APIError("A record with those details already exists.", 409);
 };
 
 const handleValidationErrorDB = (err) => {
-  const details = Object.entries(err.errors).map(([field, el]) => ({
-    field,
-    message: el.message,
+  const errors = err && typeof err.errors === "object" ? err.errors : {};
+  const details = Object.keys(errors).slice(0, 20).map((field) => ({
+    field: String(field).replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 80),
+    message: "Invalid value.",
   }));
-  const message = `Invalid input data. ${details.map((d) => d.message).join(". ")}`;
+  const message = "Invalid input data.";
   const apiError = new APIError(message, 400);
   apiError.details = details;
   return apiError;
@@ -53,45 +51,68 @@ const handleJWTError = () =>
 const handleJWTExpiredError = () =>
   new APIError("Your token has expired! Please log in again.", 401);
 
+const sanitizeDetails = (details) => {
+  if (!Array.isArray(details)) return undefined;
+  return details.slice(0, 20).map((detail) => ({
+    field: typeof detail?.field === "string"
+      ? detail.field.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 80)
+      : "input",
+    message: "Invalid value.",
+  }));
+};
+
 /**
  * Map an APIError (or translated error) to the standard response envelope:
  *   { success: false, error: { code, message, details? } }
  *
- * In development we also include `stack` and `reqId` for debugging.
+ * Debug details are opt-in. Unknown or misconfigured environments receive
+ * the same safe response as production.
  */
 const sendError = (err, req, res) => {
-  const code = err.errorCode || ERROR_CODES.INTERNAL_ERROR;
+  const safeErr = err && typeof err === "object" ? err : new Error("Unknown error");
+  const code = Object.values(ERROR_CODES).includes(safeErr.errorCode)
+    ? safeErr.errorCode
+    : ERROR_CODES.INTERNAL_ERROR;
   // `err.errors` comes from APIError (used by validate.js for field-level
   // validation errors); `err.details` is the explicit field name.
-  const details = err.errors || err.details || undefined;
-
-  if (process.env.NODE_ENV === "development") {
-    const logData = { status: err.status, message: err.message, stack: err.stack };
-    if (req?.id) logData.reqId = req.id;
-    logger.error(logData, "ERROR");
-
-    return res.status(err.statusCode).json({
-      ...buildErrorResponse(code, err.message, details, err.statusCode),
-      stack: err.stack,
-      reqId: req?.id,
-    });
+  const details = Array.isArray(safeErr.errors)
+    ? safeErr.errors
+    : Array.isArray(safeErr.details) ? safeErr.details : undefined;
+  const safeDetails = sanitizeDetails(details);
+  const correlationId = req?.id || req?.headers?.["x-request-id"];
+  const debugErrors = process.env.NODE_ENV === "development"
+    && process.env.EXPOSE_ERROR_DETAILS === "true";
+  const statusCode = Number.isInteger(safeErr.statusCode) && safeErr.statusCode >= 400
+    ? safeErr.statusCode : 500;
+  const publicMessage = safeErr.isOperational && typeof safeErr.message === "string"
+    ? safeErr.message.slice(0, 300) : "Something went wrong!";
+  const logData = {
+    event: "api_error",
+    correlationId,
+    code,
+    statusCode,
+    errorName: typeof safeErr.name === "string" ? safeErr.name : "Error",
+    ...(debugErrors && typeof safeErr.message === "string" && { message: safeErr.message.slice(0, 300) }),
+    ...(!safeErr.isOperational && typeof safeErr.stack === "string" && { stack: safeErr.stack }),
+  };
+  try {
+    logger.error(logData, safeErr.isOperational ? "Operational Error" : "Programming Error");
+  } catch {
+    // Error handling must not fail because a logging transport is unavailable.
   }
 
-  // Production: hide internal details
-  const publicMessage = err.isOperational ? err.message : "Something went wrong!";
-  const logData = { statusCode: err.statusCode, message: err.message };
-  if (!err.isOperational) logData.stack = err.stack;
-  if (req?.id) logData.reqId = req.id;
-  logger.error(logData, err.isOperational ? "Operational Error" : "Programming Error");
-
-  res.status(err.statusCode).json({
-    ...buildErrorResponse(code, publicMessage, details, err.statusCode),
-    ...(req?.id && { reqId: req.id }),
-  });
+  const response = {
+    ...buildErrorResponse(code, publicMessage, safeDetails, statusCode),
+    ...(debugErrors && typeof safeErr.stack === "string" && { stack: safeErr.stack }),
+    ...(correlationId && { reqId: correlationId }),
+  };
+  return res.status(statusCode).json(response);
 };
 
 export const errorHandler = (err, req, res, next) => {
-  err.statusCode = err.statusCode || 500;
+  if (res?.headersSent) return next?.(err);
+  if (!err || typeof err !== "object") err = new Error("Unknown error");
+  err.statusCode = Number.isInteger(err.statusCode) ? err.statusCode : 500;
   err.status = err.status || "error";
 
   if (err.name === "MulterError") {
@@ -107,9 +128,8 @@ export const errorHandler = (err, req, res, next) => {
   }
 
   if (err.name === "AllEndpointsOpenError") {
-    return res.status(503).json(
-      buildErrorResponse(ERROR_CODES.NETWORK_UNAVAILABLE, "Stellar network currently unreachable. Please try again later.", undefined, 503)
-    );
+    err = new APIError("Stellar network currently unreachable. Please try again later.", 503);
+    err.errorCode = ERROR_CODES.NETWORK_UNAVAILABLE;
   }
 
   // Translate known error types into standardized APIErrors
@@ -124,7 +144,7 @@ export const errorHandler = (err, req, res, next) => {
 
 export const catchAsync = (fn) => {
   return (req, res, next) => {
-    fn(req, res, next).catch(next);
+    Promise.resolve().then(() => fn(req, res, next)).catch(next);
   };
 };
 
