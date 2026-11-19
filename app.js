@@ -229,7 +229,9 @@ app.get("/", (req, res) => {
 });
 
 app.get("/ping", ping);
-app.get("/health", healthCheck);
+app.get("/health", ping);
+app.get("/health/live", ping);
+app.get("/health/ready", healthCheck);
 app.use("/health/database", databaseHealthRoutes);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter
