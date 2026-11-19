@@ -96,6 +96,9 @@ const METADATA_ALLOWLIST = new Set([
   "title",
   "type",
   "enrolledCount",
+  "scope",
+  "expiresInSec",
+  "source",
 ]);
 
 /**
