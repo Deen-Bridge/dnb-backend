@@ -4,6 +4,8 @@
   "main": "app.js",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --forceExit",
+    "test:coverage": "npm test -- --coverage",
+    "verify:coverage-policy": "node scripts/verify-coverage-thresholds.cjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "start": "node --import dotenv/config server.js",
