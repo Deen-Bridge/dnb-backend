@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Reel from "../models/Reel.js";
 import cloudinary from "../utils/cloudinary.js";
 import logger from "../config/logger.js";
+import { publicReelFilter } from "../utils/reelVisibility.js";
 import {
   createReelDerivative,
   listReelDerivatives,
@@ -95,7 +96,7 @@ export const getReels = async (req, res) => {
     const viewerId = req.user?._id;
 
     const [reels, total] = await Promise.all([
-      Reel.find()
+      Reel.find(publicReelFilter())
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -126,7 +127,7 @@ export const getReelById = async (req, res) => {
     const { id } = req.params;
     const viewerId = req.user?._id;
 
-    const reel = await Reel.findById(id)
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() })
       .populate("createdBy", "name avatar")
       .lean();
 
@@ -208,7 +209,7 @@ export const reactToReel = async (req, res) => {
       });
     }
 
-    const reel = await Reel.findById(id);
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() });
     if (!reel) {
       return res
         .status(404)
@@ -265,7 +266,7 @@ export const addReelComment = async (req, res) => {
         .json({ success: false, message: "Comment text is required" });
     }
 
-    const reel = await Reel.findById(id);
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() });
     if (!reel) {
       return res
         .status(404)
@@ -311,7 +312,7 @@ export const getReelComments = async (req, res) => {
     );
     const skip = (page - 1) * limit;
 
-    const reel = await Reel.findById(id)
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() })
       .select("comments")
       .populate("comments.user", "name avatar")
       .lean();
@@ -348,7 +349,7 @@ export const deleteReelComment = async (req, res) => {
     const { id, commentId } = req.params;
     const userId = req.user?._id?.toString();
 
-    const reel = await Reel.findById(id);
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() });
     if (!reel) {
       return res
         .status(404)
@@ -389,8 +390,8 @@ export const deleteReelComment = async (req, res) => {
 export const registerReelShare = async (req, res) => {
   try {
     const { id } = req.params;
-    const reel = await Reel.findByIdAndUpdate(
-      id,
+    const reel = await Reel.findOneAndUpdate(
+      { _id: id, ...publicReelFilter() },
       { $inc: { shareCount: 1 } },
       { new: true }
     ).lean();
@@ -414,8 +415,8 @@ export const registerReelShare = async (req, res) => {
 export const registerReelView = async (req, res) => {
   try {
     const { id } = req.params;
-    const reel = await Reel.findByIdAndUpdate(
-      id,
+    const reel = await Reel.findOneAndUpdate(
+      { _id: id, ...publicReelFilter() },
       { $inc: { viewCount: 1 } },
       { new: true }
     ).lean();
@@ -501,7 +502,7 @@ export const getReelDerivatives = async (req, res) => {
     const { type } = req.query;
     const viewerId = req.user?._id;
 
-    const original = await Reel.findById(id).select("_id duetCount stitchCount");
+    const original = await Reel.findOne({ _id: id, ...publicReelFilter() }).select("_id duetCount stitchCount");
     if (!original) {
       return res
         .status(404)
