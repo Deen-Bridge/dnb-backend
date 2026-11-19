@@ -7,6 +7,7 @@ import { validateMagicBytes } from "../utils/fileValidation.js";
 import CourseProgress from "../models/CourseProgress.js";
 import { createFollowNotification, createUnfollowNotification } from "./notificationController.js";
 import badgeService from "../services/badge.service.js";
+import { scanUpload } from "../security/uploadScanner.js";
 
 const PUBLIC_FIELDS = "name avatar bio role interests gender age country language";
 
@@ -28,6 +29,20 @@ export const updateUser = async (req, res) => {
       const isValid = await validateMagicBytes(req.file.buffer, ["image/jpeg", "image/png", "image/webp"]);
       if (!isValid) {
         return res.status(400).json({ success: false, message: "Invalid file content. Magic bytes do not match expected image types.", data: null });
+      }
+
+      try {
+        await scanUpload({
+          buffer: req.file.buffer,
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+        });
+      } catch (scanError) {
+        logger.warn({ code: scanError.code, sha256: scanError.cause?.sha256 }, "Avatar upload quarantined");
+        return res.status(scanError.code === "MALWARE_DETECTED" ? 400 : 503).json({
+          success: false,
+          message: "Avatar upload could not be cleared for publication.",
+        });
       }
 
       try {
