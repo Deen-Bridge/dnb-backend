@@ -493,6 +493,44 @@ export const getLearningDashboard = async (req, res) => {
   }
 };
 
+// Canonical progress contract consumed by the frontend. The user scope comes
+// only from protect(req), never from a caller-supplied identifier.
+export const getProgressCourses = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const status = ["in-progress", "completed", "all"].includes(req.query.status)
+      ? req.query.status
+      : "in-progress";
+    const records = await CourseProgress.find({ user: userId })
+      .sort({ updatedAt: -1 })
+      .populate("course", "title thumbnail createdBy")
+      .lean();
+
+    const courses = records
+      .filter((record) => {
+        if (!record.course) return false;
+        if (status === "completed") return record.percentComplete >= 100;
+        if (status === "in-progress") return record.percentComplete < 100;
+        return true;
+      })
+      .map((record) => ({
+        courseId: record.course._id,
+        title: record.course.title || "Course",
+        thumbnail: record.course.thumbnail || null,
+        percentComplete: record.percentComplete || 0,
+        lastLesson: record.lastLesson,
+        lastPositionSeconds: record.lastPositionSeconds || 0,
+        completedAt: record.completedAt,
+        updatedAt: record.updatedAt,
+      }));
+
+    return res.status(200).json({ success: true, courses, status });
+  } catch (error) {
+    logger.error("Get progress courses error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch course progress" });
+  }
+};
+
 export const getRecommendations = async (req, res) => {
   try {
     const currentUserId = req.user._id; // Current user from auth middleware
