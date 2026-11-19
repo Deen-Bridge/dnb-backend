@@ -34,7 +34,6 @@ export const getCertificateByIdController = async (req, res) => {
     res.status(200).json({
       success: true,
       ...verification,
-      data: certificate,
     });
   } catch (error) {
     res.status(404).json({
