@@ -1,5 +1,6 @@
 import {
   isAllowedMediaUrl,
+  MEDIA_URL_TTL_SECONDS,
   parseByteRange,
   safeMediaFilename,
 } from "../src/utils/mediaDownloadSecurity.js";
@@ -24,5 +25,9 @@ describe("media download security helpers", () => {
     delete process.env.CLOUDINARY_CLOUD_NAME;
     expect(isAllowedMediaUrl("http://cdn.example.test/book.pdf")).toBe(false);
     expect(isAllowedMediaUrl("https://cdn.example.test/book.pdf")).toBe(false);
+  });
+
+  test("uses a short-lived signed URL policy", () => {
+    expect(MEDIA_URL_TTL_SECONDS).toBe(600);
   });
 });

@@ -1,3 +1,4 @@
+import axios from "axios";
 import mongoose from "mongoose";
 import Book from "../../models/Book.js";
 import User from "../../models/User.js";
@@ -11,7 +12,6 @@ import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
 import {
   isSafeStorageId,
   MEDIA_URL_TTL_SECONDS,
-  setPrivateMediaHeaders,
 } from "../../utils/mediaSecurity.js";
 import {
   isAllowedMediaUrl,
@@ -333,7 +333,7 @@ export const streamBookAudio = async (req, res) => {
 
     // Authenticated uploads are served through a short-lived signed URL, which
     // the player follows directly (Cloudinary supports HTTP Range requests).
-    if (book.audioFilePublicId) {
+    if (book.audioFilePublicId && isSafeStorageId(book.audioFilePublicId)) {
       const signedUrl = bookService.getSignedAudioUrl(book);
       return res.redirect(302, signedUrl);
     }
@@ -349,6 +349,10 @@ export const streamBookAudio = async (req, res) => {
     }
     const fileResponse = await axios.get(book.audioFileUrl, {
       responseType: "stream",
+      timeout: 15_000,
+      maxContentLength: 100 * 1024 * 1024,
+      maxBodyLength: 100 * 1024 * 1024,
+      validateStatus: (status) => status === 200 || status === 206,
       ...(range ? { headers: { Range: range.header } } : {}),
     });
 
@@ -493,9 +497,9 @@ export const streamBookPreview = async (req, res) => {
         .json({ success: false, message: "You do not have access to this book." });
     }
 
-    if (book.filePublicId) {
+    if (book.filePublicId && isSafeStorageId(book.filePublicId)) {
       const signedUrl = cloudinary.utils.private_download_url(book.filePublicId, "raw", {
-        expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+        expires_at: Math.floor(Date.now() / 1000) + MEDIA_URL_TTL_SECONDS,
       });
       return res.redirect(302, signedUrl);
     }
@@ -510,6 +514,10 @@ export const streamBookPreview = async (req, res) => {
     }
     const fileResponse = await axios.get(book.fileUrl, {
       responseType: "stream",
+      timeout: 15_000,
+      maxContentLength: 100 * 1024 * 1024,
+      maxBodyLength: 100 * 1024 * 1024,
+      validateStatus: (status) => status === 200 || status === 206,
       ...(range ? { headers: { Range: range.header } } : {}),
     });
 

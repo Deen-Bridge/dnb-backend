@@ -1,4 +1,5 @@
 const DEFAULT_MAX_RANGE_BYTES = 10 * 1024 * 1024;
+export const MEDIA_URL_TTL_SECONDS = 10 * 60;
 
 const configuredHosts = () =>
   new Set(
