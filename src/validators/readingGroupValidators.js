@@ -25,4 +25,7 @@ export const progressValidation = [
 export const readingGroupQueryValidation = [
   query("bookId").optional().isMongoId(),
   query("privacy").optional().isIn(["public", "private"]),
+  query("search").optional().isString().isLength({ max: 100 }),
+  query("q").optional().isString().isLength({ max: 100 }),
+  query("sort").optional().isIn(["createdAt", "-createdAt", "name", "-name"]),
 ];
