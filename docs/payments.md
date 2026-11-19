@@ -177,8 +177,9 @@ code in `src/routes/payoutRoutes.js`, `controllers/payoutController.js` and
 - Operators: `POST /api/payouts/build` (supports `dryRun`; creates a
   `PayoutBatch` with unsigned XDR chunks, up to 100 recipients per chunk) and
   `POST /api/payouts/:batchId/submit` (takes the signed XDRs, submits and
-  verifies each chunk). Both are gated by the `PAYOUT_ADMIN_USER_IDS`
-  allowlist inside the controller and wrapped in `idempotency()`.
+  verifies each chunk). Both are gated by the central payout capability
+  policy, requiring an active admin account with a verified 2FA session, and
+  wrapped in `idempotency()`.
 - Batch statuses: `built`, `submitted`, `confirmed`, `failed`; `failed` and
   `built` batches can be resubmitted.
 
@@ -270,7 +271,7 @@ store.
 | Contracts | `SCHOLARSHIP_ESCROW_CONTRACT_ID`, `GIVING_ESCROW_CONTRACT_ID` | no |
 | On-ramp | `MOONPAY_WIDGET_URL`, `MOONPAY_DEFAULT_CRYPTO_CODE` | no |
 | | `MOONPAY_API_KEY`, `MOONPAY_SECRET_KEY`, `MOONPAY_WEBHOOK_KEY` | **yes** |
-| Payouts | `PAYOUT_ADMIN_USER_IDS` (operator allowlist of user ids) | sensitive config |
+| Payouts | central payout capability policy (`src/security/payoutPolicy.js`) | active admin + verified 2FA for funds movement |
 | Refunds | `REFUND_WINDOW_DAYS` | no |
 | Webhooks | `WEBHOOK_WORKER_ENABLED`, `WEBHOOK_POLL_INTERVAL_MS`, `WEBHOOK_MAX_ATTEMPTS`, `WEBHOOK_AUTO_DISABLE_THRESHOLD`, `WEBHOOK_BACKOFF_JITTER_MS`, `WEBHOOK_HTTP_TIMEOUT_MS`, `WEBHOOK_API_VERSION`, `WEBHOOK_MAX_PER_TICK` | no |
 | | `WEBHOOK_SECRET_ENCRYPTION_KEY` | **yes** |
