@@ -1,5 +1,12 @@
 const DEFAULT_MAX_RANGE_BYTES = 10 * 1024 * 1024;
 export const MEDIA_URL_TTL_SECONDS = 10 * 60;
+const STORAGE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9/_-]*(?:\.[A-Za-z0-9_-]+)?$/;
+
+export function isSafeStorageId(value, { prefix } = {}) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 255) return false;
+  if (value.includes("..") || value.startsWith("/") || !STORAGE_ID_PATTERN.test(value)) return false;
+  return !prefix || value.startsWith(prefix);
+}
 
 const configuredHosts = () =>
   new Set(

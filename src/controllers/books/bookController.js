@@ -11,10 +11,8 @@ import { createNewBookNotification } from "../notificationController.js";
 import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
 import {
   isSafeStorageId,
-  MEDIA_URL_TTL_SECONDS,
-} from "../../utils/mediaSecurity.js";
-import {
   isAllowedMediaUrl,
+  MEDIA_URL_TTL_SECONDS,
   MEDIA_MAX_RANGE_BYTES,
   parseByteRange,
   setMediaHeaders,
@@ -144,7 +142,7 @@ export const getBooks = async (req, res) => {
     const isPaginated = pageParam !== null || limitParam !== null;
 
     const selectFields =
-      "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
+      "_id title author category categoryRef price currency readCount rating numReviews description image duration createdAt updatedAt";
 
     if (isPaginated) {
       const page = Math.max(pageParam || 1, 1);
@@ -190,6 +188,7 @@ export const getBooks = async (req, res) => {
 // get a particular book
 export const getBook = async (req, res) => {
   const book = await Book.findById(req.params.id)
+    .select("-fileUrl -filePublicId -audioFileUrl -audioFilePublicId")
     .populate("author", "name avatar bio")
     .populate("reviews.user", "name avatar")
     .lean();
@@ -214,7 +213,7 @@ export const getBooksByAuthor = async (req, res) => {
         .json({ success: false, message: "Missing author id" });
     }
     const selectFields =
-      "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
+      "_id title author category categoryRef price currency readCount rating numReviews description image duration createdAt updatedAt";
     const books = await Book.find({ author: authorId })
       .select(selectFields)
       .sort({ createdAt: -1 })
