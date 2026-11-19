@@ -81,6 +81,11 @@ export const AUDIT_ACTIONS = Object.freeze({
 
   // Bulk notifications (issue #123)
   NOTIFICATION_BULK_SENT:    "notification.bulk_sent",
+
+  // Privacy workflows (issue #732)
+  PRIVACY_EXPORT_REQUESTED: "privacy.export.requested",
+  PRIVACY_DELETE_REQUESTED: "privacy.delete.requested",
+  PRIVACY_DELETE_COMPLETED: "privacy.delete.completed",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);
