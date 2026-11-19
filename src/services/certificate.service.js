@@ -108,6 +108,7 @@ export class CertificateService {
 
   async getUserCertificates(userId) {
     return await Certificate.find({ user: userId })
+      .select("certificateId course completionDate verificationUrl certificateUrl")
       .populate("course", "title category thumbnail rating")
       .sort({ createdAt: -1 });
   }
