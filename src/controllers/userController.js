@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import mongoose from "mongoose";
 import cloudinary from "../utils/cloudinary.js";
 import Course from "../models/Course.js";
 import Book from "../models/Book.js";
@@ -310,16 +311,28 @@ export const unfollowUser = async (req, res) => {
   }
 };
 
+const getSocialGraphPage = async (userId, field, page, limit) => {
+  const skip = (page - 1) * limit;
+  const [row] = await User.aggregate([
+    { $match: { _id: new mongoose.Types.ObjectId(userId) } },
+    { $project: { ids: { $slice: [`$${field}`, skip, limit] }, count: { $size: `$${field}` } } },
+  ]);
+  if (!row) return null;
+  const users = await User.find({ _id: { $in: row.ids } }).select("name avatar role").lean();
+  const byId = new Map(users.map((user) => [String(user._id), user]));
+  return { users: row.ids.map((id) => byId.get(String(id))).filter(Boolean), count: row.count };
+};
+
 // Get user's followers
 export const getFollowers = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const user = await User.findById(userId)
-      .populate("followers", "name email avatar role bio")
-      .select("followers");
-
-    if (!user) {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(404).json({ success: false, message: "User not found" });
+    const result = await getSocialGraphPage(userId, "followers", page, limit);
+    if (!result) {
       return res.status(404).json({
         success: false,
         message: "User not found",
@@ -328,8 +341,10 @@ export const getFollowers = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      followers: user.followers,
-      count: user.followers.length,
+      followers: result.users,
+      count: result.count,
+      page,
+      limit,
     });
   } catch (error) {
     logger.error("Get followers error:", error);
@@ -346,11 +361,11 @@ export const getFollowing = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const user = await User.findById(userId)
-      .populate("following", "name email avatar role bio")
-      .select("following");
-
-    if (!user) {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(404).json({ success: false, message: "User not found" });
+    const result = await getSocialGraphPage(userId, "following", page, limit);
+    if (!result) {
       return res.status(404).json({
         success: false,
         message: "User not found",
@@ -359,8 +374,10 @@ export const getFollowing = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      following: user.following,
-      count: user.following.length,
+      following: result.users,
+      count: result.count,
+      page,
+      limit,
     });
   } catch (error) {
     logger.error("Get following error:", error);
