@@ -65,6 +65,11 @@ export const getUserCertificatesController = async (req, res) => {
 export const downloadCertificateController = async (req, res) => {
   try {
     const certificate = await certificateService.getCertificateById(req.params.id);
+    const ownerId = certificate.user?._id?.toString() || certificate.user?.toString();
+    const requesterId = req.user?._id?.toString();
+    if (ownerId !== requesterId && req.user?.role !== "admin") {
+      return res.status(403).json({ success: false, message: "You do not have access to this certificate" });
+    }
     const pdfBuffer = await certificateService.generatePDFBuffer(certificate);
 
     res.setHeader("Content-Type", "application/pdf");
@@ -73,6 +78,10 @@ export const downloadCertificateController = async (req, res) => {
       `attachment; filename="${certificate.certificateId}.pdf"`
     );
     res.setHeader("Content-Length", pdfBuffer.length);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Cache-Control", "private, no-store");
     res.send(pdfBuffer);
   } catch (error) {
     res.status(404).json({

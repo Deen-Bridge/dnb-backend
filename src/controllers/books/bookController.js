@@ -1,4 +1,3 @@
-import axios from "axios";
 import mongoose from "mongoose";
 import Book from "../../models/Book.js";
 import User from "../../models/User.js";
@@ -9,6 +8,17 @@ import contentMetricsService from "../../services/analytics/contentMetricsServic
 import { bookService } from "../../services/book.service.js";
 import { createNewBookNotification } from "../notificationController.js";
 import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
+import {
+  isSafeStorageId,
+  MEDIA_URL_TTL_SECONDS,
+  setPrivateMediaHeaders,
+} from "../../utils/mediaSecurity.js";
+import {
+  isAllowedMediaUrl,
+  MEDIA_MAX_RANGE_BYTES,
+  parseByteRange,
+  setMediaHeaders,
+} from "../../utils/mediaDownloadSecurity.js";
 
 // Magic-byte types accepted for the book's text file.
 const BOOK_FILE_MIME_TYPES = ["application/pdf", "application/epub+zip"];
@@ -330,23 +340,27 @@ export const streamBookAudio = async (req, res) => {
 
     // Fallback for public (non-authenticated) audio URLs: proxy the stream and
     // forward Range headers so seeking works.
-    const rangeHeader = req.headers.range || "bytes=0-";
+    const range = parseByteRange(req.headers.range, MEDIA_MAX_RANGE_BYTES);
+    if (req.headers.range && !range) {
+      return res.status(416).json({ success: false, message: "Invalid or excessive byte range" });
+    }
+    if (!isAllowedMediaUrl(book.audioFileUrl)) {
+      return res.status(503).json({ success: false, message: "Audio storage provider is not allowed" });
+    }
     const fileResponse = await axios.get(book.audioFileUrl, {
       responseType: "stream",
-      headers: { Range: rangeHeader },
+      ...(range ? { headers: { Range: range.header } } : {}),
     });
 
-    res.setHeader("Content-Type", fileResponse.headers["content-type"] || "audio/mpeg");
+    setMediaHeaders(res, {
+      contentType: fileResponse.headers["content-type"] || "audio/mpeg",
+      filename: `${book.title}.mp3`,
+    });
     if (fileResponse.headers["content-range"]) {
       res.setHeader("Content-Range", fileResponse.headers["content-range"]);
       res.status(206);
     }
     res.setHeader("Accept-Ranges", "bytes");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${encodeURIComponent(`${book.title}.mp3`)}"`
-    );
-    res.setHeader("Cache-Control", "private, max-age=0, no-cache");
 
     fileResponse.data.pipe(res);
   } catch (error) {
@@ -486,19 +500,28 @@ export const streamBookPreview = async (req, res) => {
       return res.redirect(302, signedUrl);
     }
 
+    if (!isAllowedMediaUrl(book.fileUrl)) {
+      return res.status(503).json({ success: false, message: "Book storage provider is not allowed" });
+    }
+
+    const range = parseByteRange(req.headers.range, MEDIA_MAX_RANGE_BYTES);
+    if (req.headers.range && !range) {
+      return res.status(416).json({ success: false, message: "Invalid or excessive byte range" });
+    }
     const fileResponse = await axios.get(book.fileUrl, {
       responseType: "stream",
+      ...(range ? { headers: { Range: range.header } } : {}),
     });
 
-    res.setHeader(
-      "Content-Type",
-      fileResponse.headers["content-type"] || "application/pdf"
-    );
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${encodeURIComponent(`${book.title}.pdf`)}"`
-    );
-    res.setHeader("Cache-Control", "private, max-age=0, no-cache");
+    setMediaHeaders(res, {
+      contentType: fileResponse.headers["content-type"] || "application/pdf",
+      filename: `${book.title}.pdf`,
+    });
+    if (fileResponse.headers["content-range"]) {
+      res.setHeader("Content-Range", fileResponse.headers["content-range"]);
+      res.status(206);
+    }
+    res.setHeader("Accept-Ranges", "bytes");
 
     fileResponse.data.pipe(res);
   } catch (error) {
