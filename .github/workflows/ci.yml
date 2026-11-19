@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify runtime language boundary
+        run: npm run audit:runtime-boundary
+
       - name: Wait for MongoDB
         run: |
           for i in $(seq 1 30); do
