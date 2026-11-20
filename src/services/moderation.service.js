@@ -129,13 +129,30 @@ export class ModerationService {
       throw new Error("Reel not found");
     }
 
-    let updatedStatus = "pending";
-    if (action === "approve") {
-      updatedStatus = "approved";
-    } else if (action === "reject") {
-      updatedStatus = "rejected";
-    } else if (action === "remove") {
-      updatedStatus = "removed";
+    const updatedStatus =
+      action === "approve"
+        ? "approved"
+        : action === "reject"
+          ? "rejected"
+          : "removed";
+
+    // A second request for the same resolved action is a safe replay. A
+    // different action against a resolved flag is rejected rather than
+    // creating contradictory audit records.
+    if (flag && flag.status !== "pending") {
+      if (flag.status !== updatedStatus) {
+        throw new Error("Moderation flag has already been resolved");
+      }
+      const existingAction = await ModerationAction.findOne({
+        flag: flag._id,
+        action,
+      });
+      if (existingAction) {
+        return { flag, moderationAction: existingAction, reel };
+      }
+    }
+
+    if (action === "remove") {
       reel.status = "removed";
       reel.isRemoved = true;
       await reel.save();
@@ -154,7 +171,9 @@ export class ModerationService {
       notes,
     });
 
-    const creatorId = reel.user || reel.author || reel.creator;
+    // Reel.createdBy is the canonical owner field. The legacy fallbacks were
+    // never populated by the Reel schema and silently dropped notices.
+    const creatorId = reel.createdBy;
     if (creatorId) {
       const decisionText =
         action === "remove"
@@ -171,7 +190,7 @@ export class ModerationService {
         message: `Your reel "${reel.title || "Content"}" ${decisionText}`,
         data: { reelId: reel._id },
         priority: action === "remove" ? "high" : "medium",
-      }).catch(() => {});
+      });
     }
 
     return {
