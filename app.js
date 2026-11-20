@@ -14,6 +14,8 @@ import {
   generousLimiter,
   authLimiter,
   paymentLimiter,
+  adminLimiter,
+  jobLimiter,
   mongoSanitizeMiddleware,
   hppMiddleware,
   customSecurityHeaders,
@@ -275,7 +277,7 @@ app.use("/api/calls", generousLimiter, callRoutes);
 app.use("/api/educators", generousLimiter, educatorRoutes);
 app.use("/api/educator-verification", standardLimiter, educatorVerificationRoutes);
 app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
-app.use("/api/stellar/analytics", generousLimiter, stellarAnalyticsRoutes);
+app.use("/api/stellar/analytics", adminLimiter, stellarAnalyticsRoutes);
 // Payment routes mutate money state — stricter per-user limiter (issue #4).
 app.use("/api/stellar/payment", paymentLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/export", paymentLimiter, stellarExportRoutes);
@@ -285,7 +287,7 @@ app.use("/api/stellar/onramp", generousLimiter, stellarOnrampRoutes);
 app.use("/api/stellar/pledges", generousLimiter, stellarPledgeRoutes);
 app.use("/api/stellar/gifts", generousLimiter, stellarGiftRoutes);
 app.use("/api/stellar/anchor", standardLimiter, stellarAnchorRoutes);
-app.use("/api/stellar/reports", standardLimiter, stellarReportsRoutes);
+app.use("/api/stellar/reports", adminLimiter, stellarReportsRoutes);
 app.use("/api/notifications/analytics", generousLimiter, notificationAnalyticsRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
 
@@ -300,16 +302,17 @@ app.use("/api/internal/ai", internalAiRoutes);
 app.use("/metrics/database", databaseMetricsRoutes);
 
 // Issue #245 - Search analytics (admin-gated).
-app.use("/api/analytics/search", generousLimiter, searchAnalyticsRoutes);
+app.use("/api/analytics/search", adminLimiter, searchAnalyticsRoutes);
 
-// Admin — no rate limit
-app.use("/admin/jobs", jobsRoutes);
-app.use("/api/admin/audit", auditRoutes);
+// Administrative surfaces use actor-scoped budgets. Reads and mutations have
+// separate limits; trusted internal automation requires an explicit token.
+app.use("/admin/jobs", jobLimiter, jobsRoutes);
+app.use("/api/admin/audit", adminLimiter, auditRoutes);
 // Issue #140 - CSP violation reports (unauthenticated POST, admin-only stats)
 app.use("/api/security/csp-report", standardLimiter, cspReportRoutes);
-app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
-app.use("/api/admin/moderation", adminModerationRoutes);
-app.use("/api/admin/blocked-ips", blockedIpsRoutes);
+app.use("/api/admin/educator-verification", adminLimiter, educatorVerificationAdminRoutes);
+app.use("/api/admin/moderation", adminLimiter, adminModerationRoutes);
+app.use("/api/admin/blocked-ips", adminLimiter, blockedIpsRoutes);
 
 // Issue #215 — Apply version detection middleware globally on /api paths.
 // Must come before versioned router mounts.
