@@ -102,6 +102,11 @@ import docsRoutes from "./src/routes/docsRoutes.js";
 // Issue #246 — User journey tracking
 import userJourneyRoutes from "./src/routes/analytics/user-journey.js";
 import { trackPageVisit } from "./src/middlewares/analytics/journey-tracker.js";
+import {
+  BODY_LIMITS,
+  jsonBodyParser,
+  urlencodedBodyParser,
+} from "./src/middlewares/bodyBudgets.js";
 
 const app = express();
 
@@ -183,18 +188,21 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Capture the raw request bytes so the service-to-service auth middleware can
-// verify HMAC signatures over the exact body (see middlewares/serviceAuth.js).
-// This only stashes a Buffer reference and does not alter parsing behaviour.
-app.use(
-  express.json({
-    limit: "10mb",
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  })
-);
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+// Route-specific parsers must run before the conservative defaults. The raw
+// bytes are retained for HMAC-verified webhooks and service requests.
+app.use("/api/security/csp-report", jsonBodyParser(BODY_LIMITS.cspReport, {
+  type: ["application/csp-report", "application/reports+json", "application/json"],
+}));
+app.use("/api/analytics/journey/events", jsonBodyParser(BODY_LIMITS.analyticsEvent));
+app.use("/api/notifications/analytics/events", jsonBodyParser(BODY_LIMITS.analyticsEvent));
+app.use("/api/stellar/onramp/webhook", jsonBodyParser(BODY_LIMITS.providerWebhook));
+app.use("/api/internal", jsonBodyParser(BODY_LIMITS.serviceRequest));
+
+// All other JSON and URL-encoded endpoints use bounded defaults. Multipart
+// uploads are handled separately by Multer and never pass through these
+// parsers.
+app.use(jsonBodyParser(BODY_LIMITS.defaultJson));
+app.use(urlencodedBodyParser(BODY_LIMITS.defaultUrlencoded));
 app.use(cookieParser());
 app.use(
   compression({
