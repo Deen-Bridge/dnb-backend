@@ -83,9 +83,10 @@ export const trackConversion = async (data: {
   userId?: string | null;
   value?: number;
   metadata?: Record<string, any>;
+  eventId?: string;
 }): Promise<boolean> => {
   try {
-    const { experimentKey, metricName, identifier, userId, value = 1, metadata } = data;
+    const { experimentKey, metricName, identifier, userId, value = 1, metadata, eventId } = data;
 
     const query: any = { experimentKey, sessionId: identifier };
     if (userId) {
@@ -97,16 +98,24 @@ export const trackConversion = async (data: {
       return false;
     }
 
-    await ExperimentConversion.create({
-      experimentKey,
-      variantName: assignment.variantName,
-      userId: userId || undefined,
-      sessionId: identifier,
-      metricName,
-      value,
-      metadata: metadata || {},
-      createdAt: new Date(),
-    });
+    const dedupeKey = `${experimentKey}:${identifier}:${metricName}:${eventId || "default"}`;
+    await ExperimentConversion.findOneAndUpdate(
+      { dedupeKey },
+      {
+        $setOnInsert: {
+          experimentKey,
+          variantName: assignment.variantName,
+          userId: userId || undefined,
+          sessionId: identifier,
+          metricName,
+          value,
+          metadata: metadata || {},
+          dedupeKey,
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     return true;
   } catch (error) {

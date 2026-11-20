@@ -44,6 +44,13 @@ export const protect = async (req, res, next) => {
   }
 };
 
+// Public routes can still recognize a valid caller without making anonymous
+// requests authenticate. Invalid bearer credentials remain unauthorized.
+export const optionalProtect = async (req, res, next) => {
+  if (!req.headers.authorization) return next();
+  return protect(req, res, next);
+};
+
 export const authorizeRoles = (...roles) => {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
