@@ -49,34 +49,45 @@ export class ModerationService {
     return null;
   }
 
-  async flagReel({
-    reelId,
-    reporterId,
-    reason,
-    details,
-  }) {
+  async flagReel({ reelId, reporterId, reason, details }) {
     const reel = await Reel.findById(reelId);
     if (!reel) {
       throw new Error("Reel not found");
     }
 
-    const flag = await ContentFlag.create({
-      reel: reelId,
-      reporter: reporterId,
-      reason,
-      details,
-      status: "pending",
-      isAutoFlagged: false,
-    });
-
-    return flag;
+    try {
+      // Upsert makes retries idempotent and the partial unique index makes
+      // concurrent requests converge on one pending report.
+      return await ContentFlag.findOneAndUpdate(
+        { reel: reelId, reporter: reporterId, status: "pending" },
+        {
+          $set: { reason, details, isAutoFlagged: false },
+          $setOnInsert: {
+            reel: reelId,
+            reporter: reporterId,
+            status: "pending",
+          },
+        },
+        {
+          new: true,
+          upsert: true,
+          runValidators: true,
+          setDefaultsOnInsert: true,
+        },
+      );
+    } catch (error) {
+      // A concurrent upsert can lose the unique-index race. Return the
+      // already-created pending report instead of surfacing a false failure.
+      if (error?.code !== 11000) throw error;
+      return ContentFlag.findOne({
+        reel: reelId,
+        reporter: reporterId,
+        status: "pending",
+      });
+    }
   }
 
-  async getModerationQueue({
-    status = "pending",
-    page = 1,
-    limit = 20,
-  }) {
+  async getModerationQueue({ status = "pending", page = 1, limit = 20 }) {
     const query = {};
     if (status && status !== "all") {
       query.status = status;
@@ -104,13 +115,7 @@ export class ModerationService {
     };
   }
 
-  async processModerationAction({
-    flagId,
-    reelId,
-    adminId,
-    action,
-    notes,
-  }) {
+  async processModerationAction({ flagId, reelId, adminId, action, notes }) {
     let flag = null;
     if (flagId) {
       flag = await ContentFlag.findById(flagId);
@@ -155,8 +160,8 @@ export class ModerationService {
         action === "remove"
           ? "has been removed due to community guideline violations."
           : action === "approve"
-          ? "has been reviewed and approved."
-          : "flag review has been resolved.";
+            ? "has been reviewed and approved."
+            : "flag review has been resolved.";
 
       await Notification.create({
         recipient: creatorId,
@@ -176,12 +181,7 @@ export class ModerationService {
     };
   }
 
-  async getModerationHistory({
-    reelId,
-    adminId,
-    page = 1,
-    limit = 20,
-  }) {
+  async getModerationHistory({ reelId, adminId, page = 1, limit = 20 }) {
     const query = {};
     if (reelId) query.reel = reelId;
     if (adminId) query.admin = adminId;
