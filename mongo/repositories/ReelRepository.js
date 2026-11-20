@@ -12,8 +12,9 @@
  *   - Engagement: `likes` (array of User refs), `loves` (array of User refs),
  *     `comments` (array of comment subdocs), `shareCount` (Number),
  *     `viewCount` (Number)
- *   - Space: The Reel schema does not currently have a `spaceId` field.
- *     `findBySpace` is implemented as a placeholder for future schema changes.
+ *   - Space: Reels do not currently have a space relation. `findBySpace` is
+ *     retained only as an explicit unsupported-capability guard until a
+ *     canonical relation is designed and migrated.
  *
  * @example
  * import ReelRepository from "../mongo/repositories/ReelRepository.js";
@@ -25,6 +26,7 @@
 
 import BaseRepository, {
   RepositoryValidationError,
+  UnsupportedRelationError,
 } from "../base/BaseRepository.js";
 import Reel from "../../src/models/Reel.js";
 
@@ -90,17 +92,18 @@ export class ReelRepository extends BaseRepository {
   /**
    * Fetch reels belonging to a specific space.
    *
-   * Note: The Reel schema does not currently have a `spaceId` field.
-   * This method is implemented as a placeholder for future schema changes.
-   * When a `spaceId` field is added to the Reel schema, this method will
-   * work without modification.
+   * Reels currently have no canonical relation to spaces. Do not return an
+   * empty page here: that is indistinguishable from a real space with no
+   * reels. The method remains as a compatibility guard for callers that have
+   * not yet removed the unsupported relation.
    *
    * @param {import("mongoose").Types.ObjectId|string} spaceId Space id.
    * @param {object} [options={}] Query options (same shape as
    *   {@link ReelRepository#findByCreator}).
    * @returns {Promise<object[]|{data: object[], total: number, ...}>} Matching
-   *   reels (currently returns empty array until schema is updated).
+   *   reels. This method rejects until a canonical relation is implemented.
    * @throws {RepositoryValidationError} If `spaceId` is missing.
+   * @throws {UnsupportedRelationError} Always, while the relation is absent.
    */
   async findBySpace(spaceId, options = {}) {
     if (!spaceId) {
@@ -109,39 +112,9 @@ export class ReelRepository extends BaseRepository {
       );
     }
 
-    const { paginate: usePaginate, filter: extraFilter, ...rest } = options;
-
-    // Check if the model has a spaceId field
-    if (!this.model.schema.path("spaceId")) {
-      // Schema doesn't have spaceId yet - return empty results
-      const defaults = { sort: { createdAt: -1 }, ...rest };
-      if (usePaginate) {
-        return {
-          data: [],
-          total: 0,
-          page: 1,
-          limit: defaults.limit || 20,
-          totalPages: 0,
-          offset: 0,
-          hasNextPage: false,
-          hasPrevPage: false,
-        };
-      }
-      return [];
-    }
-
-    const filter = {
-      spaceId: spaceId,
-      ...extraFilter,
-    };
-
-    const defaults = { sort: { createdAt: -1 }, ...rest };
-
-    if (usePaginate) {
-      return this.paginate(filter, defaults);
-    }
-
-    return this.findMany(filter, defaults);
+    throw new UnsupportedRelationError(
+      "ReelRepository.findBySpace: reels are not related to spaces; remove this query or implement the canonical relation first"
+    );
   }
 
   /**

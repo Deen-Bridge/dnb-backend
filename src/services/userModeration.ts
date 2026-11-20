@@ -140,8 +140,8 @@ export class UserModerationService {
     const skip = (page - 1) * limit;
     const [logs, total] = await Promise.all([
       ModerationLog.find(query)
-        .populate("admin", "name email role")
-        .populate("targetUser", "name email role isActive")
+        .populate("admin", "name role")
+        .populate("targetUser", "name role isActive")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),

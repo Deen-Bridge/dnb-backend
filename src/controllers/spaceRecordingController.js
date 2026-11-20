@@ -16,7 +16,7 @@ import { parsePagination } from "../utils/pagination.js";
  */
 export const startSpaceRecording = async (req, res, next) => {
   try {
-    const recording = await startRecording(req.params.spaceId, req.user._id, req.body);
+    const recording = await startRecording(req.params.spaceId, req.user._id, req.body, req.user.role);
     res.status(201).json({ success: true, data: recording });
   } catch (err) {
     next(err);
@@ -30,7 +30,7 @@ export const startSpaceRecording = async (req, res, next) => {
  */
 export const finaliseSpaceRecording = async (req, res, next) => {
   try {
-    const recording = await finaliseRecording(req.params.recordingId, req.body);
+    const recording = await finaliseRecording(req.params.spaceId, req.params.recordingId, req.body, req.user._id, req.user.role);
     res.json({ success: true, data: recording });
   } catch (err) {
     next(err);
@@ -61,7 +61,7 @@ export const getSpaceRecordings = async (req, res, next) => {
  */
 export const getSpaceRecording = async (req, res, next) => {
   try {
-    const recording = await getRecordingById(req.params.recordingId);
+    const recording = await getRecordingById(req.params.spaceId, req.params.recordingId, req.user._id, req.user.role);
     res.json({ success: true, data: recording });
   } catch (err) {
     next(err);

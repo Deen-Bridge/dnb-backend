@@ -240,6 +240,8 @@ export const buildPayoutBatch = async ({
       chunkIndex: cIdx,
       xdr: tx.toXDR(),
       hash: tx.hash().toString("hex"),
+      idempotencyKey: `${batchId}:${cIdx}`,
+      status: "built",
     });
   }
 
@@ -292,6 +294,14 @@ export const submitPayoutBatch = async ({ batchId, signedXdrs }) => {
   // 1. Submit and verify each chunk on Stellar
   const CHUNK_SIZE = 100;
   for (let cIdx = 0; cIdx < xdrs.length; cIdx++) {
+    const chunk = payoutBatch.chunks[cIdx];
+    if (["verified", "submitted"].includes(chunk.status)) continue;
+    if (chunk.status === "unknown") {
+      throw new Error(`Chunk ${cIdx} requires on-chain reconciliation before retry`);
+    }
+    chunk.status = "submitting";
+    payoutBatch.status = "submitted";
+    await payoutBatch.save();
     const signedXdr = xdrs[cIdx];
     const chunkRecipients = payoutBatch.recipients.slice(
       cIdx * CHUNK_SIZE,
@@ -303,11 +313,9 @@ export const submitPayoutBatch = async ({ batchId, signedXdrs }) => {
       submitResult = await submitTransaction(signedXdr);
     } catch (stellarError) {
       payoutBatch.status = "failed";
+      chunk.status = "unknown";
+      chunk.lastError = stellarError.message;
       payoutBatch.failureReason = `Submission failed for chunk ${cIdx}: ${stellarError.message}`;
-      await payoutBatch.save();
-
-      // Revert to built status as required by spec so batch can be fixed/resubmitted
-      payoutBatch.status = "built";
       await payoutBatch.save();
 
       throw new Error(`Stellar submission failed: ${stellarError.message}`);
@@ -326,18 +334,19 @@ export const submitPayoutBatch = async ({ batchId, signedXdrs }) => {
     if (!verification.verified) {
       const reason = `Verification failed for chunk ${cIdx}: ${verification.reason}`;
       payoutBatch.status = "failed";
+      chunk.status = "failed";
+      chunk.lastError = reason;
       payoutBatch.failureReason = reason;
-      await payoutBatch.save();
-
-      // Revert to built status as required by spec
-      payoutBatch.status = "built";
       await payoutBatch.save();
 
       throw new Error(reason);
     }
 
     // Save hash back to chunk if verification passed
-    payoutBatch.chunks[cIdx].hash = submitResult.hash;
+    chunk.transactionHash = submitResult.hash;
+    chunk.status = "verified";
+    chunk.submittedAt = new Date();
+    chunk.verifiedAt = new Date();
   }
 
   // 2. All chunks submitted & verified successfully -> Move owed to settled atomically
@@ -391,7 +400,7 @@ export const submitPayoutBatch = async ({ batchId, signedXdrs }) => {
     };
   } catch (error) {
     await session.abortTransaction();
-    payoutBatch.status = "built";
+    payoutBatch.status = "failed";
     payoutBatch.failureReason = error.message;
     await payoutBatch.save();
     throw error;

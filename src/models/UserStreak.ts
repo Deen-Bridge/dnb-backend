@@ -44,4 +44,6 @@ const userStreakSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+userStreakSchema.index({ lastActiveDate: 1 });
+
 export default mongoose.model("UserStreak", userStreakSchema);

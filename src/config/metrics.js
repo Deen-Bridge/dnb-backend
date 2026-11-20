@@ -2,6 +2,17 @@ import promClient from "prom-client";
 import logger from "./logger.js";
 
 const registry = new promClient.Registry();
+const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
+const ALLOWED_OUTCOMES = new Set(["success", "error", "timeout", "rate_limited"]);
+const ALLOWED_REASONS = new Set(["validation_failed", "stellar_error", "verification_failed", "provider_error", "timeout", "rate_limited", "other"]);
+const boundedLabel = (value, allowed, fallback = "other") => {
+  const normalized = String(value || "").toLowerCase().slice(0, 64);
+  return allowed.has(normalized) ? normalized : fallback;
+};
+const safeRoute = (route) => String(route || "unknown").split("/").map((part) => {
+  if (!part) return "";
+  return /^[a-f0-9]{16,}$/i.test(part) || /^\d+$/.test(part) ? ":id" : part.slice(0, 48);
+}).join("/") || "unknown";
 
 promClient.collectDefaultMetrics({ register: registry });
 
@@ -67,14 +78,14 @@ const sponsorshipsRejected = new promClient.Counter({
 
 function observeHttpDuration(method, route, statusCode, durationMs) {
   httpRequestDuration.observe(
-    { method, route: route || "unknown", status_code: String(statusCode) },
+    { method: ALLOWED_METHODS.has(method) ? method : "OTHER", route: safeRoute(route), status_code: ["2", "3", "4", "5"].includes(String(statusCode)[0]) ? String(statusCode)[0] + "xx" : "other" },
     durationMs / 1000
   );
 }
 
 function observeHorizonDuration(operation, outcome, durationMs) {
   horizonRequestDuration.observe(
-    { operation, outcome },
+    { operation: safeRoute(operation).replace(/[^a-z0-9_:/-]/gi, "_").slice(0, 64), outcome: boundedLabel(outcome, ALLOWED_OUTCOMES) },
     durationMs / 1000
   );
 }

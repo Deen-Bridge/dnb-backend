@@ -13,7 +13,7 @@ import {
   getReelDerivatives,
 } from "../controllers/reelController.js";
 import { protect } from "../middlewares/authMiddleware.js";
-import upload from "../middlewares/upload.js";
+import { uploadVideo } from "../middlewares/upload.js";
 import { validate, sanitizeInput } from "../middlewares/validate.js";
 import {
   createReelDuetValidation,
@@ -35,7 +35,7 @@ router.get("/:id", protect, reelIdValidation, validate, getReelById);
 router.post(
   "/",
   protect,
-  upload.single("video"),
+  uploadVideo.single("video"),
   sanitizeInput,
   createReelValidation,
   validate,
@@ -78,7 +78,7 @@ router.post("/:id/view", protect, reelIdValidation, validate, registerReelView);
 router.post(
   "/:id/duet",
   protect,
-  upload.single("video"),
+  uploadVideo.single("video"),
   sanitizeInput,
   createReelDuetValidation,
   validate,

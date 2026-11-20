@@ -35,9 +35,9 @@ const router = express.Router();
 const userCacheKey = (req) => `${CACHE_KEYS.USER}${req.params.id}`;
 const userStatsCacheKey = (req) => `${CACHE_KEYS.USER}${req.params.id}:stats`;
 const followersCacheKey = (req) =>
-  `${CACHE_KEYS.USER}${req.params.userId}:followers`;
+  `${CACHE_KEYS.USER}${req.params.userId}:followers:${req.query.page || 1}:${req.query.limit || 20}`;
 const followingCacheKey = (req) =>
-  `${CACHE_KEYS.USER}${req.params.userId}:following`;
+  `${CACHE_KEYS.USER}${req.params.userId}:following:${req.query.page || 1}:${req.query.limit || 20}`;
 
 // GDPR data export for the authenticated account.
 router.get("/me/export", protect, exportMyData);

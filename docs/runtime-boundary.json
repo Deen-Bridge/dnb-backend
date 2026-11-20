@@ -1,0 +1,22 @@
+{
+  "controllers/certificate.controller": "typescript-staging-js-runtime",
+  "controllers/course-bundle.controller": "typescript-staging-js-runtime",
+  "controllers/highlight.controller": "typescript-staging-js-runtime",
+  "controllers/reading-group.controller": "typescript-staging-js-runtime",
+  "middlewares/dateFormatter": "typescript-staging-js-runtime",
+  "models/certificate.model": "typescript-staging-js-runtime",
+  "models/content-flag.model": "typescript-staging-js-runtime",
+  "models/course-bundle.model": "typescript-staging-js-runtime",
+  "models/highlight.model": "typescript-staging-js-runtime",
+  "models/reading-group-member.model": "typescript-staging-js-runtime",
+  "models/reading-group.model": "typescript-staging-js-runtime",
+  "routes/certificate.routes": "typescript-staging-js-runtime",
+  "routes/course-bundle.routes": "typescript-staging-js-runtime",
+  "services/certificate.service": "typescript-staging-js-runtime",
+  "services/course-bundle.service": "typescript-staging-js-runtime",
+  "services/highlight.service": "typescript-staging-js-runtime",
+  "services/reading-group.service": "typescript-staging-js-runtime",
+  "templates/certificate.template": "typescript-staging-js-runtime",
+  "utils/hijriCalendar": "typescript-staging-js-runtime",
+  "utils/profileCompletion": "typescript-staging-js-runtime"
+}

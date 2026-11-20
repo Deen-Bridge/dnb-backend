@@ -1,4 +1,5 @@
 import logger from "../../src/config/logger.js";
+import crypto from "node:crypto";
 
 const NODE_ENV = () => process.env.NODE_ENV || "development";
 const FRONTEND_URL = () => process.env.FRONTEND_URL || "http://localhost:3000";
@@ -6,6 +7,15 @@ const ASSET_URL = () =>
   process.env.EMAIL_ASSET_URL || `${FRONTEND_URL()}/images`;
 
 const SENDLIB_API_URL = () => process.env.SENDLIB_API_URL || "";
+const escapeHtml = (value = "") =>
+  String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[char]));
+const newDeliveryId = () => "mail_" + crypto.randomUUID();
 
 // Must be the Gmail / Google Workspace address connected in SendLib.
 const getFrom = () => process.env.EMAIL_FROM || "";
@@ -93,6 +103,10 @@ const sendMail = async ({
   attachments,
   template = "generic",
 }) => {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(to || ""))) {
+    throw new Error("Invalid email recipient");
+  }
+  const deliveryId = newDeliveryId();
   const apiKey = process.env.SENDLIB_API_KEY || "";
   const apiUrl = SENDLIB_API_URL();
   const from = getFrom();
@@ -103,7 +117,7 @@ const sendMail = async ({
   // applies to any object it serializes.
   if (!apiKey || !apiUrl) {
     logger.warn(
-      { template },
+      { template, deliveryId },
       "SENDLIB_API_KEY / SENDLIB_API_URL not set — email not sent"
     );
     if (NODE_ENV() === "test") {
@@ -114,7 +128,7 @@ const sendMail = async ({
       return rendered;
     }
     logger.info(
-      { template, to, subject },
+      { template, deliveryId },
       "[EMAIL SKIPPED] email not sent (transport unconfigured)"
     );
     return null;
@@ -133,14 +147,28 @@ const sendMail = async ({
   if (attachments) body.attachments = attachments;
 
   try {
-    const response = await fetch(apiUrl, {
+    const endpoint = new URL(apiUrl);
+    if (!/^https?:$/.test(endpoint.protocol)) throw new Error("Invalid email provider URL");
+    let response;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      try {
+        response = await fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (response.ok || ![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(
@@ -148,13 +176,13 @@ const sendMail = async ({
       );
     }
     const messageId = payload.messageId || payload.id;
-    logger.info({ template, to, messageId }, "Email sent");
+    logger.info({ template, deliveryId, messageId }, "Email sent");
     return payload;
   } catch (error) {
-    logger.error({ template, to, err: error.message }, "Failed to send email");
+    logger.error({ template, deliveryId, code: error.message }, "Failed to send email");
     if (NODE_ENV() === "development") {
       // Subject only — never log the body (contains OTP/token).
-      logger.info({ template, to, subject }, "[DEV FALLBACK] email not sent");
+      logger.info({ template, deliveryId }, "[DEV FALLBACK] email not sent");
       return;
     }
     throw error;
@@ -171,7 +199,7 @@ export const sendOtpEmail = async (otp, email) => {
       We received a request to reset your password. Use the code below to proceed:
     </p>
     <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 8px;">
-      <span style="font-size: 34px; font-weight: 700; letter-spacing: 10px; color: #166534;">${otp}</span>
+      <span style="font-size: 34px; font-weight: 700; letter-spacing: 10px; color: #166534;">${escapeHtml(otp)}</span>
     </div>
     <p style="margin: 16px 0 0; color: #6b7280; font-size: 13px; line-height: 1.6;">
       This code expires in <strong>1 hour</strong>. If you didn't request a password reset, you can safely ignore this email — your password will not be changed.
@@ -203,11 +231,11 @@ export const sendReceiptEmail = async (receipt) => {
       ${receipt.amount ? `
         <tr>
           <td style="padding: 14px 20px; color: #6b7280; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Amount</td>
-          <td style="padding: 14px 20px; color: #111827; font-size: 14px; font-weight: 600; text-align: right; border-bottom: 1px solid #e5e7eb;">${receipt.amount}</td>
+          <td style="padding: 14px 20px; color: #111827; font-size: 14px; font-weight: 600; text-align: right; border-bottom: 1px solid #e5e7eb;">${escapeHtml(receipt.amount)}</td>
         </tr>` : ""}
       <tr>
         <td style="padding: 14px 20px; color: #6b7280; font-size: 13px;">Transaction Hash</td>
-        <td style="padding: 14px 20px; color: #166534; font-size: 13px; font-weight: 500; text-align: right; word-break: break-all;">${receipt.txHash}</td>
+        <td style="padding: 14px 20px; color: #166534; font-size: 13px; font-weight: 500; text-align: right; word-break: break-all;">${escapeHtml(receipt.txHash)}</td>
       </tr>
     </table>
     <p style="margin: 0; color: #6b7280; font-size: 13px; line-height: 1.6;">

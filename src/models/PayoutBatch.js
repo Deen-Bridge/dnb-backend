@@ -37,6 +37,12 @@ const chunkSchema = new mongoose.Schema(
     hash: {
       type: String,
     },
+    idempotencyKey: { type: String, required: true },
+    status: { type: String, enum: ["built", "submitting", "submitted", "verified", "unknown", "failed"], default: "built" },
+    transactionHash: { type: String },
+    lastError: { type: String },
+    submittedAt: { type: Date },
+    verifiedAt: { type: Date },
   },
   { _id: false }
 );

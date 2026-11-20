@@ -5,6 +5,7 @@ import { jest } from "@jest/globals";
 const User = { findById: jest.fn(), findByIdAndUpdate: jest.fn() };
 const upload_stream = jest.fn();
 const validateMagicBytes = jest.fn();
+const scanUpload = jest.fn();
 const getUserBadges = jest.fn();
 const UserPreferences = {
   findOne: jest.fn(),
@@ -31,6 +32,7 @@ jest.unstable_mockModule("../src/controllers/notificationController.js", () => (
 jest.unstable_mockModule("../src/services/badge.service.js", () => ({
   default: { getUserBadges },
 }));
+jest.unstable_mockModule("../src/security/uploadScanner.js", () => ({ scanUpload }));
 jest.unstable_mockModule("../src/middlewares/authMiddleware.js", () => ({
   protect: (_req, _res, next) => next(),
 }));
@@ -67,6 +69,7 @@ const mockFindByIdChain = (result, { reject } = {}) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  scanUpload.mockResolvedValue({ verdict: "clean" });
 });
 
 describe("userController.updateUser", () => {
@@ -107,6 +110,57 @@ describe("userController.updateUser", () => {
     expect(upload_stream).toHaveBeenCalledWith({ folder: "user-avatars" }, expect.any(Function));
     expect(User.findByIdAndUpdate.mock.calls[0][1]).toEqual({ avatar: "https://cdn/avatar.png" });
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("scans the avatar before publishing it to Cloudinary", async () => {
+    validateMagicBytes.mockResolvedValue(true);
+    upload_stream.mockImplementation((_opts, cb) => ({
+      end: () => cb(null, { secure_url: "https://cdn/avatar.png" }),
+    }));
+    User.findByIdAndUpdate.mockResolvedValue({ _id: "u1" });
+    const res = mockRes();
+
+    await updateUser(
+      { user: owner, params: { id: "u1" }, body: {}, file: { buffer: Buffer.from("img") } },
+      res
+    );
+
+    expect(scanUpload).toHaveBeenCalledWith({
+      buffer: expect.any(Buffer),
+      originalName: undefined,
+      mimeType: undefined,
+    });
+    expect(upload_stream).toHaveBeenCalled();
+  });
+
+  it("returns 400 and skips publication when malware is detected", async () => {
+    validateMagicBytes.mockResolvedValue(true);
+    scanUpload.mockRejectedValue(Object.assign(new Error("infected"), { code: "MALWARE_DETECTED" }));
+    const res = mockRes();
+
+    await updateUser(
+      { user: owner, params: { id: "u1" }, body: {}, file: { buffer: Buffer.from("img") } },
+      res
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(upload_stream).not.toHaveBeenCalled();
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 and skips publication when the scanner is unavailable", async () => {
+    validateMagicBytes.mockResolvedValue(true);
+    scanUpload.mockRejectedValue(Object.assign(new Error("scanner down"), { code: "SCANNER_UNAVAILABLE" }));
+    const res = mockRes();
+
+    await updateUser(
+      { user: owner, params: { id: "u1" }, body: {}, file: { buffer: Buffer.from("img") } },
+      res
+    );
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(upload_stream).not.toHaveBeenCalled();
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   it("returns 403 when updating another user's profile as non-admin", async () => {
