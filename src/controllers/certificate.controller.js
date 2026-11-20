@@ -1,4 +1,5 @@
 import certificateService from "../services/certificate.service.js";
+import mongoose from "mongoose";
 
 export const generateCertificateController = async (req, res) => {
   try {
@@ -46,7 +47,15 @@ export const getCertificateByIdController = async (req, res) => {
 
 export const getUserCertificatesController = async (req, res) => {
   try {
-    const userId = req.params.userId || req.user._id;
+    const requestedUserId = req.params.userId;
+    if (requestedUserId && !mongoose.Types.ObjectId.isValid(requestedUserId)) {
+      return res.status(404).json({ success: false, message: "Certificates not found" });
+    }
+    const userId = requestedUserId || req.user._id;
+    const isAdmin = req.user.role === "admin";
+    if (requestedUserId && requestedUserId !== req.user._id.toString() && !isAdmin) {
+      return res.status(403).json({ success: false, message: "You can only view your own certificates" });
+    }
     const certificates = await certificateService.getUserCertificates(userId);
     res.status(200).json({
       success: true,
