@@ -7,6 +7,45 @@ import logger from "../../config/logger.js";
 import { APIError } from "../../middlewares/errorHandler.js";
 
 const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const SEARCH_TYPES = new Set(["all", "courses", "books", "spaces", "reels", "educators"]);
+const SEARCH_SORTS = new Set(["price", "price_desc", "rating", "relevance"]);
+
+const normalizeSearchValue = (value, maxLength = 100) =>
+  typeof value === "string" ? value.normalize("NFKC").trim().slice(0, maxLength) : value;
+
+export const normalizeSearchOptions = ({ q = "", type = "all", sort, page = 1, limit = 20, filters = {} }) => {
+  const normalizedType = normalizeSearchValue(type, 20) || "all";
+  const normalizedSort = sort ? normalizeSearchValue(sort, 20) : undefined;
+  if (!SEARCH_TYPES.has(normalizedType)) throw new APIError("Invalid search type", 400);
+  if (normalizedSort && !SEARCH_SORTS.has(normalizedSort)) throw new APIError("Invalid search sort", 400);
+
+  const parseMoney = (name) => {
+    if (filters[name] === undefined || filters[name] === "") return undefined;
+    const value = Number(filters[name]);
+    if (!Number.isFinite(value) || value < 0 || value > 1_000_000_000) {
+      throw new APIError(`${name} must be a non-negative finite number`, 400);
+    }
+    return value;
+  };
+
+  const minPrice = parseMoney("minPrice");
+  const maxPrice = parseMoney("maxPrice");
+  if (minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice) {
+    throw new APIError("minPrice cannot exceed maxPrice", 400);
+  }
+  if (filters.free !== undefined && ![true, false, "true", "false"].includes(filters.free)) {
+    throw new APIError("free must be a boolean", 400);
+  }
+  const normalizedQuery = normalizeSearchValue(q, 100) || "";
+  return {
+    q: normalizedQuery,
+    type: normalizedType,
+    sort: normalizedSort,
+    page: Math.max(1, Math.min(10000, Number(page) || 1)),
+    limit: Math.min(100, Math.max(1, Number(limit) || 20)),
+    filters: { ...filters, minPrice, maxPrice, category: normalizeSearchValue(filters.category, 100), interest: normalizeSearchValue(filters.interest, 100) },
+  };
+};
 
 /**
  * Encode a MongoDB ObjectId into an opaque cursor string.
@@ -113,6 +152,7 @@ const useCursorPagination = (q, sort) => {
 };
 
 export const searchCollections = async ({ q, type = "all", page = 1, limit = 10, sort, cursor, filters = {} }) => {
+  ({ q, type, page, limit, sort, filters } = normalizeSearchOptions({ q, type, page, limit, sort, filters }));
   const normalizedFilters = { ...filters };
   if (filters.minRating !== undefined) {
     const minRating = Number(filters.minRating);
@@ -212,6 +252,10 @@ export const searchCollections = async ({ q, type = "all", page = 1, limit = 10,
 };
 
 export const searchEducators = async ({ q, interest, page = 1, limit = 10, cursor }) => {
+  q = normalizeSearchValue(q, 100) || "";
+  interest = normalizeSearchValue(interest, 100);
+  page = Math.max(1, Math.min(10000, Number(page) || 1));
+  limit = Math.min(100, Math.max(1, Number(limit) || 20));
   const validLimit = Math.min(100, Math.max(1, Number(limit) || 20));
 
   let cursorId = null;
