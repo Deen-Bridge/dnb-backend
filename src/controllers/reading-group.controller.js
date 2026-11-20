@@ -135,7 +135,7 @@ export const getDiscussions = async (req, res) => {
     const { id } = req.params;
     const chapter = req.query.chapter ? parseInt(req.query.chapter, 10) : undefined;
 
-    const discussions = await readingGroupService.getDiscussions(id, chapter);
+    const discussions = await readingGroupService.getDiscussions(id, chapter, req.user?._id);
     res.status(200).json({ success: true, discussions });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -165,7 +165,7 @@ export const getMemberProgressDashboard = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const dashboard = await readingGroupService.getMemberProgressDashboard(id);
+    const dashboard = await readingGroupService.getMemberProgressDashboard(id, req.user?._id);
     res.status(200).json({ success: true, ...dashboard });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });

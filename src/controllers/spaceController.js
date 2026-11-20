@@ -1,5 +1,6 @@
 import Space from "../models/Space.js";
 import cloudinary from "../utils/cloudinary.js";
+import { assertSpaceTransition, validateSpaceSchedule } from "../validators/spaceLifecycle.js";
 
 // 📚 Get all spaces
 export const getSpaces = async (_req, res) => {
@@ -30,9 +31,10 @@ export const getSpaceById = async (req, res) => {
 // ➕ Create a new space
 export const createSpace = async (req, res) => {
   try {
-    const { title, description, category, price, status, eventDate, duration } =
+    const { title, description, category, price, eventDate, eventTime, duration } =
       req.body;
     const user = req.user; // from auth middleware
+    const schedule = validateSpaceSchedule({ eventDate, eventTime, duration, price });
 
     // Handle thumbnail upload
     let thumbnailUrl = "";
@@ -55,11 +57,13 @@ export const createSpace = async (req, res) => {
       description,
       category,
       thumbnail: thumbnailUrl,
-      price: price || 0,
+      price: schedule.price,
       status: "upcoming",
-      eventDate,
-      duration,
+      eventDate: schedule.date,
+      eventTime,
+      duration: schedule.duration,
       host: user._id,
+      lifecycleHistory: [{ status: "upcoming", changedBy: user._id }],
     });
     res.status(201).json({ success: true, space });
   } catch (error) {
@@ -78,7 +82,6 @@ export const updateSpace = async (req, res) => {
       "category",
       "thumbnail",
       "price",
-      "status",
       "eventDate",
       "eventTime",
       "duration",
@@ -92,6 +95,24 @@ export const updateSpace = async (req, res) => {
     const existingSpace = req.resource || (await Space.findById(id));
     if (!existingSpace) {
       return res.status(404).json({ success: false, message: "Space not found" });
+    }
+
+    if (updates.eventDate !== undefined || updates.eventTime !== undefined || updates.duration !== undefined || updates.price !== undefined) {
+      validateSpaceSchedule({
+        eventDate: updates.eventDate ?? existingSpace.eventDate,
+        eventTime: updates.eventTime ?? existingSpace.eventTime,
+        duration: updates.duration ?? existingSpace.duration,
+        price: updates.price ?? existingSpace.price,
+      }, { requireFuture: existingSpace.status === "upcoming" });
+    }
+    if (req.body.status !== undefined) assertSpaceTransition(existingSpace.status, req.body.status);
+    if (req.body.status !== undefined && req.body.status !== existingSpace.status) {
+      updates.lifecycleHistory = [...(existingSpace.lifecycleHistory || []), {
+        status: req.body.status,
+        changedAt: new Date(),
+        changedBy: req.user._id,
+      }];
+      updates.status = req.body.status;
     }
 
     const space = await Space.findByIdAndUpdate(id, updates, {

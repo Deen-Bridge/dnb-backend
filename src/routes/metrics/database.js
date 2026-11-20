@@ -1,5 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
+import crypto from "node:crypto";
 import poolMetrics from "../../../mongo/monitoring/poolMetrics.js";
 
 const router = express.Router();
@@ -18,6 +19,13 @@ const router = express.Router();
  */
 router.get("/", (req, res) => {
   try {
+    const expected = process.env.METRICS_DATABASE_TOKEN;
+    const supplied = req.get("authorization")?.startsWith("Bearer ")
+      ? req.get("authorization").slice(7)
+      : "";
+    if (!expected) return res.status(503).json({ success: false, message: "Database metrics are not configured" });
+    const matches = supplied.length === expected.length && crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+    if (!matches) return res.status(401).json({ success: false, message: "Unauthorized" });
     if (
       !poolMetrics.isAttached() &&
       mongoose.connection &&
@@ -26,10 +34,15 @@ router.get("/", (req, res) => {
       poolMetrics.attach(mongoose.connection);
     }
   } catch {
-    // Never let instrumentation wiring break the scrape.
+    return res.status(503).json({ success: false, message: "Database metrics are unavailable" });
+  }
+
+  if (!poolMetrics.isAttached()) {
+    return res.status(503).json({ success: false, message: "Database metrics are unavailable" });
   }
 
   res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
   res.status(200).send(poolMetrics.render());
 });
 

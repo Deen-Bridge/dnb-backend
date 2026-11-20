@@ -36,7 +36,6 @@ import bookRoutes from "./src/routes/books/bookRoutes.js";
 import recommendedBooksRoutes from "./src/routes/books/recommendedBooksRoutes.js";
 import readingProgressRoutes from "./src/routes/books/readingProgressRoutes.js";
 import spacesRoutes from "./src/routes/spaceRoutes.js";
-import emailRoutes from "./src/routes/emailRoutes.js";
 import purchaseRoutes from "./src/routes/books/purchaseBookRoutes.js";
 import searchRoutes from "./src/routes/searchRoutes.js";
 import callRoutes from "./src/routes/callRoutes.js";
@@ -159,6 +158,7 @@ const corsOptions = {
       "http://localhost:3001",
       "https://deenbridge.vercel.app",
       "http://deenbridge.vercel.app",
+      ...(process.env.CORS_ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean),
     ];
 
     if (!origin) return callback(null, true);
@@ -229,7 +229,9 @@ app.get("/", (req, res) => {
 });
 
 app.get("/ping", ping);
-app.get("/health", healthCheck);
+app.get("/health", ping);
+app.get("/health/live", ping);
+app.get("/health/ready", healthCheck);
 app.use("/health/database", databaseHealthRoutes);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter
@@ -239,7 +241,6 @@ app.use("/.well-known", wellKnownRoutes);
 app.use("/api/auth", ipBlockMiddleware, authLimiter, authRoutes);
 
 // Mutation routes — standard limiter
-app.use("/api/email", standardLimiter, emailRoutes);
 app.use("/api/purchase", standardLimiter, purchaseRoutes);
 app.use("/api/uploads", standardLimiter, uploadRoutes);
 app.use("/api/payouts", standardLimiter, payoutRoutes);

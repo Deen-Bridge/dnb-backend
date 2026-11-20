@@ -81,6 +81,8 @@ export const AUDIT_ACTIONS = Object.freeze({
 
   // Bulk notifications (issue #123)
   NOTIFICATION_BULK_SENT:    "notification.bulk_sent",
+  SECURITY_IP_BLOCK:         "security.ip_block",
+  SECURITY_IP_UNBLOCK:       "security.ip_unblock",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);

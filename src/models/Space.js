@@ -31,9 +31,14 @@ const spaceSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["live", "upcoming", "ended"],
+      enum: ["live", "upcoming", "ended", "cancelled"],
       default: "upcoming",
     },
+    lifecycleHistory: [{
+      status: { type: String, enum: ["live", "upcoming", "ended", "cancelled"] },
+      changedAt: { type: Date, default: Date.now },
+      changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    }],
     eventDate: {
       type: Date,
       required: true,
