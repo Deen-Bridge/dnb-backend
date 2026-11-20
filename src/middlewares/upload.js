@@ -33,6 +33,14 @@ const bookFilter = (req, file, cb) => {
   }
 };
 
+const videoFilter = (req, file, cb) => {
+  if (!isSafeUploadName(file.originalname)) return cb(new APIError("Invalid upload filename.", 400));
+  if (["video/mp4", "video/webm", "video/quicktime", "video/x-matroska"].includes(file.mimetype)) {
+    return cb(null, true);
+  }
+  return cb(new APIError("Invalid video format. Use MP4, WebM, MOV, or MKV.", 400));
+};
+
 // Accepted audio mimetypes for audiobook uploads (MP3 and M4A, including the
 // alternate MIME labels browsers/clients commonly send for them).
 const AUDIO_MIMES = [
@@ -59,6 +67,12 @@ export const uploadBook = multer({
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: bookFilter,
+});
+
+export const uploadVideo = multer({
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: videoFilter,
 });
 
 // Default export for backward compatibility where not yet replaced
