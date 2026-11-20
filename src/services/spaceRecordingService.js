@@ -15,11 +15,16 @@ import logger from "../config/logger.js";
  * @param {string} userId    - User._id initiating the recording
  * @param {object} payload   - { url, assetId, mimeType, fileSize, sessionStartedAt }
  */
-export const startRecording = async (spaceId, userId, payload = {}) => {
+export const startRecording = async (spaceId, userId, payload = {}, userRole) => {
   const space = await Space.findById(spaceId);
   if (!space) {
     const err = new Error("Space not found");
     err.statusCode = 404;
+    throw err;
+  }
+  if (userRole !== "admin" && space.host.toString() !== userId.toString()) {
+    const err = new Error("Only the space host can start a recording");
+    err.statusCode = 403;
     throw err;
   }
 
@@ -44,13 +49,27 @@ export const startRecording = async (spaceId, userId, payload = {}) => {
  * @param {string} recordingId
  * @param {object} updates - { url, assetId, duration, fileSize, sessionEndedAt }
  */
-export const finaliseRecording = async (recordingId, updates = {}) => {
-  const recording = await SpaceRecording.findById(recordingId);
+export const finaliseRecording = async (spaceId, recordingId, updates = {}, requesterId, userRole) => {
+  const recording = await SpaceRecording.findOne({ _id: recordingId, space: spaceId });
   if (!recording) {
     const err = new Error("Recording not found");
     err.statusCode = 404;
     throw err;
   }
+  if (userRole !== "admin" && recording.recordedBy.toString() !== requesterId.toString()) {
+    const err = new Error("Only the recording owner can finalise it");
+    err.statusCode = 403;
+    throw err;
+  }
+  if (updates.url && (!/^https:\/\//i.test(updates.url) || !/cloudinary\.com\//i.test(updates.url))) {
+    const err = new Error("Recording URL must be an HTTPS Cloudinary URL");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (updates.mimeType && !String(updates.mimeType).startsWith("video/")) throw new Error("Recording must be a video");
+  if (updates.fileSize !== undefined && (!Number.isFinite(Number(updates.fileSize)) || Number(updates.fileSize) > 100 * 1024 * 1024)) throw new Error("Recording file is too large");
+  if (updates.duration !== undefined && (!Number.isFinite(Number(updates.duration)) || Number(updates.duration) <= 0)) throw new Error("Recording duration is invalid");
+  if (recording.status !== "processing") return recording;
 
   Object.assign(recording, {
     ...updates,
@@ -73,12 +92,12 @@ export const listRecordingsForSpace = async (spaceId, { page = 1, limit = 20 } =
   const skip = (page - 1) * limit;
 
   const [recordings, total] = await Promise.all([
-    SpaceRecording.find({ space: spaceId, status: "ready" })
+      SpaceRecording.find({ space: spaceId, status: "ready", isPublic: true })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .populate("recordedBy", "name avatar"),
-    SpaceRecording.countDocuments({ space: spaceId, status: "ready" }),
+      SpaceRecording.countDocuments({ space: spaceId, status: "ready", isPublic: true }),
   ]);
 
   return { recordings, total, page, limit };
@@ -89,12 +108,18 @@ export const listRecordingsForSpace = async (spaceId, { page = 1, limit = 20 } =
  *
  * @param {string} recordingId
  */
-export const getRecordingById = async (recordingId) => {
-  const recording = await SpaceRecording.findById(recordingId)
+export const getRecordingById = async (spaceId, recordingId, requesterId, userRole) => {
+  const recording = await SpaceRecording.findOne({ _id: recordingId, space: spaceId })
     .populate("recordedBy", "name avatar")
     .populate("space", "title description");
 
   if (!recording) {
+    const err = new Error("Recording not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  const ownerId = recording.recordedBy?._id || recording.recordedBy;
+  if ((recording.status !== "ready" || recording.isPublic !== true) && userRole !== "admin" && ownerId.toString() !== requesterId.toString()) {
     const err = new Error("Recording not found");
     err.statusCode = 404;
     throw err;

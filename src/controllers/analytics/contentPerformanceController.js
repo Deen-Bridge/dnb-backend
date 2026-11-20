@@ -10,7 +10,9 @@ import contentMetricsService from "../../services/analytics/contentMetricsServic
  */
 export const getContentPerformance = async (req, res) => {
   try {
-    const performance = await contentMetricsService.getContentPerformance();
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const performance = await contentMetricsService.getContentPerformance({ page, limit });
     res.status(200).json({ success: true, ...performance });
   } catch (error) {
     logger.error("Failed to compute content performance:", error);

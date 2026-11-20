@@ -4,7 +4,7 @@ const MILESTONES = [7, 30, 100];
 
 export const recordActivity = async (userId: string, activityType: string = "general") => {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
 
   let streak = await UserStreak.findOne({ user: userId });
   if (!streak) {
@@ -20,7 +20,7 @@ export const recordActivity = async (userId: string, activityType: string = "gen
 
   const lastActive = streak.lastActiveDate ? new Date(streak.lastActiveDate) : null;
   if (lastActive) {
-    lastActive.setHours(0, 0, 0, 0);
+    lastActive.setUTCHours(0, 0, 0, 0);
   }
 
   const diffDays = lastActive ? Math.round((today.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24)) : null;
@@ -48,7 +48,10 @@ export const recordActivity = async (userId: string, activityType: string = "gen
   }
 
   streak.lastActiveDate = new Date();
-  streak.activityHistory.push({ date: new Date(), activityType });
+  streak.activityHistory.push({ date: today, activityType });
+  if (streak.activityHistory.length > 1000) {
+    streak.activityHistory = streak.activityHistory.slice(-1000);
+  }
 
   // Check milestones
   for (const m of MILESTONES) {
@@ -78,27 +81,26 @@ export const getStreakStatus = async (userId: string) => {
 };
 
 export const useStreakFreeze = async (userId: string) => {
-  const streak = await UserStreak.findOne({ user: userId });
-  if (!streak) {
-    throw new Error("Streak record not found");
-  }
-  if (streak.streakFreezes <= 0) {
-    throw new Error("No streak freezes available");
-  }
-  streak.streakFreezes -= 1;
-  await streak.save();
+  const streak = await UserStreak.findOneAndUpdate(
+    { user: userId, streakFreezes: { $gt: 0 } },
+    { $inc: { streakFreezes: -1 } },
+    { new: true }
+  );
+  if (!streak) throw new Error("No streak freezes available");
   return streak;
 };
 
 export const checkDailyStreaksJob = async () => {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
 
-  const streaks = await UserStreak.find({});
+  const streaks = await UserStreak.find({ lastActiveDate: { $lt: today } })
+    .sort({ lastActiveDate: 1 })
+    .limit(500);
   for (const streak of streaks) {
     if (!streak.lastActiveDate) continue;
     const lastActive = new Date(streak.lastActiveDate);
-    lastActive.setHours(0, 0, 0, 0);
+    lastActive.setUTCHours(0, 0, 0, 0);
 
     const diffDays = Math.round((today.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays > 1) {

@@ -30,7 +30,9 @@ const handleCastErrorDB = (err) => {
 };
 
 const handleDuplicateFieldsDB = (err) => {
-  return new APIError("A record with those details already exists.", 409);
+  // Driver versions expose duplicate-key metadata as errmsg, message, or
+  // keyValue. Never include any of those raw values in the public response.
+  return new APIError("A record with these values already exists.", 409);
 };
 
 const handleValidationErrorDB = (err) => {
@@ -112,6 +114,13 @@ const sendError = (err, req, res) => {
 export const errorHandler = (err, req, res, next) => {
   if (res?.headersSent) return next?.(err);
   if (!err || typeof err !== "object") err = new Error("Unknown error");
+  if (!(err instanceof Error)) {
+    try {
+      err = Object.assign(new Error("Unknown error"), err);
+    } catch {
+      err = new Error("Unknown error");
+    }
+  }
   err.statusCode = Number.isInteger(err.statusCode) ? err.statusCode : 500;
   err.status = err.status || "error";
 
@@ -144,7 +153,7 @@ export const errorHandler = (err, req, res, next) => {
 
 export const catchAsync = (fn) => {
   return (req, res, next) => {
-    Promise.resolve().then(() => fn(req, res, next)).catch(next);
+    return Promise.resolve().then(() => fn(req, res, next)).catch(next);
   };
 };
 

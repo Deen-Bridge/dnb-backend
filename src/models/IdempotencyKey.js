@@ -18,6 +18,8 @@ const idempotencyKeySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    operation: { type: String, required: true, trim: true },
+    scope: { type: String, required: true, trim: true },
     requestHash: {
       type: String,
       required: true,
@@ -44,9 +46,8 @@ const idempotencyKeySchema = new mongoose.Schema(
 );
 
 // Unique compound index on { key, userId, endpoint } for concurrency lock
-idempotencyKeySchema.index(
-  { key: 1, userId: 1, endpoint: 1 },
-  { unique: true }
-);
+// The key is globally owned so it cannot be replayed in another user or route
+// context. Drop the previous compound index during deployment.
+idempotencyKeySchema.index({ key: 1 }, { unique: true });
 
 export default mongoose.model("IdempotencyKey", idempotencyKeySchema);

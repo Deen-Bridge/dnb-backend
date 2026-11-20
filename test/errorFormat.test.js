@@ -61,7 +61,7 @@ describe("Standardized error response format", () => {
       expect(() => errorHandler(err, req, res, next)).not.toThrow();
       const body = res.json.mock.calls[0][0];
       expect(body.error.code).toBe(ERROR_CODES.CONFLICT);
-      expect(body.error.message).toBe("A record with those details already exists.");
+      expect(body.error.message).toBe("A record with these values already exists.");
       expect(JSON.stringify(body)).not.toContain("duplicate");
     });
 
@@ -171,6 +171,21 @@ describe("Standardized error response format", () => {
       const body = res.json.mock.calls[0][0];
       expect(body.success).toBe(false);
       expect(body.error.code).toBe(ERROR_CODES.NETWORK_UNAVAILABLE);
+    });
+
+    it("normalizes duplicate-key errors without assuming driver metadata exists", () => {
+      for (const err of [
+        Object.assign(new Error(), { code: 11000, errmsg: "E11000 duplicate key" }),
+        Object.assign(new Error(), { code: 11000, message: "duplicate key" }),
+        Object.assign(new Error(), { code: 11000 }),
+      ]) {
+        errorHandler(err, req, res, next);
+        const body = res.json.mock.calls.at(-1)[0];
+        expect(res.status).toHaveBeenLastCalledWith(409);
+        expect(body.error.code).toBe(ERROR_CODES.CONFLICT);
+        expect(body.error.message).toBe("A record with these values already exists.");
+        expect(JSON.stringify(body)).not.toContain("E11000");
+      }
     });
   });
 

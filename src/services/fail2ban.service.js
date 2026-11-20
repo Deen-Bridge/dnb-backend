@@ -56,7 +56,7 @@ const client = () => {
 const normalize = (ip) => String(ip || "").trim().replace(/^::ffff:/i, "");
 
 /** Record a failed attempt. Returns the block info if this failure triggered one. */
-export async function recordFailure(ip) {
+export async function recordFailure(ip, context = {}) {
   const addr = normalize(ip);
   const redis = client();
   if (!addr || !redis) return null;
@@ -75,9 +75,9 @@ export async function recordFailure(ip) {
     const duration = cfg.durations[tier];
     await redis.del(`${P}fail:${addr}`);
     if (duration > 0) {
-      await redis.set(`${P}block:${addr}`, String(tier + 1), { EX: duration });
+      await redis.set(`${P}block:${addr}`, JSON.stringify({ tier: tier + 1, reason: context.reason || "progressive-auth-failure", source: context.source || "automatic", actorId: context.actorId || null, scope: context.scope || "ip", createdAt: new Date().toISOString() }), { EX: duration });
     } else {
-      await redis.set(`${P}block:${addr}`, String(tier + 1)); // permanent
+      await redis.set(`${P}block:${addr}`, JSON.stringify({ tier: tier + 1, reason: context.reason || "progressive-auth-failure", source: context.source || "automatic", actorId: context.actorId || null, scope: context.scope || "ip", createdAt: new Date().toISOString() })); // permanent
     }
     await redis.sAdd(INDEX, addr);
     await redis.incr(`${P}offense:${addr}`);
@@ -99,12 +99,14 @@ export async function isBlocked(ip) {
   if (!addr || !redis) return { blocked: false };
   try {
     if (getConfig().allowlist.includes(addr)) return { blocked: false };
-    const tier = await redis.get(`${P}block:${addr}`);
-    if (tier === null || tier === undefined) return { blocked: false };
+    const raw = await redis.get(`${P}block:${addr}`);
+    if (raw === null || raw === undefined) return { blocked: false };
+    let metadata;
+    try { metadata = JSON.parse(raw); } catch { metadata = { tier: parseInt(raw, 10), source: "automatic", scope: "ip" }; }
     const ttl = await redis.ttl(`${P}block:${addr}`);
     return {
       blocked: true,
-      tier: parseInt(tier, 10),
+      ...metadata,
       permanent: ttl < 0,
       ...(ttl > 0 && { retryAfterSec: ttl }),
     };
@@ -127,10 +129,24 @@ export async function unblock(ip) {
   return removed > 0;
 }
 
-export async function listBlocked() {
+export async function blockIp({ ip, reason, actorId, scope = "ip", expiresInSec = 3600 }) {
+  const addr = normalize(ip);
+  const redis = client();
+  if (!addr || !reason || !redis) throw new Error("Invalid block request or block store unavailable");
+  const duration = Math.min(Math.max(Number(expiresInSec) || 3600, 60), 30 * 86400);
+  const value = JSON.stringify({ tier: 1, reason: String(reason).slice(0, 240), source: "manual", actorId: actorId || null, scope, createdAt: new Date().toISOString() });
+  const created = await redis.set(`${P}block:${addr}`, value, { EX: duration, NX: true });
+  if (created === null) throw new Error("IP is already blocked");
+  await redis.sAdd(INDEX, addr);
+  return { ip: addr, ...JSON.parse(value), expiresInSec: duration };
+}
+
+export async function listBlocked({ search = "", limit = 100 } = {}) {
   const redis = client();
   if (!redis) throw new Error("Redis unavailable");
-  const ips = await redis.sMembers(INDEX);
+  const normalizedSearch = String(search).trim().slice(0, 64);
+  const max = Math.min(Math.max(Number(limit) || 100, 1), 100);
+  const ips = (await redis.sMembers(INDEX)).filter((ip) => !normalizedSearch || ip.includes(normalizedSearch)).sort().slice(0, max);
   const out = [];
   for (const ip of ips) {
     const info = await isBlocked(ip);
