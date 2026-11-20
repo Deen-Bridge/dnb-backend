@@ -79,6 +79,12 @@ Both run `deleteMany({})` on the **users, courses, books and spaces** collection
 
 ## Legacy seeder: `npm run seed` (`src/scripts/seedDatabase.js`)
 
+The legacy demo seeder is disabled in production and requires
+`ALLOW_LEGACY_DEMO_SEED=true` plus a real `SEED_OWNER_ID` for local runs.
+The owner ID is validated before any database connection or write. Its demo
+media URLs remain local-only fixtures and must not be used for staging or
+production data.
+
 A separate, older script. Differences from the main seeder:
 
 - Inserts **10 courses, 10 books and 10 spaces** (no users, no flags, no modules/lessons).
