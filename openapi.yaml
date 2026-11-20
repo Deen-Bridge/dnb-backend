@@ -542,6 +542,7 @@ paths:
                   data:
                     type: object
                     properties:
+                      probe: { type: string, enum: [readiness, startup] }
                       status: { type: string, enum: [healthy] }
                       timestamp: { type: string, format: date-time }
                       uptime: { type: number }
@@ -557,7 +558,8 @@ paths:
                           redis:
                             type: object
                             properties:
-                              status: { type: string, enum: [up, down] }
+                              status: { type: string, enum: [up, degraded] }
+                              health: { type: object }
         "503":
           description: One or more critical dependencies are unavailable
           content:
@@ -570,16 +572,47 @@ paths:
                   data:
                     type: object
                     properties:
+                      probe: { type: string, enum: [readiness, startup] }
                       status: { type: string, enum: [unhealthy] }
                       timestamp: { type: string, format: date-time }
                       uptime: { type: number }
                       environment: { type: string }
                       dependencies:
                         type: object
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Dependency-free liveness probe
+      description: Returns 200 while the process can accept HTTP requests. It never checks MongoDB or Redis.
+      security: []
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            text/plain:
+              schema: { type: string, example: pong }
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Readiness probe for traffic dependencies
+      description: Returns 200 only when MongoDB and Redis are ready to serve traffic.
+      security: []
+      responses:
+        "200": { description: MongoDB and Redis are ready }
+        "503": { description: MongoDB or Redis is unavailable }
+  /health/startup:
+    get:
+      tags: [Meta]
+      summary: Startup probe for the application process
+      description: Requires MongoDB before traffic can be served, but reports Redis as degraded while it reconnects.
+      security: []
+      responses:
+        "200": { description: The process started and MongoDB is ready }
+        "503": { description: MongoDB is not ready }
   /ping:
     get:
       tags: [Meta]
-      summary: Dependency free liveness probe
+      summary: Legacy alias for the liveness probe
       security: []
       responses:
         "200":
