@@ -11,7 +11,9 @@ import moderationService from "../src/services/moderation.service.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const generateToken = (userId, role = "student", is2FAVerified = true) => {
-  return jwt.sign({ userId, role, is2FAVerified }, JWT_SECRET, { expiresIn: "1h" });
+  return jwt.sign({ userId, role, is2FAVerified }, JWT_SECRET, {
+    expiresIn: "1h",
+  });
 };
 
 describe("Content Moderation Queue API (#213)", () => {
@@ -91,6 +93,42 @@ describe("Content Moderation Queue API (#213)", () => {
     expect(res.body.success).toBe(true);
     expect(res.body.flag.status).toBe("pending");
     expect(res.body.flag.reason).toBe("Inappropriate language");
+  });
+
+  it("makes duplicate pending reports idempotent and permits re-flagging after resolution", async () => {
+    const payload = { reason: "Spam content", details: "Repeated promotion" };
+    const first = await request(app)
+      .post(`/api/reels/${testReel._id}/flag`)
+      .set("Authorization", `Bearer ${userToken}`)
+      .send(payload);
+    const retry = await request(app)
+      .post(`/api/reels/${testReel._id}/flag`)
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({ ...payload, details: "Updated evidence" });
+
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(201);
+    expect(String(retry.body.flag._id)).toBe(String(first.body.flag._id));
+    expect(
+      await ContentFlag.countDocuments({
+        reel: testReel._id,
+        reporter: user._id,
+      }),
+    ).toBe(1);
+
+    await request(app)
+      .post(`/api/admin/moderation/${first.body.flag._id}/action`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ action: "reject" });
+    const reopened = await request(app)
+      .post(`/api/reels/${testReel._id}/flag`)
+      .set("Authorization", `Bearer ${userToken}`)
+      .send(payload);
+
+    expect(reopened.status).toBe(201);
+    expect(String(reopened.body.flag._id)).not.toBe(
+      String(first.body.flag._id),
+    );
   });
 
   it("places flagged reels in admin moderation queue", async () => {

@@ -78,11 +78,17 @@ const trustedInternalRequest = (req, scope) => {
 
   const expected = Buffer.from(`${scope}:${configured}`, "utf8");
   const actual = Buffer.from(`${scope}:${provided}`, "utf8");
-  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+  if (
+    expected.length !== actual.length ||
+    !crypto.timingSafeEqual(expected, actual)
+  ) {
     return false;
   }
 
-  logger.info({ scope, route: req.originalUrl }, "Trusted internal rate-limit exception used");
+  logger.info(
+    { scope, route: req.originalUrl },
+    "Trusted internal rate-limit exception used",
+  );
   return true;
 };
 
@@ -95,21 +101,34 @@ const actorKey = (req, prefix) => {
   // or persisting the credential itself. Unauthenticated requests fall back to IP.
   const authorization = req.get("authorization");
   if (authorization) {
-    const credentialHash = crypto.createHash("sha256").update(authorization).digest("hex");
+    const credentialHash = crypto
+      .createHash("sha256")
+      .update(authorization)
+      .digest("hex");
     return `${prefix}:credential:${credentialHash}`;
   }
   return `${prefix}:ip:${ipKeyGenerator(req.ip)}`;
 };
 
-const adminReadLimiter = makeLimiter(120, 15 * 60 * 1000, "RATE_LIMIT_ADMIN_READ", {
-  keyGenerator: (req) => actorKey(req, "admin-read"),
-  skip: (req) => trustedInternalRequest(req, "admin-read"),
-});
+const adminReadLimiter = makeLimiter(
+  120,
+  15 * 60 * 1000,
+  "RATE_LIMIT_ADMIN_READ",
+  {
+    keyGenerator: (req) => actorKey(req, "admin-read"),
+    skip: (req) => trustedInternalRequest(req, "admin-read"),
+  },
+);
 
-const adminMutationLimiter = makeLimiter(30, 15 * 60 * 1000, "RATE_LIMIT_ADMIN_MUTATION", {
-  keyGenerator: (req) => actorKey(req, "admin-mutation"),
-  skip: (req) => trustedInternalRequest(req, "admin-mutation"),
-});
+const adminMutationLimiter = makeLimiter(
+  30,
+  15 * 60 * 1000,
+  "RATE_LIMIT_ADMIN_MUTATION",
+  {
+    keyGenerator: (req) => actorKey(req, "admin-mutation"),
+    skip: (req) => trustedInternalRequest(req, "admin-mutation"),
+  },
+);
 
 /**
  * Admin policy: read-only dashboards get a larger budget; mutations get a
@@ -132,20 +151,39 @@ const jobDeadLimiter = makeLimiter(10, 60 * 1000, "RATE_LIMIT_JOB_DEAD", {
   skip: (req) => trustedInternalRequest(req, "job"),
 });
 
+// Reporting is deliberately tighter than general API traffic. The actor key
+// uses the authenticated account and falls back to the client IP, preventing
+// one account from flooding the moderation queue across many addresses.
+export const reelFlagLimiter = makeLimiter(
+  5,
+  60 * 1000,
+  "RATE_LIMIT_REEL_FLAG",
+  {
+    keyGenerator: (req) => actorKey(req, "reel-flag"),
+    skip: () => process.env.NODE_ENV === "test",
+  },
+);
+
 /**
  * Job dashboards are deliberately tighter than admin dashboards. The dead-job
  * view is expensive and gets its own lower budget; the general list remains
  * bounded by the route's query limit and this request budget.
  */
 export const jobLimiter = (req, res, next) =>
-  (req.path.endsWith("/dead") ? jobDeadLimiter : jobReadLimiter)(req, res, next);
+  (req.path.endsWith("/dead") ? jobDeadLimiter : jobReadLimiter)(
+    req,
+    res,
+    next,
+  );
 
 /**
  * Normalize an email to its canonical lowercase form so rate-limit keys are
  * stable regardless of case/whitespace the client sends.
  */
 const normalizeEmail = (email = "") =>
-  String(email || "").trim().toLowerCase();
+  String(email || "")
+    .trim()
+    .toLowerCase();
 
 /**
  * Per-EMAIL throttle for signup and verification-resend (issue #89).
@@ -237,8 +275,9 @@ export const bulkNotificationLimiter = makeLimiter(
       `bulk_notification:${req.user?._id?.toString() || ipKeyGenerator(req.ip)}`,
     skip: () =>
       process.env.RATE_LIMIT_BULK_NOTIFICATION_DISABLE === "true" ||
-      (process.env.NODE_ENV === "test" && process.env.ENABLE_TEST_RATE_LIMIT !== "true"),
-  }
+      (process.env.NODE_ENV === "test" &&
+        process.env.ENABLE_TEST_RATE_LIMIT !== "true"),
+  },
 );
 
 /**
@@ -297,7 +336,9 @@ export const twoFactorLimiter = rateLimit({
   max: 5, // Limit each IP to 5 attempts
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === "test" && process.env.ENABLE_TEST_RATE_LIMIT !== "true",
+  skip: () =>
+    process.env.NODE_ENV === "test" &&
+    process.env.ENABLE_TEST_RATE_LIMIT !== "true",
   handler: (req, res) => {
     logger.warn(`2FA rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
@@ -319,7 +360,7 @@ export const mongoSanitizeMiddleware = (req, res, next) => {
         // Remove keys starting with $ or containing .
         if (key.startsWith("$") || key.includes(".")) {
           logger.warn(
-            `Sanitized potentially malicious key: ${key} from IP: ${req.ip}`
+            `Sanitized potentially malicious key: ${key} from IP: ${req.ip}`,
           );
           delete obj[key];
         } else if (typeof obj[key] === "object" && obj[key] !== null) {
@@ -363,7 +404,7 @@ export const customSecurityHeaders = (req, res, next) => {
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader(
     "Strict-Transport-Security",
-    "max-age=31536000; includeSubDomains"
+    "max-age=31536000; includeSubDomains",
   );
 
   next();
@@ -413,6 +454,7 @@ export default {
   generousLimiter,
   adminLimiter,
   jobLimiter,
+  reelFlagLimiter,
   authLimiter,
   refreshLimiter,
   emailAuthLimiter,
