@@ -2,6 +2,8 @@ import CourseBundle from "../models/course-bundle.model.js";
 import Course from "../models/Course.js";
 import User from "../models/User.js";
 import CourseProgress from "../models/CourseProgress.js";
+import mongoose from "mongoose";
+import { getSupportedCodes } from "../config/assets.js";
 
 export class CourseBundleService {
   /**
@@ -89,19 +91,34 @@ export class CourseBundleService {
       throw new Error("Not authorized to update this bundle");
     }
 
-    if (updateData.courses || updateData.price !== undefined) {
-      const courseIds = updateData.courses || bundle.courses;
-      const bundlePrice = updateData.price !== undefined ? updateData.price : bundle.price;
-
-      const fetchedCourses = await Course.find({ _id: { $in: courseIds } });
-      if (fetchedCourses.length !== courseIds.length) {
-        throw new Error("One or more specified courses do not exist");
-      }
-
-      const { originalPrice, discountPercentage } = this.calculateDiscount(fetchedCourses, bundlePrice);
-      updateData.originalPrice = originalPrice;
-      updateData.discountPercentage = discountPercentage;
+    const allowed = new Set(["title", "description", "courses", "price", "currency"]);
+    const unknown = Object.keys(updateData).filter((key) => !allowed.has(key));
+    if (unknown.length) throw new Error("Only title, description, courses, price, and currency can be updated");
+    if (updateData.title !== undefined && (typeof updateData.title !== "string" || !updateData.title.trim())) {
+      throw new Error("title must be a non-empty string");
     }
+    if (updateData.description !== undefined && typeof updateData.description !== "string") {
+      throw new Error("description must be a string");
+    }
+    if (updateData.currency !== undefined && !getSupportedCodes().includes(updateData.currency)) {
+      throw new Error("Unsupported currency");
+    }
+    const courseIds = updateData.courses ?? bundle.courses;
+    if (!Array.isArray(courseIds) || courseIds.length === 0 || new Set(courseIds.map(String)).size !== courseIds.length || courseIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+      throw new Error("courses must contain unique valid course ids");
+    }
+    const bundlePrice = updateData.price !== undefined ? Number(updateData.price) : bundle.price;
+    if (!Number.isFinite(bundlePrice) || bundlePrice < 0) throw new Error("price must be a non-negative number");
+
+    const fetchedCourses = await Course.find({ _id: { $in: courseIds }, status: "published" });
+    if (fetchedCourses.length !== courseIds.length) {
+      throw new Error("All bundle courses must exist and be published");
+    }
+
+    const { originalPrice, discountPercentage } = this.calculateDiscount(fetchedCourses, bundlePrice);
+    updateData.price = bundlePrice;
+    updateData.originalPrice = originalPrice;
+    updateData.discountPercentage = discountPercentage;
 
     Object.assign(bundle, updateData);
     await bundle.save();
