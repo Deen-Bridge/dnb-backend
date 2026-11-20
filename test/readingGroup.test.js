@@ -102,6 +102,36 @@ describe("Book Clubs / Reading Groups API (#205)", () => {
     expect(res.body.group.name).toBe("Riyad Study Club");
   });
 
+  it("treats search metacharacters as literal text and bounds pagination", async () => {
+    await ReadingGroup.create([
+      {
+        name: "Regex Club",
+        description: "Literal search coverage",
+        book: testBook._id,
+        creator: creatorUser._id,
+      },
+      {
+        name: "Another Club",
+        description: "A separate group",
+        book: testBook._id,
+        creator: creatorUser._id,
+      },
+    ]);
+
+    const literalSearch = await request(app)
+      .get("/api/books/reading-groups?search=.*&page=1&limit=1")
+      .set("Authorization", `Bearer ${creatorToken}`);
+
+    expect(literalSearch.status).toBe(200);
+    expect(literalSearch.body.groups).toHaveLength(0);
+
+    const oversizedSearch = await request(app)
+      .get(`/api/books/reading-groups?search=${"x".repeat(101)}`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+
+    expect(oversizedSearch.status).toBe(400);
+  });
+
   it("invites members or allows joining public/private groups", async () => {
     const createRes = await request(app)
       .post("/api/books/reading-groups")
