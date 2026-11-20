@@ -130,6 +130,28 @@ describe("Book Clubs / Reading Groups API (#205)", () => {
     expect(inviteRes.body.membership.status).toBe("invited");
   });
 
+  it("does not expose private group details to pending members", async () => {
+    const createRes = await request(app)
+      .post("/api/books/reading-groups")
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ name: "Private Access Group", bookId: testBook._id, privacy: "private" });
+    const groupId = createRes.body.group._id;
+
+    await request(app)
+      .post(`/api/books/reading-groups/${groupId}/join`)
+      .set("Authorization", `Bearer ${memberToken}`);
+
+    const details = await request(app)
+      .get(`/api/books/reading-groups/${groupId}`)
+      .set("Authorization", `Bearer ${memberToken}`);
+    const dashboard = await request(app)
+      .get(`/api/books/reading-groups/${groupId}/dashboard`)
+      .set("Authorization", `Bearer ${memberToken}`);
+
+    expect(details.status).toBe(400);
+    expect(dashboard.status).toBe(400);
+  });
+
   it("sets reading schedules (chapters per week)", async () => {
     const createRes = await request(app)
       .post("/api/books/reading-groups")
