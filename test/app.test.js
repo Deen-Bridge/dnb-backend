@@ -70,7 +70,7 @@ describe("DeenBridge API", () => {
             state: "connected",
           },
           redis: {
-            status: "down",
+            status: "degraded",
           },
         },
       },

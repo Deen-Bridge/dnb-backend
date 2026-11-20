@@ -106,19 +106,19 @@ jobs:
           find . -name "*.js" -not -path "./node_modules/*" -print0 \
             | xargs -0 -n1 node --check
 
-      - name: Boot server and hit /health
+      - name: Boot server and verify readiness
         run: |
           node server.js &
           SERVER_PID=$!
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:5000/health > /dev/null; then
-              echo "Server is up and healthy"
+            if curl -sf http://localhost:5000/health/ready > /dev/null; then
+              echo "Server is ready"
               kill $SERVER_PID
               exit 0
             fi
             sleep 2
           done
-          echo "Server failed to become healthy in time"
+          echo "Server failed to become ready in time"
           kill $SERVER_PID || true
           exit 1
         env:
