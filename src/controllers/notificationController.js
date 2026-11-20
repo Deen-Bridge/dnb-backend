@@ -8,6 +8,7 @@ import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 import { recordEvent } from "../services/notificationAnalytics.service.js";
+import { upsertDurableNotification } from "../services/notificationDeliveryService.js";
 
 /**
  * SSE Connections Map
@@ -157,7 +158,7 @@ export const sseNotifications = async (req, res) => {
 // Send notification to specific user (for real-time updates)
 export const sendNotificationToUser = async (userId, notificationData) => {
   try {
-    const notification = await Notification.create({
+    const notification = await upsertDurableNotification({
       recipient: userId,
       ...notificationData,
     });
@@ -195,6 +196,7 @@ export const createFollowNotification = async (followerId, followedId) => {
     title: "New Follower",
     message: `${follower.name} started following you`,
     priority: "medium",
+    eventId: `follow:${followerId}:${followedId}`,
   });
 };
 
@@ -209,6 +211,7 @@ export const createUnfollowNotification = async (unfollowerId, unfollowedId) => 
     title: "User Unfollowed",
     message: `${unfollower.name} unfollowed you`,
     priority: "low",
+    eventId: `unfollow:${unfollowerId}:${unfollowedId}`,
   });
 };
 
@@ -226,10 +229,14 @@ export const createNewCourseNotification = async (courseId, creatorId, courseTit
       message: `${creator.name} created a new course: ${courseTitle}`,
       data: { courseId },
       priority: "medium",
+      eventId: `course-published:${courseId}`,
     }));
 
     // Batched DB insert in one write operation
-    const createdNotifications = await Notification.insertMany(docs);
+    const createdNotifications = [];
+    for (const doc of docs) {
+      createdNotifications.push(await upsertDurableNotification(doc));
+    }
 
     // Broadcast SSE notifications with pre-populated sender info
     const senderPayload = { _id: creatorId, name: creator.name, avatar: creator.avatar };
@@ -260,10 +267,14 @@ export const createNewBookNotification = async (bookId, authorId, bookTitle) => 
       message: `${author.name} published a new book: ${bookTitle}`,
       data: { bookId },
       priority: "medium",
+      eventId: `book-published:${bookId}`,
     }));
 
     // Batched DB insert in one write operation
-    const createdNotifications = await Notification.insertMany(docs);
+    const createdNotifications = [];
+    for (const doc of docs) {
+      createdNotifications.push(await upsertDurableNotification(doc));
+    }
 
     // Broadcast SSE notifications with pre-populated author info
     const senderPayload = { _id: authorId, name: author.name, avatar: author.avatar };

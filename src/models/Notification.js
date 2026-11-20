@@ -7,6 +7,14 @@ const notificationSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    eventId: {
+      type: String,
+      maxlength: 200,
+    },
+    deduplicationKey: {
+      type: String,
+      maxlength: 300,
+    },
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -88,5 +96,9 @@ notificationSchema.index({ recipient: 1, createdAt: -1 });
 notificationSchema.index({ recipient: 1, isRead: 1 });
 notificationSchema.index({ recipient: 1, isDeleted: 1 });
 notificationSchema.index({ recipient: 1, isDeleted: 1, createdAt: -1 });
+notificationSchema.index(
+  { recipient: 1, deduplicationKey: 1 },
+  { unique: true, partialFilterExpression: { deduplicationKey: { $exists: true } } }
+);
 
 export default mongoose.model("Notification", notificationSchema);
