@@ -6,15 +6,22 @@ import Book from "../models/Book.js";
 import logger from "../config/logger.js";
 import { validateMagicBytes } from "../utils/fileValidation.js";
 import CourseProgress from "../models/CourseProgress.js";
-import { createFollowNotification, createUnfollowNotification } from "./notificationController.js";
+import {
+  createFollowNotification,
+  createUnfollowNotification,
+} from "./notificationController.js";
 import badgeService from "../services/badge.service.js";
 
-const PUBLIC_FIELDS = "name avatar bio role interests gender age country language";
+const PUBLIC_FIELDS =
+  "name avatar bio role interests gender age country language";
 
 // Update user profile (including avatar upload to Cloudinary)
 export const updateUser = async (req, res) => {
   try {
-    if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
+    if (
+      req.user.role !== "admin" &&
+      req.user._id.toString() !== req.params.id
+    ) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to update this profile",
@@ -26,9 +33,20 @@ export const updateUser = async (req, res) => {
 
     // If avatar file is uploaded, upload to Cloudinary with timeout
     if (req.file) {
-      const isValid = await validateMagicBytes(req.file.buffer, ["image/jpeg", "image/png", "image/webp"]);
+      const isValid = await validateMagicBytes(req.file.buffer, [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ]);
       if (!isValid) {
-        return res.status(400).json({ success: false, message: "Invalid file content. Magic bytes do not match expected image types.", data: null });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Invalid file content. Magic bytes do not match expected image types.",
+            data: null,
+          });
       }
 
       try {
@@ -39,15 +57,15 @@ export const updateUser = async (req, res) => {
               (error, result) => {
                 if (error) reject(error);
                 else resolve(result);
-              }
+              },
             );
             stream.end(req.file.buffer);
           }),
           new Promise((_, reject) =>
             setTimeout(
               () => reject(new Error("Cloudinary upload timeout")),
-              10000
-            )
+              10000,
+            ),
           ),
         ]);
         avatarUrl = result.secure_url;
@@ -118,7 +136,9 @@ export const updateUser = async (req, res) => {
 // Get user by ID
 export const getUser = async (req, res) => {
   try {
-    const isSelf = req.user?._id ? req.user._id.toString() === req.params.id : false;
+    const isSelf = req.user?._id
+      ? req.user._id.toString() === req.params.id
+      : false;
     let query = User.findById(req.params.id);
     if (typeof query.lean === "function") {
       query = query.lean();
@@ -127,7 +147,9 @@ export const getUser = async (req, res) => {
     if (!isSelf) {
       query.select(PUBLIC_FIELDS);
     } else {
-      query.select("-password -twoFactor.secret -twoFactor.pendingSecret -twoFactor.recoveryCodes -resetTokenHash");
+      query.select(
+        "-password -twoFactor.secret -twoFactor.pendingSecret -twoFactor.recoveryCodes -resetTokenHash",
+      );
     }
 
     const user = await query;
@@ -163,7 +185,10 @@ export const getUser = async (req, res) => {
 // Delete user
 export const deleteUser = async (req, res) => {
   try {
-    if (req.user.role !== "admin" && req.user._id.toString() !== req.params.id) {
+    if (
+      req.user.role !== "admin" &&
+      req.user._id.toString() !== req.params.id
+    ) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to delete this user",
@@ -206,7 +231,7 @@ export const followUser = async (req, res) => {
     }
 
     // Check if user to follow exists
-    const userToFollow = await User.findById(userId);
+    const userToFollow = await User.findOne({ _id: userId, isActive: true });
     if (!userToFollow) {
       return res.status(404).json({
         success: false,
@@ -214,28 +239,42 @@ export const followUser = async (req, res) => {
       });
     }
 
-    // Check if already following
-    const currentUser = await User.findById(currentUserId);
-    if (currentUser.following.includes(userId)) {
-      return res.status(400).json({
-        success: false,
-        message: "You are already following this user",
-      });
+    // $addToSet makes retries and concurrent duplicate requests idempotent.
+    // The compensating pull prevents a one-sided edge if the second write
+    // fails after the first succeeds.
+    const [followingUpdate, followerUpdate] = await Promise.all([
+      User.updateOne(
+        { _id: currentUserId, isActive: true },
+        { $addToSet: { following: userId } },
+      ),
+      User.updateOne(
+        { _id: userId, isActive: true },
+        { $addToSet: { followers: currentUserId } },
+      ),
+    ]);
+    if (
+      followingUpdate.matchedCount !== 1 ||
+      followerUpdate.matchedCount !== 1
+    ) {
+      await Promise.all([
+        User.updateOne(
+          { _id: currentUserId },
+          { $pull: { following: userId } },
+        ),
+        User.updateOne(
+          { _id: userId },
+          { $pull: { followers: currentUserId } },
+        ),
+      ]);
+      throw new Error("Unable to update follow relationship");
     }
 
-    // Add to following and followers
-    await User.findByIdAndUpdate(currentUserId, {
-      $push: { following: userId },
-    });
-
-    await User.findByIdAndUpdate(userId, {
-      $push: { followers: currentUserId },
-    });
-
     // Emit follow notification asynchronously
-    createFollowNotification(currentUserId, userId).catch((err) =>
-      logger.error("Error creating follow notification:", err)
-    );
+    if (followingUpdate.modifiedCount === 1) {
+      createFollowNotification(currentUserId, userId).catch((err) =>
+        logger.error("Error creating follow notification:", err),
+      );
+    }
 
     res.status(200).json({
       success: true,
@@ -266,7 +305,7 @@ export const unfollowUser = async (req, res) => {
     }
 
     // Check if user to unfollow exists
-    const userToUnfollow = await User.findById(userId);
+    const userToUnfollow = await User.findOne({ _id: userId, isActive: true });
     if (!userToUnfollow) {
       return res.status(404).json({
         success: false,
@@ -274,28 +313,29 @@ export const unfollowUser = async (req, res) => {
       });
     }
 
-    // Check if not following
-    const currentUser = await User.findById(currentUserId);
-    if (!currentUser.following.includes(userId)) {
-      return res.status(400).json({
-        success: false,
-        message: "You are not following this user",
-      });
+    const [followingUpdate, followerUpdate] = await Promise.all([
+      User.updateOne(
+        { _id: currentUserId, isActive: true },
+        { $pull: { following: userId } },
+      ),
+      User.updateOne(
+        { _id: userId, isActive: true },
+        { $pull: { followers: currentUserId } },
+      ),
+    ]);
+    if (
+      followingUpdate.matchedCount !== 1 ||
+      followerUpdate.matchedCount !== 1
+    ) {
+      throw new Error("Unable to update follow relationship");
     }
 
-    // Remove from following and followers
-    await User.findByIdAndUpdate(currentUserId, {
-      $pull: { following: userId },
-    });
-
-    await User.findByIdAndUpdate(userId, {
-      $pull: { followers: currentUserId },
-    });
-
     // Emit unfollow notification asynchronously
-    createUnfollowNotification(currentUserId, userId).catch((err) =>
-      logger.error("Error creating unfollow notification:", err)
-    );
+    if (followingUpdate.modifiedCount === 1) {
+      createUnfollowNotification(currentUserId, userId).catch((err) =>
+        logger.error("Error creating unfollow notification:", err),
+      );
+    }
 
     res.status(200).json({
       success: true,
@@ -315,12 +355,22 @@ const getSocialGraphPage = async (userId, field, page, limit) => {
   const skip = (page - 1) * limit;
   const [row] = await User.aggregate([
     { $match: { _id: new mongoose.Types.ObjectId(userId) } },
-    { $project: { ids: { $slice: [`$${field}`, skip, limit] }, count: { $size: `$${field}` } } },
+    {
+      $project: {
+        ids: { $slice: [`$${field}`, skip, limit] },
+        count: { $size: `$${field}` },
+      },
+    },
   ]);
   if (!row) return null;
-  const users = await User.find({ _id: { $in: row.ids } }).select("name avatar role").lean();
+  const users = await User.find({ _id: { $in: row.ids } })
+    .select("name avatar role")
+    .lean();
   const byId = new Map(users.map((user) => [String(user._id), user]));
-  return { users: row.ids.map((id) => byId.get(String(id))).filter(Boolean), count: row.count };
+  return {
+    users: row.ids.map((id) => byId.get(String(id))).filter(Boolean),
+    count: row.count,
+  };
 };
 
 // Get user's followers
@@ -329,8 +379,14 @@ export const getFollowers = async (req, res) => {
     const { userId } = req.params;
 
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
-    if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(404).json({ success: false, message: "User not found" });
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 20, 1),
+      50,
+    );
+    if (!mongoose.Types.ObjectId.isValid(userId))
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     const result = await getSocialGraphPage(userId, "followers", page, limit);
     if (!result) {
       return res.status(404).json({
@@ -362,8 +418,14 @@ export const getFollowing = async (req, res) => {
     const { userId } = req.params;
 
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
-    if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(404).json({ success: false, message: "User not found" });
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 20, 1),
+      50,
+    );
+    if (!mongoose.Types.ObjectId.isValid(userId))
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     const result = await getSocialGraphPage(userId, "following", page, limit);
     if (!result) {
       return res.status(404).json({
@@ -506,7 +568,9 @@ export const getLearningDashboard = async (req, res) => {
     res.status(200).json({ success: true, courses });
   } catch (error) {
     logger.error("Get learning dashboard error:", error);
-    res.status(500).json({ success: false, message: "Failed to fetch learning dashboard" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch learning dashboard" });
   }
 };
 
@@ -515,7 +579,9 @@ export const getLearningDashboard = async (req, res) => {
 export const getProgressCourses = async (req, res) => {
   try {
     const userId = req.user._id;
-    const status = ["in-progress", "completed", "all"].includes(req.query.status)
+    const status = ["in-progress", "completed", "all"].includes(
+      req.query.status,
+    )
       ? req.query.status
       : "in-progress";
     const records = await CourseProgress.find({ user: userId })
@@ -544,7 +610,9 @@ export const getProgressCourses = async (req, res) => {
     return res.status(200).json({ success: true, courses, status });
   } catch (error) {
     logger.error("Get progress courses error:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch course progress" });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch course progress" });
   }
 };
 
@@ -577,7 +645,7 @@ export const getRecommendations = async (req, res) => {
 
     // Create regex patterns for case-insensitive matching
     const interestPatterns = currentUser.interests.map(
-      (interest) => new RegExp(interest, "i")
+      (interest) => new RegExp(interest, "i"),
     );
 
     // Find courses that match user interests
@@ -627,7 +695,7 @@ export const getRecommendations = async (req, res) => {
     // Combine recommended and fallback results
     const finalCourses = [...recommendedCourses, ...fallbackCourses].slice(
       0,
-      5
+      5,
     );
     const finalBooks = [...recommendedBooks, ...fallbackBooks].slice(0, 5);
 
@@ -657,7 +725,9 @@ export const getUserStats = async (req, res) => {
     const userId = req.params.id;
 
     // Get user
-    const user = await User.findById(userId).select("_id createdAt purchasedBooks").lean();
+    const user = await User.findById(userId)
+      .select("_id createdAt purchasedBooks")
+      .lean();
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -671,7 +741,9 @@ export const getUserStats = async (req, res) => {
       Book.countDocuments({ purchasedBy: userId }),
     ]);
 
-    const booksRead = booksReadCount || (Array.isArray(user.purchasedBooks) ? user.purchasedBooks.length : 0);
+    const booksRead =
+      booksReadCount ||
+      (Array.isArray(user.purchasedBooks) ? user.purchasedBooks.length : 0);
 
     // Calculate total uptime (days since user joined)
     const accountCreatedDate = user.createdAt || new Date();
