@@ -10,6 +10,19 @@ DeenBridge uses **URL-prefix versioning**. Every endpoint is available under a v
 | `/api/v2/` | Version 2 (planned breaking changes) |
 | `/api/`    | Defaults to latest stable (currently v1) |
 
+The supported-version contract is deliberately explicit:
+
+| Version | Status | Breaking changes | Support policy |
+|---------|--------|------------------|----------------|
+| v1 | Stable | No | Supported for at least six months after a replacement reaches GA |
+| v2 | Compatibility | Yes, when a route is explicitly promoted | New breaking behavior must be implemented in a v2-owned route |
+
+Every versioned response includes `X-API-Version` and `X-API-Stability`. Set
+`API_V1_SUNSET_DATE=YYYY-MM-DD` only after a reviewed deprecation decision;
+v1 responses will then also include `Deprecation: true`, `Sunset`, and a
+deprecation link. The environment variable is intentionally opt-in so a
+deployment cannot accidentally announce a sunset.
+
 ## Why versioning?
 
 Versioning allows us to ship breaking changes (renamed fields, new required parameters, changed response shapes) without forcing every client to upgrade immediately.
@@ -40,6 +53,15 @@ No changes required — `/api/` still works and resolves to v1.  We recommend up
 | Removed field | Yes — new endpoint in v2 |
 | Changed HTTP method | Yes — new endpoint in v2 |
 | New required request field | Yes — new endpoint in v2 |
+
+Breaking-change checklist:
+
+1. Record the decision and owner in the release notes.
+2. Add or change the handler under `src/routes/api/v2/`; shared behavior must
+   remain in a version-neutral service with explicit response schemas.
+3. Add contract tests for the affected route under both `/api/v1/` and
+   `/api/v2/`, including the compatibility response and version headers.
+4. Publish a migration notice and verify the rollback target before release.
 
 ## Deprecation timeline
 

@@ -14,6 +14,8 @@ import {
   generousLimiter,
   authLimiter,
   paymentLimiter,
+  adminLimiter,
+  jobLimiter,
   mongoSanitizeMiddleware,
   hppMiddleware,
   customSecurityHeaders,
@@ -32,11 +34,12 @@ import courseAnalyticsRoutes from "./src/routes/courses/analyticsRoutes.js";
 import quizRoutes from "./src/routes/courses/quizRoutes.js";
 import reelsRoute from "./src/routes/reelsRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
+import { protect } from "./src/middlewares/authMiddleware.js";
+import { getProgressCourses } from "./src/controllers/userController.js";
 import bookRoutes from "./src/routes/books/bookRoutes.js";
 import recommendedBooksRoutes from "./src/routes/books/recommendedBooksRoutes.js";
 import readingProgressRoutes from "./src/routes/books/readingProgressRoutes.js";
 import spacesRoutes from "./src/routes/spaceRoutes.js";
-import emailRoutes from "./src/routes/emailRoutes.js";
 import purchaseRoutes from "./src/routes/books/purchaseBookRoutes.js";
 import searchRoutes from "./src/routes/searchRoutes.js";
 import callRoutes from "./src/routes/callRoutes.js";
@@ -91,6 +94,7 @@ import spaceRecordingRoutes from "./src/routes/spaceRecordingRoutes.js";
 import v1Router from "./src/routes/api/v1/index.js";
 import v2Router from "./src/routes/api/v2/index.js";
 import { versionMiddleware } from "./src/middlewares/versionMiddleware.js";
+import { apiVersionContractHeaders } from "./src/middlewares/apiVersionContract.js";
 
 // Issue #224 — Developer documentation portal
 import docsRoutes from "./src/routes/docsRoutes.js";
@@ -98,6 +102,11 @@ import docsRoutes from "./src/routes/docsRoutes.js";
 // Issue #246 — User journey tracking
 import userJourneyRoutes from "./src/routes/analytics/user-journey.js";
 import { trackPageVisit } from "./src/middlewares/analytics/journey-tracker.js";
+import {
+  BODY_LIMITS,
+  jsonBodyParser,
+  urlencodedBodyParser,
+} from "./src/middlewares/bodyBudgets.js";
 
 const app = express();
 
@@ -159,6 +168,7 @@ const corsOptions = {
       "http://localhost:3001",
       "https://deenbridge.vercel.app",
       "http://deenbridge.vercel.app",
+      ...(process.env.CORS_ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean),
     ];
 
     if (!origin) return callback(null, true);
@@ -178,18 +188,21 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Capture the raw request bytes so the service-to-service auth middleware can
-// verify HMAC signatures over the exact body (see middlewares/serviceAuth.js).
-// This only stashes a Buffer reference and does not alter parsing behaviour.
-app.use(
-  express.json({
-    limit: "10mb",
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  })
-);
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+// Route-specific parsers must run before the conservative defaults. The raw
+// bytes are retained for HMAC-verified webhooks and service requests.
+app.use("/api/security/csp-report", jsonBodyParser(BODY_LIMITS.cspReport, {
+  type: ["application/csp-report", "application/reports+json", "application/json"],
+}));
+app.use("/api/analytics/journey/events", jsonBodyParser(BODY_LIMITS.analyticsEvent));
+app.use("/api/notifications/analytics/events", jsonBodyParser(BODY_LIMITS.analyticsEvent));
+app.use("/api/stellar/onramp/webhook", jsonBodyParser(BODY_LIMITS.providerWebhook));
+app.use("/api/internal", jsonBodyParser(BODY_LIMITS.serviceRequest));
+
+// All other JSON and URL-encoded endpoints use bounded defaults. Multipart
+// uploads are handled separately by Multer and never pass through these
+// parsers.
+app.use(jsonBodyParser(BODY_LIMITS.defaultJson));
+app.use(urlencodedBodyParser(BODY_LIMITS.defaultUrlencoded));
 app.use(cookieParser());
 app.use(
   compression({
@@ -242,7 +255,6 @@ app.use("/.well-known", wellKnownRoutes);
 app.use("/api/auth", ipBlockMiddleware, authLimiter, authRoutes);
 
 // Mutation routes — standard limiter
-app.use("/api/email", standardLimiter, emailRoutes);
 app.use("/api/purchase", standardLimiter, purchaseRoutes);
 app.use("/api/uploads", standardLimiter, uploadRoutes);
 app.use("/api/payouts", standardLimiter, payoutRoutes);
@@ -268,12 +280,13 @@ app.use("/api/books/reading-groups", generousLimiter, readingGroupRoutes);
 app.use("/api/reading-groups", generousLimiter, readingGroupRoutes);
 app.use("/api/spaces", generousLimiter, spacesRoutes);
 app.use("/api/users", generousLimiter, userRoutes);
+app.get("/api/progress/courses", generousLimiter, protect, getProgressCourses);
 app.use("/api/search", generousLimiter, searchRoutes);
 app.use("/api/calls", generousLimiter, callRoutes);
 app.use("/api/educators", generousLimiter, educatorRoutes);
 app.use("/api/educator-verification", standardLimiter, educatorVerificationRoutes);
 app.use("/api/stellar/wallet", generousLimiter, stellarWalletRoutes);
-app.use("/api/stellar/analytics", generousLimiter, stellarAnalyticsRoutes);
+app.use("/api/stellar/analytics", adminLimiter, stellarAnalyticsRoutes);
 // Payment routes mutate money state — stricter per-user limiter (issue #4).
 app.use("/api/stellar/payment", paymentLimiter, stellarPaymentRoutes);
 app.use("/api/stellar/export", paymentLimiter, stellarExportRoutes);
@@ -283,7 +296,7 @@ app.use("/api/stellar/onramp", generousLimiter, stellarOnrampRoutes);
 app.use("/api/stellar/pledges", generousLimiter, stellarPledgeRoutes);
 app.use("/api/stellar/gifts", generousLimiter, stellarGiftRoutes);
 app.use("/api/stellar/anchor", standardLimiter, stellarAnchorRoutes);
-app.use("/api/stellar/reports", standardLimiter, stellarReportsRoutes);
+app.use("/api/stellar/reports", adminLimiter, stellarReportsRoutes);
 app.use("/api/notifications/analytics", generousLimiter, notificationAnalyticsRoutes);
 app.use("/api/notifications", generousLimiter, notificationRoutes);
 
@@ -298,20 +311,22 @@ app.use("/api/internal/ai", internalAiRoutes);
 app.use("/metrics/database", databaseMetricsRoutes);
 
 // Issue #245 - Search analytics (admin-gated).
-app.use("/api/analytics/search", generousLimiter, searchAnalyticsRoutes);
+app.use("/api/analytics/search", adminLimiter, searchAnalyticsRoutes);
 
-// Admin — no rate limit
-app.use("/admin/jobs", jobsRoutes);
-app.use("/api/admin/audit", auditRoutes);
+// Administrative surfaces use actor-scoped budgets. Reads and mutations have
+// separate limits; trusted internal automation requires an explicit token.
+app.use("/admin/jobs", jobLimiter, jobsRoutes);
+app.use("/api/admin/audit", adminLimiter, auditRoutes);
 // Issue #140 - CSP violation reports (unauthenticated POST, admin-only stats)
 app.use("/api/security/csp-report", standardLimiter, cspReportRoutes);
-app.use("/api/admin/educator-verification", educatorVerificationAdminRoutes);
-app.use("/api/admin/moderation", adminModerationRoutes);
-app.use("/api/admin/blocked-ips", blockedIpsRoutes);
+app.use("/api/admin/educator-verification", adminLimiter, educatorVerificationAdminRoutes);
+app.use("/api/admin/moderation", adminLimiter, adminModerationRoutes);
+app.use("/api/admin/blocked-ips", adminLimiter, blockedIpsRoutes);
 
 // Issue #215 — Apply version detection middleware globally on /api paths.
 // Must come before versioned router mounts.
 app.use(versionMiddleware);
+app.use(apiVersionContractHeaders);
 
 // Issue #215 — Versioned API routers.
 // /api/v1/* and /api/v2/* let clients pin to a specific version.

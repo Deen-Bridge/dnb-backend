@@ -1,3 +1,4 @@
+import { jest } from "@jest/globals";
 import express from "express";
 import request from "supertest";
 import {
@@ -130,7 +131,7 @@ describe("GET /health", () => {
           probe: "startup",
           status: "healthy",
           dependencies: expect.objectContaining({
-            redis: { status: "degraded" },
+            redis: expect.objectContaining({ status: "degraded" }),
           }),
         }),
       })

@@ -43,7 +43,10 @@ router.get("/", async (req, res) => {
 });
 
 router.get("/dead", async (req, res) => {
-  const jobs = await Job.find({ status: "dead" }).sort({ failedAt: -1 }).lean();
+  const jobs = await Job.find({ status: "dead" })
+    .sort({ failedAt: -1 })
+    .limit(100)
+    .lean();
   res.json({ success: true, jobs });
 });
 

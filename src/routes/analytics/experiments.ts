@@ -1,7 +1,16 @@
 import express, { Request, Response } from "express";
-import { protect, authorizeRoles } from "../../middlewares/authMiddleware.js";
-import { Experiment, ExperimentAssignment, ExperimentConversion } from "../../models/experiment.js";
+import { protect, optionalProtect, authorizeRoles } from "../../middlewares/authMiddleware.js";
+import { Experiment } from "../../models/experiment.js";
 import { assignVariant, trackConversion, calculateSignificance } from "../../services/analytics/ab-testing-service.js";
+import { experimentRateLimit } from "../../middleware/analytics/experiment-rate-limit.js";
+import {
+  resolveExperimentIdentity,
+  validateConversionValue,
+  validateExperimentKey,
+  validateEventId,
+  validateMetadata,
+  validateMetricName,
+} from "../../services/analytics/experiment-security.js";
 import logger from "../../config/logger.js";
 
 const router = express.Router();
@@ -106,24 +115,25 @@ router.patch("/:key", protect, authorizeRoles("admin"), async (req: Request, res
  * @desc    Assign user/session to variant
  * @access  Public / Private
  */
-router.post("/:key/assign", async (req: Request, res: Response) => {
+router.post("/:key/assign", experimentRateLimit, optionalProtect, async (req: Request, res: Response) => {
   try {
-    const { key } = req.params;
+    const key = validateExperimentKey(req.params.key);
     const { sessionId, userId } = req.body;
-
-    const identifier = sessionId || req.headers["x-session-id"] || (req as any).ip;
-    if (!identifier) {
-      return res.status(400).json({ success: false, message: "Session ID or identifier required" });
-    }
-
-    const variant = await assignVariant(key, String(identifier), userId);
+    const identity = resolveExperimentIdentity({
+      sessionId,
+      headerSessionId: req.headers["x-experiment-session"],
+      authenticatedUserId: (req as any).user?._id,
+      requestedUserId: userId,
+    });
+    const variant = await assignVariant(key, identity.identifier, identity.userId);
+    if (!variant) return res.status(400).json({ success: false, message: "Experiment is not active or does not target this identifier" });
     return res.status(200).json({
       success: true,
-      data: { experimentKey: key, variantName: variant },
+      data: { experimentKey: key, variantName: variant, sessionId: identity.sessionToken },
     });
   } catch (error: any) {
     logger.error("Error assigning variant:", error);
-    return res.status(500).json({ success: false, message: "Failed to assign variant", error: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : "Failed to assign variant" });
   }
 });
 
@@ -132,33 +142,35 @@ router.post("/:key/assign", async (req: Request, res: Response) => {
  * @desc    Track conversion metric for variant
  * @access  Public / Private
  */
-router.post("/:key/convert", async (req: Request, res: Response) => {
+router.post("/:key/convert", experimentRateLimit, optionalProtect, async (req: Request, res: Response) => {
   try {
-    const { key } = req.params;
+    const key = validateExperimentKey(req.params.key);
     const { sessionId, userId, metricName = "conversion", value = 1, metadata } = req.body;
-
-    const identifier = sessionId || req.headers["x-session-id"] || (req as any).ip;
-    if (!identifier) {
-      return res.status(400).json({ success: false, message: "Session ID or identifier required" });
-    }
+    const identity = resolveExperimentIdentity({
+      sessionId,
+      headerSessionId: req.headers["x-experiment-session"],
+      authenticatedUserId: (req as any).user?._id,
+      requestedUserId: userId,
+    });
 
     const tracked = await trackConversion({
       experimentKey: key,
-      metricName,
-      identifier: String(identifier),
-      userId,
-      value,
-      metadata,
+      metricName: validateMetricName(metricName),
+      identifier: identity.identifier,
+      userId: identity.userId,
+      value: validateConversionValue(value),
+      metadata: validateMetadata(metadata),
+      eventId: validateEventId(req.body.eventId),
     });
 
     if (!tracked) {
       return res.status(400).json({ success: false, message: "No active assignment found for session/user" });
     }
 
-    return res.status(200).json({ success: true, message: "Conversion tracked successfully" });
+    return res.status(200).json({ success: true, message: "Conversion tracked successfully", data: { sessionId: identity.sessionToken } });
   } catch (error: any) {
     logger.error("Error tracking conversion:", error);
-    return res.status(500).json({ success: false, message: "Failed to track conversion", error: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : "Failed to track conversion" });
   }
 });
 

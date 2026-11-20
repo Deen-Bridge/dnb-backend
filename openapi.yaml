@@ -11,6 +11,11 @@ info:
     refunds and disputes,
     educator payouts, media upload signing and the SEP-1 metadata document.
 
+    Versioning contract: `/api/v1` is the stable compatibility surface;
+    `/api/v2` is reserved for explicitly approved breaking changes. Versioned
+    responses include `X-API-Version` and `X-API-Stability`. A v1 sunset is
+    announced only when `Deprecation` and `Sunset` headers are present.
+
     Provenance of this document:
       - Paths, methods and auth requirements are derived from app.js and src/routes/**,
         which are the authoritative mounting and middleware sources.
@@ -537,6 +542,7 @@ paths:
                   data:
                     type: object
                     properties:
+                      probe: { type: string, enum: [readiness, startup] }
                       status: { type: string, enum: [healthy] }
                       timestamp: { type: string, format: date-time }
                       uptime: { type: number }
@@ -547,12 +553,13 @@ paths:
                           mongodb:
                             type: object
                             properties:
-                              status: { type: string, enum: [up, degraded] }
+                              status: { type: string, enum: [up, down] }
                               state: { type: string }
                           redis:
                             type: object
                             properties:
-                              status: { type: string, enum: [up, down] }
+                              status: { type: string, enum: [up, degraded] }
+                              health: { type: object }
         "503":
           description: One or more critical dependencies are unavailable
           content:
@@ -565,6 +572,7 @@ paths:
                   data:
                     type: object
                     properties:
+                      probe: { type: string, enum: [readiness, startup] }
                       status: { type: string, enum: [unhealthy] }
                       timestamp: { type: string, format: date-time }
                       uptime: { type: number }
@@ -614,33 +622,6 @@ paths:
               schema:
                 type: string
                 example: pong
-  /health/live:
-    get:
-      tags: [Meta]
-      summary: Dependency-free liveness probe
-      security: []
-      responses:
-        "200":
-          description: The process is alive
-          content:
-            text/plain:
-              schema: { type: string, example: pong }
-  /health/ready:
-    get:
-      tags: [Meta]
-      summary: Readiness probe for traffic dependencies
-      security: []
-      responses:
-        "200": { description: MongoDB and Redis are ready }
-        "503": { description: A traffic dependency is unavailable }
-  /health/startup:
-    get:
-      tags: [Meta]
-      summary: Startup probe for application initialization
-      security: []
-      responses:
-        "200": { description: MongoDB is initialized; Redis may be reconnecting }
-        "503": { description: MongoDB is not initialized }
   /metrics:
     get:
       tags: [Meta]
@@ -2607,7 +2588,7 @@ paths:
     post:
       tags: [Payouts]
       summary: Build a payout batch
-      description: Operator only. Gated by the PAYOUT_ADMIN_USER_IDS allowlist inside the controller.
+      description: Operator only. Requires the central payout.initiate capability, an active admin account, and a verified 2FA session.
       requestBody:
         required: false
         content:
@@ -2627,7 +2608,7 @@ paths:
     post:
       tags: [Payouts]
       summary: Submit a payout batch
-      description: Operator only. Gated by the PAYOUT_ADMIN_USER_IDS allowlist inside the controller.
+      description: Operator only. Requires the central payout.execute capability, an active admin account, and a verified 2FA session.
       parameters:
         - name: batchId
           in: path

@@ -7,6 +7,7 @@
 
 import mongoose from "mongoose";
 import Reel from "../models/Reel.js";
+import { publicReelFilter } from "../utils/reelVisibility.js";
 import {
   isDuetType,
   buildCompositionDescriptor,
@@ -53,7 +54,7 @@ export const createReelDerivative = async ({
     throw httpError("A valid original reel id is required", 400);
   }
 
-  const original = await Reel.findById(originalReelId).select(
+  const original = await Reel.findOne({ _id: originalReelId, ...publicReelFilter() }).select(
     "_id video duration"
   );
   if (!original) {
@@ -118,7 +119,7 @@ export const listReelDerivatives = async (
   const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
   const skip = (safePage - 1) * safeLimit;
 
-  const filter = { originalReelId };
+  const filter = { originalReelId, ...publicReelFilter() };
   if (isDuetType(type)) {
     filter.duetType = type;
   }

@@ -310,25 +310,23 @@ export const listGifts = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // Lazy expiry transition: open gifts past their expiry flip to "expired"
-    // (the document is never deleted — the sender still needs it to reclaim).
-    await GiftClaim.updateMany(
-      {
-        $or: [{ sender: userId }, { recipient: userId }],
-        status: "open",
-        expiresAt: { $lte: new Date() },
-      },
-      { $set: { status: "expired" } }
-    );
-
-    const gifts = await GiftClaim.find({
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const filter = {
       $or: [{ sender: userId }, { recipient: userId }],
-    })
+    };
+    const [gifts, total] = await Promise.all([
+      GiftClaim.find(filter)
+      .select("sender recipient itemType itemId itemTitle amount assetCode status expiresAt createTxHash claimTxHash network createdAt")
       .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
       .populate("sender", "name")
-      .populate("recipient", "name");
+      .populate("recipient", "name"),
+      GiftClaim.countDocuments(filter),
+    ]);
 
-    res.status(200).json({ success: true, gifts });
+    res.status(200).json({ success: true, gifts, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (error) {
     logger.error("List gifts error:", error);
     res.status(500).json({
@@ -361,11 +359,7 @@ export const getGift = async (req, res) => {
       });
     }
 
-    // Lazy expiry transition (see listGifts).
-    if (gift.status === "open" && !isBeforeExpiry(gift)) {
-      gift.status = "expired";
-      await gift.save();
-    }
+    const observedStatus = gift.status === "open" && !isBeforeExpiry(gift) ? "expired" : gift.status;
 
     let live = null;
     if (gift.balanceId) {
@@ -381,7 +375,7 @@ export const getGift = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      gift: { ...gift.toObject(), live },
+      gift: { ...gift.toObject(), observedStatus, live },
     });
   } catch (error) {
     logger.error("Get gift error:", error);
