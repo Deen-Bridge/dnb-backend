@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Reel from "../models/Reel.js";
+import ReelEngagement from "../models/ReelEngagement.js";
 import cloudinary from "../utils/cloudinary.js";
 import logger from "../config/logger.js";
 import { publicReelFilter } from "../utils/reelVisibility.js";
@@ -209,43 +210,64 @@ export const reactToReel = async (req, res) => {
       });
     }
 
-    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() });
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const targetField = type === "like" ? "likes" : "loves";
+    const oppositeField = type === "like" ? "loves" : "likes";
+    const userKey = userObjectId.toString();
+
+    // An aggregation update evaluates the toggle against the document being
+    // updated. Unlike loading and saving the whole reel, this is atomic under
+    // concurrent requests and cannot create duplicate array entries.
+    const removeFrom = (field) => ({
+      $filter: {
+        input: { $ifNull: [`$${field}`, []] },
+        as: "entry",
+        cond: { $ne: [{ $toString: "$$entry" }, userKey] },
+      },
+    });
+    const addToOrRemoveFrom = (field) => ({
+      $cond: [
+        {
+          $in: [
+            userObjectId,
+            { $ifNull: [`$${field}`, []] },
+          ],
+        },
+        removeFrom(field),
+        { $setUnion: [{ $ifNull: [`$${field}`, []] }, [userObjectId]] },
+      ],
+    });
+
+    const reel = await Reel.findOneAndUpdate(
+      { _id: id, ...publicReelFilter() },
+      [
+        {
+          $set: {
+            [targetField]: addToOrRemoveFrom(targetField),
+            [oppositeField]: removeFrom(oppositeField),
+          },
+        },
+      ],
+      { new: true }
+    ).lean();
     if (!reel) {
       return res
         .status(404)
         .json({ success: false, message: "Reel not found" });
     }
 
-    const targetField = type === "like" ? "likes" : "loves";
-    const oppositeField = type === "like" ? "loves" : "likes";
-    const userKey = userId.toString();
-
-    const alreadyReacted = reel[targetField].some(
-      (entry) => entry.toString() === userKey
-    );
-
-    if (alreadyReacted) {
-      reel[targetField] = reel[targetField].filter(
-        (entry) => entry.toString() !== userKey
-      );
-    } else {
-      reel[targetField].push(userId);
-      reel[oppositeField] = reel[oppositeField].filter(
-        (entry) => entry.toString() !== userKey
-      );
-    }
-
-    await reel.save();
+    const liked = (reel.likes || []).some((entry) => entry.toString() === userKey);
+    const loved = (reel.loves || []).some((entry) => entry.toString() === userKey);
 
     res.status(200).json({
       success: true,
       reactions: {
-        likes: reel.likes.length,
-        loves: reel.loves.length,
+        likes: (reel.likes || []).length,
+        loves: (reel.loves || []).length,
       },
       viewerState: {
-        liked: !alreadyReacted && type === "like",
-        loved: !alreadyReacted && type === "love",
+        liked,
+        loved,
       },
     });
   } catch (error) {
@@ -390,9 +412,17 @@ export const deleteReelComment = async (req, res) => {
 export const registerReelShare = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?._id;
+    let counted = false;
+    try {
+      await ReelEngagement.create({ reel: id, user: userId, kind: "share" });
+      counted = true;
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+    }
     const reel = await Reel.findOneAndUpdate(
       { _id: id, ...publicReelFilter() },
-      { $inc: { shareCount: 1 } },
+      counted ? { $inc: { shareCount: 1 } } : { $set: {} },
       { new: true }
     ).lean();
 
@@ -415,9 +445,17 @@ export const registerReelShare = async (req, res) => {
 export const registerReelView = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?._id;
+    let counted = false;
+    try {
+      await ReelEngagement.create({ reel: id, user: userId, kind: "view" });
+      counted = true;
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+    }
     const reel = await Reel.findOneAndUpdate(
       { _id: id, ...publicReelFilter() },
-      { $inc: { viewCount: 1 } },
+      counted ? { $inc: { viewCount: 1 } } : { $set: {} },
       { new: true }
     ).lean();
 
