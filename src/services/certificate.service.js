@@ -97,9 +97,7 @@ export class CertificateService {
       valid: true,
       certificate: {
         id: certificate.certificateId,
-        student: certificate.learnerName || certificate.user?.name || "Student",
         course: certificate.courseTitle || certificate.course?.title || "Course",
-        educator: certificate.instructorName || certificate.course?.createdBy?.name || "DeenBridge Instructor",
         completed_at: completedAtStr,
         stellar_tx: certificate.stellarTx || certificate.certificateHash,
       },
