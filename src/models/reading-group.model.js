@@ -59,5 +59,7 @@ const readingGroupSchema = new mongoose.Schema(
 );
 
 readingGroupSchema.index({ name: "text", description: "text" });
+readingGroupSchema.index({ privacy: 1, createdAt: -1 });
+readingGroupSchema.index({ book: 1, createdAt: -1 });
 
 export default mongoose.model("ReadingGroup", readingGroupSchema);

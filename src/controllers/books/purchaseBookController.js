@@ -53,7 +53,6 @@ export const purchaseBook = async (req, res) => {
       book: {
         _id: book._id,
         title: book.title,
-        fileUrl: book.fileUrl,
         price: book.price,
       },
       purchasedBooks: user.purchasedBooks,

@@ -52,7 +52,7 @@ function parseServiceKeys(raw) {
 
   for (const entry of parsed) {
     if (!entry || typeof entry !== "object") continue;
-    const { kid, secret } = entry;
+    const { kid, secret, serviceId } = entry;
     if (typeof kid !== "string" || kid === "" || typeof secret !== "string" || secret === "") {
       logger.warn("⚠️  Skipping AI_SERVICE_KEYS entry missing a string kid/secret.");
       continue;
@@ -62,7 +62,12 @@ function parseServiceKeys(raw) {
       : [];
     // Default to active unless explicitly disabled (active:false retires a kid).
     const active = entry.active !== false;
-    map.set(kid, { secret, scopes, active });
+    map.set(kid, {
+      secret,
+      serviceId: typeof serviceId === "string" && serviceId.trim() ? serviceId.trim() : undefined,
+      scopes,
+      active,
+    });
   }
 
   return map;
