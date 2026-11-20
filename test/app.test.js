@@ -112,6 +112,15 @@ describe("Request ID propagation", () => {
       .set("X-Request-Id", customId);
     expect(res.headers["x-request-id"]).toBe(customId);
   });
+
+  it("should replace malformed or oversized client request IDs", async () => {
+    const res = await request(app)
+      .get("/health")
+      .set("X-Request-Id", "bad id\n" + "x".repeat(200));
+
+    expect(res.headers["x-request-id"]).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+    expect(res.headers["x-request-id"]).not.toContain("bad");
+  });
 });
 
 describe("Metrics endpoint", () => {
