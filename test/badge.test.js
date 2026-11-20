@@ -91,10 +91,55 @@ describe("Course Badges API", () => {
     });
 
     const res = await request(app)
-      .get(`/api/badges/user/${user._id}`);
+      .get(`/api/badges/user/${user._id}`)
+      .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("rejects anonymous badge-record lookups", async () => {
+    const res = await request(app).get(`/api/badges/user/${user._id}`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it("does not disclose another user's badge records", async () => {
+    const other = await User.create({
+      name: "Other Badge User",
+      email: "other_badge_user@example.com",
+      password: "password123",
+    });
+
+    const res = await request(app)
+      .get(`/api/badges/user/${other._id}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe("User badges not found");
+  });
+
+  it("uses the same not-found response for an invalid user ID", async () => {
+    const res = await request(app)
+      .get("/api/badges/user/not-an-object-id")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe("User badges not found");
+  });
+
+  it("does not expose unlisted fields from public badge records", async () => {
+    const res = await request(app).get("/api/badges");
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body.data[0]).sort()).toEqual([
+      "category",
+      "description",
+      "icon",
+      "name",
+      "slug",
+      "threshold",
+    ]);
   });
 });
