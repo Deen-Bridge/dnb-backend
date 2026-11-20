@@ -9,31 +9,11 @@ import {
 import logger from "../config/logger.js";
 
 /**
- * TODO: Replace with centralized RBAC system once open RBAC issue is completed.
- * Helper to check if a user is an authorized payout operator.
- */
-export const isPayoutAdmin = (user) => {
-  if (!user || !user._id) return false;
-  const allowlist = (process.env.PAYOUT_ADMIN_USER_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean);
-  return allowlist.includes(user._id.toString());
-};
-
-/**
  * Build batch payout transaction XDRs or simulate dry-run plan
  * POST /api/payouts/build
  */
 export const buildBatch = async (req, res) => {
   try {
-    if (!isPayoutAdmin(req.user)) {
-      return res.status(403).json({
-        success: false,
-        message: "Forbidden: Not authorized as payout operator",
-      });
-    }
-
     const { educatorIds, minAmount, dryRun } = req.body;
 
     const result = await buildPayoutBatch({
@@ -82,13 +62,6 @@ export const buildBatch = async (req, res) => {
  */
 export const submitBatch = async (req, res) => {
   try {
-    if (!isPayoutAdmin(req.user)) {
-      return res.status(403).json({
-        success: false,
-        message: "Forbidden: Not authorized as payout operator",
-      });
-    }
-
     const { batchId } = req.params;
     const { signedXdrs, signedXdr } = req.body;
 

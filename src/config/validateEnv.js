@@ -35,7 +35,6 @@ const optionalEnvVars = [
   "PLATFORM_FEE_PERCENT",
   "PLATFORM_WALLET_PUBLIC_KEY",
   "PLATFORM_COLLECT_ENABLED",
-  "PAYOUT_ADMIN_USER_IDS",
   "ACCESS_TOKEN_TTL",
   "REFRESH_TOKEN_TTL",
   // Redis configuration (optional - app works without Redis)

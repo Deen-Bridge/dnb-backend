@@ -1,6 +1,7 @@
 // routes/payoutRoutes.js
 import express from "express";
 import { protect } from "../middlewares/authMiddleware.js";
+import { authorizePayout, PAYOUT_CAPABILITIES } from "../security/payoutPolicy.js";
 import { idempotency } from "../middlewares/idempotency.js";
 import {
   buildBatch,
@@ -22,12 +23,27 @@ const router = express.Router();
 router.use(protect);
 
 // Educator endpoints
-router.get("/me/balance", getMyBalance);
-router.get("/me/statement", getMyStatement);
-router.get("/me/history", getMyHistory);
+router.get("/me/balance", authorizePayout(PAYOUT_CAPABILITIES.READ_OWN), getMyBalance);
+router.get("/me/statement", authorizePayout(PAYOUT_CAPABILITIES.READ_OWN), getMyStatement);
+router.get("/me/history", authorizePayout(PAYOUT_CAPABILITIES.READ_OWN), getMyHistory);
 
-// Operator endpoints (gated by PAYOUT_ADMIN_USER_IDS allowlist in controller)
-router.post("/build", buildPayoutValidation, validate, idempotency(), buildBatch);
-router.post("/:batchId/submit", submitPayoutValidation, validate, idempotency(), submitBatch);
+// Mutating capabilities are centrally defined and kept separate: building
+// initiates a payout, while submitting signed XDRs executes one.
+router.post(
+  "/build",
+  authorizePayout(PAYOUT_CAPABILITIES.INITIATE),
+  buildPayoutValidation,
+  validate,
+  idempotency(),
+  buildBatch
+);
+router.post(
+  "/:batchId/submit",
+  authorizePayout(PAYOUT_CAPABILITIES.EXECUTE),
+  submitPayoutValidation,
+  validate,
+  idempotency(),
+  submitBatch
+);
 
 export default router;

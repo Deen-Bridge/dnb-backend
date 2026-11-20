@@ -2555,7 +2555,7 @@ paths:
     post:
       tags: [Payouts]
       summary: Build a payout batch
-      description: Operator only. Gated by the PAYOUT_ADMIN_USER_IDS allowlist inside the controller.
+      description: Operator only. Requires the central payout.initiate capability, an active admin account, and a verified 2FA session.
       requestBody:
         required: false
         content:
@@ -2575,7 +2575,7 @@ paths:
     post:
       tags: [Payouts]
       summary: Submit a payout batch
-      description: Operator only. Gated by the PAYOUT_ADMIN_USER_IDS allowlist inside the controller.
+      description: Operator only. Requires the central payout.execute capability, an active admin account, and a verified 2FA session.
       parameters:
         - name: batchId
           in: path
