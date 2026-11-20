@@ -1,6 +1,7 @@
 import logger from "./logger.js";
 import { validateStellarConfig, resolveStellarConfig } from "./stellar.js";
 import { validateFeeSponsorBootConfig } from "../services/stellar/feeSponsorService.js";
+import { validateProductionConfiguration, redactedConfigurationDiagnostics } from "./productionConfig.js";
 
 /**
  * Validate required environment variables
@@ -120,6 +121,13 @@ export const validateEnv = () => {
   }
 
   const missing = [];
+
+  const productionProblems = validateProductionConfiguration();
+  if (productionProblems.length > 0) {
+    for (const problem of productionProblems) logger.error(`❌ Production configuration error: ${problem}`);
+    logger.error(`Redacted configuration diagnostics: ${JSON.stringify(redactedConfigurationDiagnostics())}`);
+    process.exit(1);
+  }
 
   requiredEnvVars.forEach((envVar) => {
     if (!process.env[envVar]) {
