@@ -3,6 +3,8 @@ import { getEducators } from "../controllers/educatorController.js";
 import { getEducatorAnalytics } from "../controllers/educatorAnalyticsController.js";
 import { cacheMiddleware } from "../middlewares/cache.js";
 import { CACHE_TTL, CACHE_KEYS } from "../utils/cache.js";
+import { protect } from "../middlewares/authMiddleware.js";
+import { standardLimiter } from "../middlewares/security.js";
 
 const router = express.Router();
 
@@ -18,6 +20,6 @@ router.get(
   getEducators
 );
 
-router.get("/:id/analytics", getEducatorAnalytics);
+router.get("/:id/analytics", protect, standardLimiter, getEducatorAnalytics);
 
 export default router;
