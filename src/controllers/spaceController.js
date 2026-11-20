@@ -138,7 +138,7 @@ export const joinWaitList = async (req, res) => {
         .json({ success: false, message: "Space not found" });
     }
 
-    if (space.waitList.includes(userId)) {
+    if (space.waitList.some((memberId) => memberId.toString() === userId.toString())) {
       return res
         .status(400)
         .json({ success: false, message: "Already on waitlist" });
