@@ -37,9 +37,7 @@ function transactionModel() {
   return mongoose.model("Transaction");
 }
 
-const JWT_SECRET =
-  process.env.JWT_SECRET ||
-  (process.env.NODE_ENV === "production" ? "" : "deenbridge-dev-only-secret");
+const JWT_SECRET = process.env.JWT_SECRET?.trim();
 
 /** Extract the JWT from wherever our REST clients legitimately put it. */
 function extractToken(auth = {}) {
@@ -63,8 +61,13 @@ function extractToken(auth = {}) {
  * Socket.io middleware: authenticate the handshake or reject it.
  * Mirrors the checks performed by `protect` in authMiddleware.js.
  */
-async function authenticateSocket(socket, next) {
+export async function authenticateSocket(socket, next) {
   try {
+    if (!JWT_SECRET) {
+      logger.error("Socket authentication unavailable: JWT_SECRET is not configured");
+      return next(new Error("Authentication unavailable"));
+    }
+
     const token = extractToken(socket.handshake.auth);
     if (!token) return next(new Error("No token, authorization denied"));
 
