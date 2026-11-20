@@ -57,6 +57,10 @@ const spaceSchema = new mongoose.Schema(
       type: Number, // in minutes
       required: true,
     },
+    capacity: {
+      type: Number,
+      min: 1,
+    },
     enrolledUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     meetingRoom: {
       type: String,
@@ -73,6 +77,26 @@ const spaceSchema = new mongoose.Schema(
 
 spaceSchema.pre("validate", function (next) {
   const domain = process.env.JITSI_MEET_DOMAIN || "meet.jit.si";
+  const waitList = this.waitList || [];
+  const enrolledUsers = this.enrolledUsers || [];
+  const waitListIds = waitList.map((id) => id.toString());
+  const enrolledIds = enrolledUsers.map((id) => id.toString());
+
+  if (new Set(waitListIds).size !== waitListIds.length) {
+    return next(new Error("Space waitList cannot contain duplicate users"));
+  }
+
+  if (new Set(enrolledIds).size !== enrolledIds.length) {
+    return next(new Error("Space enrolledUsers cannot contain duplicate users"));
+  }
+
+  if (enrolledIds.some((id) => waitListIds.includes(id))) {
+    return next(new Error("A user cannot be both enrolled and waitlisted"));
+  }
+
+  if (this.capacity !== null && this.capacity !== undefined && enrolledIds.length > this.capacity) {
+    return next(new Error("Space enrollment cannot exceed capacity"));
+  }
 
   if (!this.meetingRoom) {
     const suffix = Math.random().toString(36).slice(2, 8);
