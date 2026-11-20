@@ -55,6 +55,7 @@ export const AUDIT_ACTIONS = Object.freeze({
 
   // Authorization
   AUTHZ_OWNERSHIP_DENIED: "authz.ownership.denied",
+  AUTHZ_PAYOUT_DENIED:    "authz.payout.denied",
 
   // Service-to-service auth (dnb-ai)
   SERVICE_AUTH_DENIED: "service_auth.denied",
@@ -86,6 +87,10 @@ export const AUDIT_ACTIONS = Object.freeze({
   PRIVACY_EXPORT_REQUESTED: "privacy.export.requested",
   PRIVACY_DELETE_REQUESTED: "privacy.delete.requested",
   PRIVACY_DELETE_COMPLETED: "privacy.delete.completed",
+
+  // Security controls
+  SECURITY_IP_BLOCK:         "security.ip_block",
+  SECURITY_IP_UNBLOCK:       "security.ip_unblock",
 });
 
 const ACTION_VALUES = Object.values(AUDIT_ACTIONS);

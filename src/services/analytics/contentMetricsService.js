@@ -52,13 +52,13 @@ export class ContentMetricsService {
    * @param {Array<object>} progressDocs - CourseProgress records for the course.
    * @returns {object} The metrics row.
    */
-  _courseRow(course, progressDocs) {
+  _courseRow(course, progressDocs, stats) {
     const views = course.views || 0;
     const reviews = course.numReviews || 0;
     const enrollments = Array.isArray(course.enrolledUsers)
       ? course.enrolledUsers.length
       : 0;
-    const completions = progressDocs.filter(
+    const completions = stats?.completions ?? progressDocs.filter(
       (p) => p.completedAt || Number(p.percentComplete || 0) >= 100
     ).length;
     const cr = completionRate(completions, enrollments);
@@ -74,8 +74,8 @@ export class ContentMetricsService {
       completions,
       completionRate: cr,
       interactionRate: interactionRate(reviews, views),
-      avgTimeSpentSeconds: avgTimeSpentSeconds(progressDocs),
-      avgPercentComplete: avgPercentComplete(progressDocs),
+      avgTimeSpentSeconds: stats?.avgTimeSpentSeconds ?? avgTimeSpentSeconds(progressDocs),
+      avgPercentComplete: stats?.avgPercentComplete ?? avgPercentComplete(progressDocs),
       engagementScore: engagementScore({
         completionRate: cr,
         interactionRate: interactionRate(reviews, views),
@@ -91,12 +91,12 @@ export class ContentMetricsService {
    * @param {Array<object>} progressDocs - ReadingProgress records for the book.
    * @returns {object} The metrics row.
    */
-  _bookRow(book, progressDocs) {
+  _bookRow(book, progressDocs, stats) {
     const views = book.readCount || 0;
     const reviews = book.numReviews || 0;
     // Books have no enrollments; learner depth is the average reading progress
     // (ReadingProgress stores the field as `percentage`, not `percentComplete`).
-    const apc = avgPercentComplete(
+    const apc = stats?.avgPercentComplete ?? avgPercentComplete(
       progressDocs.map((p) => ({ percentComplete: p.percentage }))
     );
 
@@ -127,28 +127,41 @@ export class ContentMetricsService {
    *
    * @returns {Promise<{summary: object, content: object[]}>}
    */
-  async getContentPerformance() {
-    const [courses, books] = await Promise.all([
-      Course.find().lean(),
-      Book.find().lean(),
+  async getContentPerformance({ page = 1, limit = 20 } = {}) {
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+    const boundedLimit = safePage * safeLimit;
+    const [courses, books, totalCourses, totalBooks] = await Promise.all([
+      Course.find().sort({ views: -1, _id: 1 }).limit(boundedLimit).lean(),
+      Book.find().sort({ readCount: -1, _id: 1 }).limit(boundedLimit).lean(),
+      Course.countDocuments(),
+      Book.countDocuments(),
     ]);
+    const courseIds = courses.map((c) => c._id);
+    const bookIds = books.map((b) => b._id);
 
     const [courseProgress, bookProgress] = await Promise.all([
-      CourseProgress.find({ course: { $in: courses.map((c) => c._id) } }).lean(),
-      ReadingProgress.find({ book: { $in: books.map((b) => b._id) } }).lean(),
+      CourseProgress.aggregate([
+        { $match: { course: { $in: courseIds } } },
+        { $group: { _id: "$course", completions: { $sum: { $cond: [{ $or: [{ $ne: ["$completedAt", null] }, { $gte: ["$percentComplete", 100] }] }, 1, 0] } }, avgTimeSpentSeconds: { $avg: "$lastPositionSeconds" }, avgPercentComplete: { $avg: "$percentComplete" } } },
+      ]),
+      ReadingProgress.aggregate([
+        { $match: { book: { $in: bookIds } } },
+        { $group: { _id: "$book", avgPercentComplete: { $avg: "$percentage" } } },
+      ]),
     ]);
 
-    const progressByCourse = this._groupBy(courseProgress, "course");
-    const progressByBook = this._groupBy(bookProgress, "book");
+    const progressByCourse = new Map(courseProgress.map((p) => [String(p._id), p]));
+    const progressByBook = new Map(bookProgress.map((p) => [String(p._id), p]));
 
     const content = [
       ...courses.map((course) =>
-        this._courseRow(course, progressByCourse.get(String(course._id)) || [])
+        this._courseRow(course, [], progressByCourse.get(String(course._id)))
       ),
       ...books.map((book) =>
-        this._bookRow(book, progressByBook.get(String(book._id)) || [])
+        this._bookRow(book, [], progressByBook.get(String(book._id)))
       ),
-    ].sort((a, b) => b.views - a.views);
+    ].sort((a, b) => b.views - a.views || a.id.localeCompare(b.id)).slice((safePage - 1) * safeLimit, safePage * safeLimit);
 
     // Course-only completion average for the roll-up (books have no enrollments).
     const courseRows = content.filter((row) => row.type === "course");
@@ -162,7 +175,7 @@ export class ContentMetricsService {
 
     return {
       summary: {
-        totalContent: content.length,
+        totalContent: totalCourses + totalBooks,
         totalCourses: courseRows.length,
         totalBooks: content.length - courseRows.length,
         totalViews: content.reduce((sum, r) => sum + r.views, 0),
@@ -174,6 +187,7 @@ export class ContentMetricsService {
           .slice(0, 3),
       },
       content,
+      pagination: { page: safePage, limit: safeLimit, total: totalCourses + totalBooks, totalPages: Math.ceil((totalCourses + totalBooks) / safeLimit) },
     };
   }
 

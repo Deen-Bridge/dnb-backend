@@ -22,7 +22,7 @@ import logger from "../../config/logger.js";
  * @query {number} [quarter] - Quarter number (1-4) for quarterly reports
  * @query {string} [startDate] - ISO date for custom period start
  * @query {string} [endDate] - ISO date for custom period end
- * @query {string} [format=json] - Response format: json or pdf
+ * @query {string} [format=json] - Response format: json only
  */
 export const getFinancialReport = async (req, res) => {
   try {
@@ -35,6 +35,14 @@ export const getFinancialReport = async (req, res) => {
       endDate,
       format = "json",
     } = req.query;
+
+    if (format !== "json") {
+      return res.status(400).json({
+        success: false,
+        code: "UNSUPPORTED_REPORT_FORMAT",
+        message: "Only JSON financial reports are currently supported.",
+      });
+    }
 
     // Validate period type
     const validPeriods = ["monthly", "quarterly", "yearly", "custom"];
@@ -96,14 +104,6 @@ export const getFinancialReport = async (req, res) => {
     }
 
     const report = await generateFinancialReport(options);
-
-    // TODO: PDF export support (requires template rendering)
-    if (format === "pdf") {
-      return res.status(501).json({
-        success: false,
-        message: "PDF export not yet implemented",
-      });
-    }
 
     res.status(200).json({
       success: true,

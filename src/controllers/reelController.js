@@ -1,7 +1,9 @@
 import mongoose from "mongoose";
 import Reel from "../models/Reel.js";
+import ReelComment from "../models/ReelComment.js";
 import cloudinary from "../utils/cloudinary.js";
 import logger from "../config/logger.js";
+import { publicReelFilter } from "../utils/reelVisibility.js";
 import {
   createReelDerivative,
   listReelDerivatives,
@@ -17,7 +19,7 @@ const uploadBufferToCloudinary = (buffer, options) =>
         } else {
           resolve(result);
         }
-      }
+      },
     );
 
     uploadStream.end(buffer);
@@ -59,7 +61,7 @@ const formatReelResponse = (reel, viewerId) => {
     stats: {
       likes: likeSet.size,
       loves: loveSet.size,
-      comments: reel.comments?.length || 0,
+      comments: reel.commentCount ?? reel.comments?.length ?? 0,
       shares: reel.shareCount || 0,
       views: reel.viewCount || 0,
       duets: reel.duetCount || 0,
@@ -89,13 +91,13 @@ export const getReels = async (req, res) => {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(
       Math.max(parseInt(req.query.limit, 10) || 10, 1),
-      50
+      50,
     );
     const skip = (page - 1) * limit;
     const viewerId = req.user?._id;
 
     const [reels, total] = await Promise.all([
-      Reel.find()
+      Reel.find(publicReelFilter())
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -126,7 +128,7 @@ export const getReelById = async (req, res) => {
     const { id } = req.params;
     const viewerId = req.user?._id;
 
-    const reel = await Reel.findById(id)
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() })
       .populate("createdBy", "name avatar")
       .lean();
 
@@ -169,7 +171,7 @@ export const createReel = async (req, res) => {
 
     const uploadResult = await uploadBufferToCloudinary(
       req.file.buffer,
-      uploadOptions
+      uploadOptions,
     );
 
     const reel = await Reel.create({
@@ -208,7 +210,7 @@ export const reactToReel = async (req, res) => {
       });
     }
 
-    const reel = await Reel.findById(id);
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() });
     if (!reel) {
       return res
         .status(404)
@@ -220,17 +222,17 @@ export const reactToReel = async (req, res) => {
     const userKey = userId.toString();
 
     const alreadyReacted = reel[targetField].some(
-      (entry) => entry.toString() === userKey
+      (entry) => entry.toString() === userKey,
     );
 
     if (alreadyReacted) {
       reel[targetField] = reel[targetField].filter(
-        (entry) => entry.toString() !== userKey
+        (entry) => entry.toString() !== userKey,
       );
     } else {
       reel[targetField].push(userId);
       reel[oppositeField] = reel[oppositeField].filter(
-        (entry) => entry.toString() !== userKey
+        (entry) => entry.toString() !== userKey,
       );
     }
 
@@ -265,35 +267,31 @@ export const addReelComment = async (req, res) => {
         .json({ success: false, message: "Comment text is required" });
     }
 
-    const reel = await Reel.findById(id);
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() });
     if (!reel) {
       return res
         .status(404)
         .json({ success: false, message: "Reel not found" });
     }
 
-    const commentId = new mongoose.Types.ObjectId();
-    const comment = {
-      _id: commentId,
+    const comment = await ReelComment.create({
+      reel: reel._id,
       user: userId,
       text: text.trim(),
-      createdAt: new Date(),
-    };
-
-    reel.comments.push(comment);
-    await reel.save();
-
-    const populatedComment = await Reel.findOne(
-      { _id: reel._id, "comments._id": commentId },
-      { "comments.$": 1 }
-    )
-      .populate("comments.user", "name avatar")
+    });
+    await Reel.updateOne({ _id: reel._id }, { $inc: { commentCount: 1 } });
+    const populatedComment = await ReelComment.findById(comment._id)
+      .populate("user", "name avatar")
       .lean();
+    const commentCount = await ReelComment.countDocuments({
+      reel: reel._id,
+      status: "active",
+    });
 
     res.status(201).json({
       success: true,
-      comment: populatedComment?.comments?.[0],
-      stats: { comments: reel.comments.length },
+      comment: populatedComment,
+      stats: { comments: commentCount },
     });
   } catch (error) {
     logger.error("Error adding reel comment:", error);
@@ -307,13 +305,12 @@ export const getReelComments = async (req, res) => {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(
       Math.max(parseInt(req.query.limit, 10) || 20, 1),
-      100
+      100,
     );
     const skip = (page - 1) * limit;
 
-    const reel = await Reel.findById(id)
-      .select("comments")
-      .populate("comments.user", "name avatar")
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() })
+      .select("_id")
       .lean();
 
     if (!reel) {
@@ -322,18 +319,23 @@ export const getReelComments = async (req, res) => {
         .json({ success: false, message: "Reel not found" });
     }
 
-    const sortedComments = [...(reel.comments || [])].sort(
-      (a, b) => b.createdAt - a.createdAt
-    );
-
-    const paginated = sortedComments.slice(skip, skip + limit);
-    const hasMore = skip + paginated.length < sortedComments.length;
+    const query = { reel: id, status: "active" };
+    const [paginated, total] = await Promise.all([
+      ReelComment.find(query)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("user", "name avatar")
+        .lean(),
+      ReelComment.countDocuments(query),
+    ]);
+    const hasMore = skip + paginated.length < total;
 
     res.status(200).json({
       success: true,
       page,
       limit,
-      total: sortedComments.length,
+      total,
       hasMore,
       comments: paginated,
     });
@@ -348,37 +350,49 @@ export const deleteReelComment = async (req, res) => {
     const { id, commentId } = req.params;
     const userId = req.user?._id?.toString();
 
-    const reel = await Reel.findById(id);
+    const reel = await Reel.findOne({ _id: id, ...publicReelFilter() });
     if (!reel) {
       return res
         .status(404)
         .json({ success: false, message: "Reel not found" });
     }
 
-    const comment = reel.comments.id(commentId);
+    const isReelOwner = reel.createdBy.toString() === userId;
+    const comment = await ReelComment.findOne({
+      _id: commentId,
+      reel: id,
+      status: "active",
+    });
     if (!comment) {
       return res
         .status(404)
         .json({ success: false, message: "Comment not found" });
     }
 
-    const isOwner =
-      comment.user.toString() === userId ||
-      reel.createdBy.toString() === userId;
-
-    if (!isOwner) {
+    if (!isReelOwner && comment.user.toString() !== userId) {
       return res
         .status(403)
         .json({ success: false, message: "Not authorized to delete comment" });
     }
 
-    comment.remove();
-    await reel.save();
+    await ReelComment.updateOne(
+      { _id: commentId, reel: id, status: "active" },
+      { $set: { status: "removed", deletedAt: new Date() } },
+    );
+
+    await Reel.updateOne(
+      { _id: id, commentCount: { $gt: 0 } },
+      { $inc: { commentCount: -1 } },
+    );
+    const commentCount = await ReelComment.countDocuments({
+      reel: id,
+      status: "active",
+    });
 
     res.status(200).json({
       success: true,
       message: "Comment deleted",
-      stats: { comments: reel.comments.length },
+      stats: { comments: commentCount },
     });
   } catch (error) {
     logger.error("Error deleting reel comment:", error);
@@ -389,10 +403,10 @@ export const deleteReelComment = async (req, res) => {
 export const registerReelShare = async (req, res) => {
   try {
     const { id } = req.params;
-    const reel = await Reel.findByIdAndUpdate(
-      id,
+    const reel = await Reel.findOneAndUpdate(
+      { _id: id, ...publicReelFilter() },
       { $inc: { shareCount: 1 } },
-      { new: true }
+      { new: true },
     ).lean();
 
     if (!reel) {
@@ -414,10 +428,10 @@ export const registerReelShare = async (req, res) => {
 export const registerReelView = async (req, res) => {
   try {
     const { id } = req.params;
-    const reel = await Reel.findByIdAndUpdate(
-      id,
+    const reel = await Reel.findOneAndUpdate(
+      { _id: id, ...publicReelFilter() },
       { $inc: { viewCount: 1 } },
-      { new: true }
+      { new: true },
     ).lean();
 
     if (!reel) {
@@ -501,7 +515,10 @@ export const getReelDerivatives = async (req, res) => {
     const { type } = req.query;
     const viewerId = req.user?._id;
 
-    const original = await Reel.findById(id).select("_id duetCount stitchCount");
+    const original = await Reel.findOne({
+      _id: id,
+      ...publicReelFilter(),
+    }).select("_id duetCount stitchCount");
     if (!original) {
       return res
         .status(404)
@@ -510,7 +527,7 @@ export const getReelDerivatives = async (req, res) => {
 
     const { items, page, limit, total, hasMore } = await listReelDerivatives(
       id,
-      { page: req.query.page, limit: req.query.limit, type }
+      { page: req.query.page, limit: req.query.limit, type },
     );
 
     res.status(200).json({
