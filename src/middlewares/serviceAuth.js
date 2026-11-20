@@ -17,7 +17,7 @@
 //   X-Signature       lowercase hex HMAC-SHA256 of the canonical string
 //
 // Canonical string (LF-separated, no trailing newline):
-//   METHOD \n PATH \n TIMESTAMP \n sha256hex(rawBody || "")
+//   SERVICE_ID \n METHOD \n PATH \n TIMESTAMP \n sha256hex(rawBody || "")
 //
 //   METHOD  = HTTP method, uppercased (e.g. "GET", "POST")
 //   PATH    = request path exactly as sent, including any query string
@@ -52,8 +52,9 @@ function sha256hex(input) {
  * @param {Buffer|string} [p.rawBody]  raw request body bytes
  * @returns {string}
  */
-export function buildCanonicalString({ method, path, timestamp, rawBody }) {
+export function buildCanonicalString({ serviceId, method, path, timestamp, rawBody }) {
   return [
+    serviceId,
     String(method).toUpperCase(),
     path,
     String(timestamp),
@@ -121,8 +122,14 @@ export function requireServiceAuth({ scope } = {}) {
       return deny("Unknown or retired service key", 401);
     }
 
+    // Bind a declared key owner to the signed service identity.
+    if (key.serviceId && key.serviceId !== String(serviceId)) {
+      return deny("Service identity does not match service key", 401);
+    }
+
     // 4. Recompute the signature and compare in constant time.
     const canonical = buildCanonicalString({
+      serviceId: String(serviceId),
       method: req.method,
       path: req.originalUrl,
       timestamp,
