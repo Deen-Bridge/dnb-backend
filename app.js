@@ -92,6 +92,7 @@ import spaceRecordingRoutes from "./src/routes/spaceRecordingRoutes.js";
 import v1Router from "./src/routes/api/v1/index.js";
 import v2Router from "./src/routes/api/v2/index.js";
 import { versionMiddleware } from "./src/middlewares/versionMiddleware.js";
+import { apiVersionContractHeaders } from "./src/middlewares/apiVersionContract.js";
 
 // Issue #224 — Developer documentation portal
 import docsRoutes from "./src/routes/docsRoutes.js";
@@ -313,6 +314,7 @@ app.use("/api/admin/blocked-ips", blockedIpsRoutes);
 // Issue #215 — Apply version detection middleware globally on /api paths.
 // Must come before versioned router mounts.
 app.use(versionMiddleware);
+app.use(apiVersionContractHeaders);
 
 // Issue #215 — Versioned API routers.
 // /api/v1/* and /api/v2/* let clients pin to a specific version.
