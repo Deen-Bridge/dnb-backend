@@ -5,6 +5,7 @@
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --forceExit",
     "lint": "eslint .",
+    "audit:runtime-boundary": "node scripts/check-runtime-duplicates.js",
     "lint:fix": "eslint . --fix",
     "start": "node --import dotenv/config server.js",
     "dev": "nodemon --import dotenv/config server.js",
