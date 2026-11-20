@@ -629,8 +629,6 @@ export const getUserStats = async (req, res) => {
       success: true,
       coursesEnrolled,
       booksRead,
-      upcomingSessions: 0, // Placeholder - implement when sessions are available
-      messagesUnread: 0, // Placeholder - implement when messages are available
       totalUptime,
     });
   } catch (error) {
