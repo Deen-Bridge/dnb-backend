@@ -34,7 +34,21 @@ const contentFlagSchema = new mongoose.Schema(
     },
     flaggedKeywords: [{ type: String }],
   },
-  { timestamps: true }
+  { timestamps: true },
+);
+
+// Keep at most one active report for a reporter/reel pair. Resolved reports
+// remain as audit history and may be re-opened with a new pending record.
+contentFlagSchema.index(
+  { reel: 1, reporter: 1, status: 1 },
+  {
+    name: "one-pending-flag-per-reporter-reel",
+    unique: true,
+    partialFilterExpression: {
+      status: "pending",
+      reporter: { $type: "objectId" },
+    },
+  },
 );
 
 export default mongoose.model("ContentFlag", contentFlagSchema);

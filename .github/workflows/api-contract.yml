@@ -1,0 +1,32 @@
+name: API contract validation
+
+on:
+  pull_request:
+    paths:
+      - "openapi.yaml"
+      - ".github/scripts/validate-openapi-contract.cjs"
+      - ".github/workflows/api-contract.yml"
+      - "src/routes/**"
+      - "app.js"
+  push:
+    branches: [main, dev]
+    paths:
+      - "openapi.yaml"
+      - ".github/scripts/validate-openapi-contract.cjs"
+      - ".github/workflows/api-contract.yml"
+      - "src/routes/**"
+      - "app.js"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate versioned OpenAPI contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node .github/scripts/validate-openapi-contract.cjs

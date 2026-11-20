@@ -17,7 +17,7 @@ const configuredHosts = () =>
   );
 
 export function parseByteRange(value, maxBytes = DEFAULT_MAX_RANGE_BYTES) {
-  if (value == null || value === "") return null;
+  if (value === null || value === undefined || value === "") return null;
   const match = /^bytes=(\d+)-(\d+)$/.exec(String(value).trim());
   if (!match) return null;
 

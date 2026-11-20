@@ -23,15 +23,23 @@ export const idempotency = ({ required = false } = {}) => {
     }
 
     const trimmedKey = idempotencyKey.trim();
+    if (trimmedKey.length > 255) throw new APIError("Idempotency key is too long", 400);
     const userId = req.user?._id;
     if (!userId) {
       throw new APIError("Authentication required for idempotency protection", 401);
     }
 
     const endpoint = (req.originalUrl || req.path || "").split("?")[0];
+    const normalize = (value) => {
+      if (Array.isArray(value)) return value.map(normalize);
+      if (value && typeof value === "object") return Object.keys(value).sort().reduce((out, key) => { out[key] = normalize(value[key]); return out; }, {});
+      return value;
+    };
+    const operation = `${req.method}:${(req.originalUrl || req.path || "").split("?")[0]}`;
+    const scope = crypto.createHash("sha256").update(String(req.body?.wallet || req.body?.walletAddress || userId)).digest("hex");
     const requestHash = crypto
       .createHash("sha256")
-      .update(JSON.stringify(req.body || {}))
+      .update(JSON.stringify({ operation, scope, body: normalize(req.body || {}) }))
       .digest("hex");
 
     let record;
@@ -40,30 +48,36 @@ export const idempotency = ({ required = false } = {}) => {
         key: trimmedKey,
         userId,
         endpoint,
+        operation,
+        scope,
         requestHash,
         status: "in_progress",
       });
     } catch (err) {
       if (err.code === 11000) {
-        const existing = await IdempotencyKey.findOne({
-          key: trimmedKey,
-          userId,
-          endpoint,
-        });
+        const existing = await IdempotencyKey.findOne({ key: trimmedKey });
 
         if (!existing) {
           throw err;
         }
 
+        if (String(existing.userId) !== String(userId) || existing.operation !== operation || existing.scope !== scope) {
+          throw new APIError("Idempotency key is already bound to another operation", 409);
+        }
         if (existing.requestHash !== requestHash) {
           throw new APIError("Idempotency key payload mismatch", 422);
         }
 
         if (existing.status === "in_progress") {
+          if (Date.now() - new Date(existing.createdAt).getTime() > 5 * 60 * 1000) {
+            await IdempotencyKey.deleteOne({ _id: existing._id, status: "in_progress" });
+            return idempotency({ required })(req, res, next);
+          } else {
           throw new APIError(
             "A request with this idempotency key is currently in progress",
             409
           );
+          }
         }
 
         if (existing.status === "completed") {
@@ -82,7 +96,7 @@ export const idempotency = ({ required = false } = {}) => {
       captured = true;
       const statusCode = res.statusCode || 200;
 
-      if (statusCode >= 500) {
+      if (statusCode >= 500 || statusCode < 200 || Buffer.byteLength(JSON.stringify(body ?? null), "utf8") > 64 * 1024) {
         IdempotencyKey.deleteOne({ _id: record._id }).catch((e) =>
           logger.error({ err: e }, "Failed to delete idempotency key on server error")
         );

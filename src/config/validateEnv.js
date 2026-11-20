@@ -1,11 +1,17 @@
 import logger from "./logger.js";
 import { validateStellarConfig, resolveStellarConfig } from "./stellar.js";
 import { validateFeeSponsorBootConfig } from "../services/stellar/feeSponsorService.js";
+import { validateProductionConfiguration, redactedConfigurationDiagnostics } from "./productionConfig.js";
 
 /**
  * Validate required environment variables
  */
 const requiredEnvVars = ["MONGO_URI", "JWT_SECRET", "NODE_ENV", "PORT"];
+const JWT_PLACEHOLDERS = new Set([
+  "deenbridge-temp-secret-key-2024",
+  "change-me",
+  "your-jwt-secret",
+]);
 
 const optionalEnvVars = [
   "CLOUDINARY_CLOUD_NAME",
@@ -29,7 +35,6 @@ const optionalEnvVars = [
   "PLATFORM_FEE_PERCENT",
   "PLATFORM_WALLET_PUBLIC_KEY",
   "PLATFORM_COLLECT_ENABLED",
-  "PAYOUT_ADMIN_USER_IDS",
   "ACCESS_TOKEN_TTL",
   "REFRESH_TOKEN_TTL",
   // Redis configuration (optional - app works without Redis)
@@ -121,6 +126,13 @@ export const validateEnv = () => {
 
   const missing = [];
 
+  const productionProblems = validateProductionConfiguration();
+  if (productionProblems.length > 0) {
+    for (const problem of productionProblems) logger.error(`❌ Production configuration error: ${problem}`);
+    logger.error(`Redacted configuration diagnostics: ${JSON.stringify(redactedConfigurationDiagnostics())}`);
+    process.exit(1);
+  }
+
   requiredEnvVars.forEach((envVar) => {
     if (!process.env[envVar]) {
       missing.push(envVar);
@@ -163,11 +175,19 @@ export const validateEnv = () => {
     process.exit(1);
   }
 
-  // Check JWT_SECRET strength
-  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
-    logger.warn(
-      "⚠️  JWT_SECRET is too short! Use at least 32 characters for production."
+  // Production must never boot with a guessable, placeholder, or undersized
+  // signing secret. Development and test keep explicit local defaults.
+  const jwtSecret = process.env.JWT_SECRET || "";
+  const weakJwtSecret =
+    jwtSecret.length < 32 || JWT_PLACEHOLDERS.has(jwtSecret);
+  if (process.env.NODE_ENV === "production" && weakJwtSecret) {
+    logger.error(
+      "JWT_SECRET must be at least 32 characters and must not be a placeholder in production."
     );
+    process.exit(1);
+  }
+  if (process.env.NODE_ENV !== "production" && weakJwtSecret) {
+    logger.warn("JWT_SECRET is below the production strength policy.");
   }
 
   // Check NODE_ENV

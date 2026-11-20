@@ -201,18 +201,20 @@ describe("Course progress endpoints contract", () => {
     });
   });
 
-  describe("GET /api/progress/courses (frontend-expected route)", () => {
-    // GAP: the frontend calls GET /api/progress/courses but the backend only
-    // exposes /api/courses/:id/progress and /api/users/me/learning. The route
-    // is not mounted, so the request 404s. Pin the current behavior; when the
-    // route is implemented, replace this test with the intended contract.
-    it("currently 404s because the route is not implemented", async () => {
+  describe("GET /api/progress/courses", () => {
+    it("returns only the authenticated user's progress", async () => {
       const res = await request(app)
         .get("/api/progress/courses")
         .set("Authorization", `Bearer ${token}`);
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.status).toBe("in-progress");
+      expect(res.body.courses).toEqual(expect.any(Array));
     });
 
-    it.todo("returns the authenticated user's progress for all courses once /api/progress/courses exists");
+    it("rejects unauthenticated requests", async () => {
+      const res = await request(app).get("/api/progress/courses");
+      expect(res.status).toBe(401);
+    });
   });
 });
