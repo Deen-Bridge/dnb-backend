@@ -49,34 +49,45 @@ export class ModerationService {
     return null;
   }
 
-  async flagReel({
-    reelId,
-    reporterId,
-    reason,
-    details,
-  }) {
+  async flagReel({ reelId, reporterId, reason, details }) {
     const reel = await Reel.findById(reelId);
     if (!reel) {
       throw new Error("Reel not found");
     }
 
-    const flag = await ContentFlag.create({
-      reel: reelId,
-      reporter: reporterId,
-      reason,
-      details,
-      status: "pending",
-      isAutoFlagged: false,
-    });
-
-    return flag;
+    try {
+      // Upsert makes retries idempotent and the partial unique index makes
+      // concurrent requests converge on one pending report.
+      return await ContentFlag.findOneAndUpdate(
+        { reel: reelId, reporter: reporterId, status: "pending" },
+        {
+          $set: { reason, details, isAutoFlagged: false },
+          $setOnInsert: {
+            reel: reelId,
+            reporter: reporterId,
+            status: "pending",
+          },
+        },
+        {
+          new: true,
+          upsert: true,
+          runValidators: true,
+          setDefaultsOnInsert: true,
+        },
+      );
+    } catch (error) {
+      // A concurrent upsert can lose the unique-index race. Return the
+      // already-created pending report instead of surfacing a false failure.
+      if (error?.code !== 11000) throw error;
+      return ContentFlag.findOne({
+        reel: reelId,
+        reporter: reporterId,
+        status: "pending",
+      });
+    }
   }
 
-  async getModerationQueue({
-    status = "pending",
-    page = 1,
-    limit = 20,
-  }) {
+  async getModerationQueue({ status = "pending", page = 1, limit = 20 }) {
     const query = {};
     if (status && status !== "all") {
       query.status = status;
@@ -104,13 +115,7 @@ export class ModerationService {
     };
   }
 
-  async processModerationAction({
-    flagId,
-    reelId,
-    adminId,
-    action,
-    notes,
-  }) {
+  async processModerationAction({ flagId, reelId, adminId, action, notes }) {
     let flag = null;
     if (flagId) {
       flag = await ContentFlag.findById(flagId);
@@ -124,13 +129,30 @@ export class ModerationService {
       throw new Error("Reel not found");
     }
 
-    let updatedStatus = "pending";
-    if (action === "approve") {
-      updatedStatus = "approved";
-    } else if (action === "reject") {
-      updatedStatus = "rejected";
-    } else if (action === "remove") {
-      updatedStatus = "removed";
+    const updatedStatus =
+      action === "approve"
+        ? "approved"
+        : action === "reject"
+          ? "rejected"
+          : "removed";
+
+    // A second request for the same resolved action is a safe replay. A
+    // different action against a resolved flag is rejected rather than
+    // creating contradictory audit records.
+    if (flag && flag.status !== "pending") {
+      if (flag.status !== updatedStatus) {
+        throw new Error("Moderation flag has already been resolved");
+      }
+      const existingAction = await ModerationAction.findOne({
+        flag: flag._id,
+        action,
+      });
+      if (existingAction) {
+        return { flag, moderationAction: existingAction, reel };
+      }
+    }
+
+    if (action === "remove") {
       reel.status = "removed";
       reel.isRemoved = true;
       await reel.save();
@@ -149,14 +171,16 @@ export class ModerationService {
       notes,
     });
 
-    const creatorId = reel.user || reel.author || reel.creator;
+    // Reel.createdBy is the canonical owner field. The legacy fallbacks were
+    // never populated by the Reel schema and silently dropped notices.
+    const creatorId = reel.createdBy;
     if (creatorId) {
       const decisionText =
         action === "remove"
           ? "has been removed due to community guideline violations."
           : action === "approve"
-          ? "has been reviewed and approved."
-          : "flag review has been resolved.";
+            ? "has been reviewed and approved."
+            : "flag review has been resolved.";
 
       await Notification.create({
         recipient: creatorId,
@@ -166,7 +190,7 @@ export class ModerationService {
         message: `Your reel "${reel.title || "Content"}" ${decisionText}`,
         data: { reelId: reel._id },
         priority: action === "remove" ? "high" : "medium",
-      }).catch(() => {});
+      });
     }
 
     return {
@@ -176,12 +200,7 @@ export class ModerationService {
     };
   }
 
-  async getModerationHistory({
-    reelId,
-    adminId,
-    page = 1,
-    limit = 20,
-  }) {
+  async getModerationHistory({ reelId, adminId, page = 1, limit = 20 }) {
     const query = {};
     if (reelId) query.reel = reelId;
     if (adminId) query.admin = adminId;
