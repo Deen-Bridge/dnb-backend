@@ -17,7 +17,7 @@ function sha256hex(input) {
 
 function signGet({ path = WHOAMI_PATH, secret, kid, serviceId = "dnb-ai", timestamp, body = "" }) {
   const ts = String(timestamp ?? Math.floor(Date.now() / 1000));
-  const canonical = ["GET", path, ts, sha256hex(body)].join("\n");
+  const canonical = [serviceId, "GET", path, ts, sha256hex(body)].join("\n");
   const signature = crypto.createHmac("sha256", secret).update(canonical).digest("hex");
   return {
     "X-Service-Id": serviceId,
@@ -133,6 +133,16 @@ describe("requireServiceAuth via /api/internal/ai/whoami", () => {
     headers["X-Signature"] = "abc123"; // shorter than a real 64-char hex digest
     const res = await request(app).get(WHOAMI_PATH).set(headers);
     expect(res.status).toBe(401); // 401, never a 500 from timingSafeEqual throwing
+  });
+
+  it("rejects service identity substitution when a key declares its owner", async () => {
+    process.env.AI_SERVICE_KEYS = JSON.stringify([
+      { kid: "bound-kid", secret: K1_SECRET, serviceId: "dnb-ai", scopes: ["ai:read-content"], active: true },
+    ]);
+    const res = await request(app)
+      .get(WHOAMI_PATH)
+      .set(signGet({ secret: K1_SECRET, kid: "bound-kid", serviceId: "other-service" }));
+    expect(res.status).toBe(401);
   });
 });
 

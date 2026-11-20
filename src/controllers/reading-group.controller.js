@@ -34,6 +34,7 @@ export const getGroups = async (req, res) => {
     const bookId = req.query.bookId;
     const privacy = req.query.privacy;
     const search = req.query.search || req.query.q;
+    const sort = req.query.sort;
     const { page, limit } = parsePagination(req.query);
 
     const result = await readingGroupService.getGroups({
@@ -42,6 +43,7 @@ export const getGroups = async (req, res) => {
       search,
       page,
       limit,
+      sort,
     });
 
     res.status(200).json({ success: true, ...result });

@@ -9,6 +9,14 @@ import contentMetricsService from "../../services/analytics/contentMetricsServic
 import { bookService } from "../../services/book.service.js";
 import { createNewBookNotification } from "../notificationController.js";
 import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
+import {
+  isSafeStorageId,
+  isAllowedMediaUrl,
+  MEDIA_URL_TTL_SECONDS,
+  MEDIA_MAX_RANGE_BYTES,
+  parseByteRange,
+  setMediaHeaders,
+} from "../../utils/mediaDownloadSecurity.js";
 import { revokeCloudinaryAsset } from "../../services/mediaLifecycle.js";
 
 // Magic-byte types accepted for the book's text file.
@@ -135,7 +143,7 @@ export const getBooks = async (req, res) => {
     const isPaginated = pageParam !== null || limitParam !== null;
 
     const selectFields =
-      "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
+      "_id title author category categoryRef price currency readCount rating numReviews description image duration createdAt updatedAt";
 
     if (isPaginated) {
       const page = Math.max(pageParam || 1, 1);
@@ -181,6 +189,7 @@ export const getBooks = async (req, res) => {
 // get a particular book
 export const getBook = async (req, res) => {
   const book = await Book.findById(req.params.id)
+    .select("-fileUrl -filePublicId -audioFileUrl -audioFilePublicId")
     .populate("author", "name avatar bio")
     .populate("reviews.user", "name avatar")
     .lean();
@@ -205,7 +214,7 @@ export const getBooksByAuthor = async (req, res) => {
         .json({ success: false, message: "Missing author id" });
     }
     const selectFields =
-      "_id title author category categoryRef price currency readCount rating numReviews description image audioFileUrl duration createdAt updatedAt";
+      "_id title author category categoryRef price currency readCount rating numReviews description image duration createdAt updatedAt";
     const books = await Book.find({ author: authorId })
       .select(selectFields)
       .sort({ createdAt: -1 })
@@ -333,30 +342,38 @@ export const streamBookAudio = async (req, res) => {
 
     // Authenticated uploads are served through a short-lived signed URL, which
     // the player follows directly (Cloudinary supports HTTP Range requests).
-    if (book.audioFilePublicId) {
+    if (book.audioFilePublicId && isSafeStorageId(book.audioFilePublicId)) {
       const signedUrl = bookService.getSignedAudioUrl(book);
       return res.redirect(302, signedUrl);
     }
 
     // Fallback for public (non-authenticated) audio URLs: proxy the stream and
     // forward Range headers so seeking works.
-    const rangeHeader = req.headers.range || "bytes=0-";
+    const range = parseByteRange(req.headers.range, MEDIA_MAX_RANGE_BYTES);
+    if (req.headers.range && !range) {
+      return res.status(416).json({ success: false, message: "Invalid or excessive byte range" });
+    }
+    if (!isAllowedMediaUrl(book.audioFileUrl)) {
+      return res.status(503).json({ success: false, message: "Audio storage provider is not allowed" });
+    }
     const fileResponse = await axios.get(book.audioFileUrl, {
       responseType: "stream",
-      headers: { Range: rangeHeader },
+      timeout: 15_000,
+      maxContentLength: 100 * 1024 * 1024,
+      maxBodyLength: 100 * 1024 * 1024,
+      validateStatus: (status) => status === 200 || status === 206,
+      ...(range ? { headers: { Range: range.header } } : {}),
     });
 
-    res.setHeader("Content-Type", fileResponse.headers["content-type"] || "audio/mpeg");
+    setMediaHeaders(res, {
+      contentType: fileResponse.headers["content-type"] || "audio/mpeg",
+      filename: `${book.title}.mp3`,
+    });
     if (fileResponse.headers["content-range"]) {
       res.setHeader("Content-Range", fileResponse.headers["content-range"]);
       res.status(206);
     }
     res.setHeader("Accept-Ranges", "bytes");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${encodeURIComponent(`${book.title}.mp3`)}"`
-    );
-    res.setHeader("Cache-Control", "private, max-age=0, no-cache");
 
     fileResponse.data.pipe(res);
   } catch (error) {
@@ -489,26 +506,39 @@ export const streamBookPreview = async (req, res) => {
         .json({ success: false, message: "You do not have access to this book." });
     }
 
-    if (book.filePublicId) {
+    if (book.filePublicId && isSafeStorageId(book.filePublicId)) {
       const signedUrl = cloudinary.utils.private_download_url(book.filePublicId, "raw", {
-        expires_at: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+        expires_at: Math.floor(Date.now() / 1000) + MEDIA_URL_TTL_SECONDS,
       });
       return res.redirect(302, signedUrl);
     }
 
+    if (!isAllowedMediaUrl(book.fileUrl)) {
+      return res.status(503).json({ success: false, message: "Book storage provider is not allowed" });
+    }
+
+    const range = parseByteRange(req.headers.range, MEDIA_MAX_RANGE_BYTES);
+    if (req.headers.range && !range) {
+      return res.status(416).json({ success: false, message: "Invalid or excessive byte range" });
+    }
     const fileResponse = await axios.get(book.fileUrl, {
       responseType: "stream",
+      timeout: 15_000,
+      maxContentLength: 100 * 1024 * 1024,
+      maxBodyLength: 100 * 1024 * 1024,
+      validateStatus: (status) => status === 200 || status === 206,
+      ...(range ? { headers: { Range: range.header } } : {}),
     });
 
-    res.setHeader(
-      "Content-Type",
-      fileResponse.headers["content-type"] || "application/pdf"
-    );
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${encodeURIComponent(`${book.title}.pdf`)}"`
-    );
-    res.setHeader("Cache-Control", "private, max-age=0, no-cache");
+    setMediaHeaders(res, {
+      contentType: fileResponse.headers["content-type"] || "application/pdf",
+      filename: `${book.title}.pdf`,
+    });
+    if (fileResponse.headers["content-range"]) {
+      res.setHeader("Content-Range", fileResponse.headers["content-range"]);
+      res.status(206);
+    }
+    res.setHeader("Accept-Ranges", "bytes");
 
     fileResponse.data.pipe(res);
   } catch (error) {

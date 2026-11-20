@@ -9,8 +9,9 @@ import {
 
 const router = express.Router();
 
-// Download & lookup routes (public/protected)
-router.get("/:id/download", downloadCertificateController);
+// Certificate verification is public, but downloading the generated document
+// requires the certificate owner (or an authenticated administrator).
+router.get("/:id/download", protect, downloadCertificateController);
 router.get("/user", protect, getUserCertificatesController);
 router.get("/user/:userId", protect, getUserCertificatesController);
 router.get("/:id", getCertificateByIdController);
