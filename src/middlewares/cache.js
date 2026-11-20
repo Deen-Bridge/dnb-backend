@@ -8,11 +8,17 @@ import logger from "../config/logger.js";
  */
 export const cacheMiddleware = (
   ttl = CACHE_TTL.MEDIUM,
-  keyGenerator = null
+  keyGenerator = null,
+  { allowAuthenticated = false } = {}
 ) => {
   return async (req, res, next) => {
     // Only cache GET requests
     if (req.method !== "GET") {
+      return next();
+    }
+    if (req.user && !allowAuthenticated) {
+      res.setHeader("Cache-Control", "private, no-store");
+      logger.debug("cache bypass: authenticated response requires an explicit policy");
       return next();
     }
 
@@ -26,6 +32,7 @@ export const cacheMiddleware = (
       const cachedData = await getCache(cacheKey);
 
       if (cachedData) {
+        res.setHeader("Cache-Control", "public, max-age=" + ttl);
         logger.debug(`✅ Serving from cache: ${cacheKey}`);
         return res.status(200).json(cachedData);
       }
@@ -35,6 +42,11 @@ export const cacheMiddleware = (
 
       // Override res.json to cache the response
       res.json = (data) => {
+        if (containsSensitiveData(data)) {
+          res.setHeader("Cache-Control", "private, no-store");
+          return originalJson(data);
+        }
+        res.setHeader("Cache-Control", "public, max-age=" + ttl);
         // Cache the response
         setCache(cacheKey, data, ttl).catch((err) => {
           logger.error("Error caching response:", err);
@@ -50,6 +62,13 @@ export const cacheMiddleware = (
       next();
     }
   };
+};
+
+const SENSITIVE_KEYS = new Set(["password", "token", "secret", "refreshToken", "resetToken", "authorization", "payment"]);
+const containsSensitiveData = (value, depth = 0) => {
+  if (depth > 4 || value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((item) => containsSensitiveData(item, depth + 1));
+  return Object.entries(value).some(([key, child]) => SENSITIVE_KEYS.has(key) || containsSensitiveData(child, depth + 1));
 };
 
 /**
@@ -92,6 +111,7 @@ export const smartCache = (options = {}) => {
     prefix = "api",
     includeQuery = true,
     includeUser = false,
+    allowAuthenticated = false,
   } = options;
 
   return cacheMiddleware(ttl, (req) => {
@@ -109,7 +129,7 @@ export const smartCache = (options = {}) => {
     }
 
     return key;
-  });
+  }, { allowAuthenticated });
 };
 
 export default {

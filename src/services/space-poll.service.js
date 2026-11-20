@@ -2,6 +2,9 @@ import SpacePoll from "../models/space-poll.model.js";
 import PollVote from "../models/poll-vote.model.js";
 import Space from "../models/Space.js";
 
+const MAX_POLLS_PER_RESPONSE = 100;
+const MAX_EXPORT_VOTES = 10_000;
+
 export class SpacePollService {
   async createPoll({ spaceId, hostId, question, options }) {
     const space = await Space.findById(spaceId);
@@ -33,7 +36,7 @@ export class SpacePollService {
       status: "active",
     });
 
-    return this.getPollResults(poll._id.toString());
+    return this.getPollResults(poll._id.toString(), undefined, { internal: true });
   }
 
   async voteInPoll({ pollId, userId, optionIndex }) {
@@ -60,24 +63,27 @@ export class SpacePollService {
     return this.getPollResults(poll._id.toString(), userId);
   }
 
-  async getPollResults(pollId, userId) {
-    const poll = await SpacePoll.findById(pollId).populate("creator", "name email avatar");
+  async getPollResults(pollId, userId, { internal = false } = {}) {
+    const poll = await SpacePoll.findById(pollId).populate("creator", "name avatar");
     if (!poll) {
       throw new Error("Poll not found");
     }
 
-    const votes = await PollVote.find({ poll: poll._id });
-    const totalVotes = votes.length;
+    await this.assertCanViewResults(poll.space, userId, internal);
+    const counts = await PollVote.aggregate([
+      { $match: { poll: poll._id } },
+      { $group: { _id: "$optionIndex", votes: { $sum: 1 } } },
+    ]);
+    const countByOption = new Map(counts.map((entry) => [entry._id, entry.votes]));
+    const totalVotes = counts.reduce((sum, entry) => sum + entry.votes, 0);
 
     const voteCounts = {};
     poll.options.forEach((o) => {
       voteCounts[o.optionIndex] = 0;
     });
 
-    votes.forEach((v) => {
-      if (voteCounts[v.optionIndex] !== undefined) {
-        voteCounts[v.optionIndex] += 1;
-      }
+    countByOption.forEach((count, optionIndex) => {
+      if (voteCounts[optionIndex] !== undefined) voteCounts[optionIndex] = count;
     });
 
     const results = poll.options.map((o) => {
@@ -93,7 +99,7 @@ export class SpacePollService {
 
     let userVote = null;
     if (userId) {
-      const existingVote = votes.find((v) => v.user.toString() === userId.toString());
+      const existingVote = await PollVote.findOne({ poll: poll._id, user: userId }).select("optionIndex").lean();
       if (existingVote) {
         userVote = existingVote.optionIndex;
       }
@@ -115,7 +121,8 @@ export class SpacePollService {
   }
 
   async getSpacePolls(spaceId, userId) {
-    const polls = await SpacePoll.find({ space: spaceId }).sort({ createdAt: -1 });
+    await this.assertCanViewResults(spaceId, userId);
+    const polls = await SpacePoll.find({ space: spaceId }).sort({ createdAt: -1 }).limit(MAX_POLLS_PER_RESPONSE);
     const pollResults = await Promise.all(
       polls.map((poll) => this.getPollResults(poll._id.toString(), userId))
     );
@@ -140,12 +147,19 @@ export class SpacePollService {
     poll.closedAt = new Date();
     await poll.save();
 
-    return this.getPollResults(poll._id.toString());
+    return this.getPollResults(poll._id.toString(), undefined, { internal: true });
   }
 
-  async exportPollResults(pollId) {
-    const pollData = await this.getPollResults(pollId);
-    const votes = await PollVote.find({ poll: pollId }).populate("user", "name email");
+  async exportPollResults(pollId, userId) {
+    const poll = await SpacePoll.findById(pollId).select("space").lean();
+    if (!poll) throw new Error("Poll not found");
+    await this.assertCanExport(poll.space, userId);
+    const pollData = await this.getPollResults(pollId, userId);
+    const votes = await PollVote.find({ poll: pollId })
+      .select("user optionIndex createdAt")
+      .sort({ createdAt: 1 })
+      .limit(MAX_EXPORT_VOTES)
+      .lean();
 
     const csvHeader = "Option Index,Option Text,Votes,Percentage\n";
     const csvRows = pollData.results
@@ -162,7 +176,7 @@ export class SpacePollService {
       closedAt: pollData.closedAt,
       results: pollData.results,
       votes: votes.map((v) => ({
-        user: v.user,
+        userId: v.user,
         optionIndex: v.optionIndex,
         votedAt: v.createdAt,
       })),
@@ -170,6 +184,24 @@ export class SpacePollService {
     };
 
     return exportSummary;
+  }
+
+  async assertCanViewResults(spaceId, userId, internal = false) {
+    if (internal) return;
+    if (!userId) throw new Error("Authentication is required to view poll results");
+    const space = await Space.findById(spaceId).select("host enrolledUsers").lean();
+    if (!space) throw new Error("Space not found");
+    const isHost = String(space.host) === String(userId);
+    const isParticipant = (space.enrolledUsers || []).some((id) => String(id) === String(userId));
+    if (!isHost && !isParticipant) throw new Error("Only space participants can view poll results");
+  }
+
+  async assertCanExport(spaceId, userId) {
+    if (!userId) throw new Error("Authentication is required to export poll results");
+    const space = await Space.findById(spaceId).select("host").lean();
+    if (!space || String(space.host) !== String(userId)) {
+      throw new Error("Only the space host can export poll results");
+    }
   }
 }
 

@@ -80,13 +80,21 @@ export class BadgeService {
   async getUserBadges(userId) {
     await this.checkAndAwardBadges(userId);
     return await UserBadge.find({ user: userId })
-      .populate("badge")
+      // Keep the public response to the documented badge profile fields. In
+      // particular, do not expose user-badge metadata or future model fields.
+      .select("-_id badge awardedAt")
+      .populate({
+        path: "badge",
+        select: "-_id name slug description icon category threshold",
+      })
       .sort({ awardedAt: -1 });
   }
 
   async getAllBadges() {
     await this.seedDefaultBadges();
-    return await Badge.find().sort({ threshold: 1 });
+    return await Badge.find()
+      .select("-_id name slug description icon category threshold")
+      .sort({ threshold: 1, name: 1 });
   }
 }
 

@@ -1,4 +1,5 @@
 import helmet from "helmet";
+import crypto from "crypto";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
 import hpp from "hpp";
@@ -69,6 +70,75 @@ function makeLimiter(defaultMax, defaultWindow, prefix, extra = {}) {
     ...extra,
   });
 }
+
+const trustedInternalRequest = (req, scope) => {
+  const configured = process.env.RATE_LIMIT_TRUSTED_INTERNAL_TOKEN;
+  const provided = req.get("x-rate-limit-trusted-token");
+  if (!configured || !provided) return false;
+
+  const expected = Buffer.from(`${scope}:${configured}`, "utf8");
+  const actual = Buffer.from(`${scope}:${provided}`, "utf8");
+  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+    return false;
+  }
+
+  logger.info({ scope, route: req.originalUrl }, "Trusted internal rate-limit exception used");
+  return true;
+};
+
+const actorKey = (req, prefix) => {
+  const actor = req.user?._id?.toString() || req.user?.id?.toString();
+  if (actor) return `${prefix}:actor:${actor}`;
+
+  // Admin/job mounts run before their route-specific authentication middleware.
+  // Hashing the bearer credential keeps the budget actor-scoped without logging
+  // or persisting the credential itself. Unauthenticated requests fall back to IP.
+  const authorization = req.get("authorization");
+  if (authorization) {
+    const credentialHash = crypto.createHash("sha256").update(authorization).digest("hex");
+    return `${prefix}:credential:${credentialHash}`;
+  }
+  return `${prefix}:ip:${ipKeyGenerator(req.ip)}`;
+};
+
+const adminReadLimiter = makeLimiter(120, 15 * 60 * 1000, "RATE_LIMIT_ADMIN_READ", {
+  keyGenerator: (req) => actorKey(req, "admin-read"),
+  skip: (req) => trustedInternalRequest(req, "admin-read"),
+});
+
+const adminMutationLimiter = makeLimiter(30, 15 * 60 * 1000, "RATE_LIMIT_ADMIN_MUTATION", {
+  keyGenerator: (req) => actorKey(req, "admin-mutation"),
+  skip: (req) => trustedInternalRequest(req, "admin-mutation"),
+});
+
+/**
+ * Admin policy: read-only dashboards get a larger budget; mutations get a
+ * smaller budget because they can enqueue work or change account state.
+ */
+export const adminLimiter = (req, res, next) => {
+  const limiter = ["GET", "HEAD", "OPTIONS"].includes(req.method)
+    ? adminReadLimiter
+    : adminMutationLimiter;
+  return limiter(req, res, next);
+};
+
+const jobReadLimiter = makeLimiter(30, 60 * 1000, "RATE_LIMIT_JOB_READ", {
+  keyGenerator: (req) => actorKey(req, "job-read"),
+  skip: (req) => trustedInternalRequest(req, "job"),
+});
+
+const jobDeadLimiter = makeLimiter(10, 60 * 1000, "RATE_LIMIT_JOB_DEAD", {
+  keyGenerator: (req) => actorKey(req, "job-dead"),
+  skip: (req) => trustedInternalRequest(req, "job"),
+});
+
+/**
+ * Job dashboards are deliberately tighter than admin dashboards. The dead-job
+ * view is expensive and gets its own lower budget; the general list remains
+ * bounded by the route's query limit and this request budget.
+ */
+export const jobLimiter = (req, res, next) =>
+  (req.path.endsWith("/dead") ? jobDeadLimiter : jobReadLimiter)(req, res, next);
 
 /**
  * Normalize an email to its canonical lowercase form so rate-limit keys are
@@ -341,6 +411,8 @@ export default {
   helmetMiddleware,
   standardLimiter,
   generousLimiter,
+  adminLimiter,
+  jobLimiter,
   authLimiter,
   refreshLimiter,
   emailAuthLimiter,

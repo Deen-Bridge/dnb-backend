@@ -3,6 +3,16 @@ import logger from "./logger.js";
 
 let redisClient = null;
 let isReady = false;
+const health = { status: "unconfigured", reconnects: 0, failures: 0, lastErrorAt: null, lastTransitionAt: new Date().toISOString() };
+const transition = (status, error = null) => {
+  isReady = status === "ready";
+  health.status = status;
+  health.lastTransitionAt = new Date().toISOString();
+  if (error) {
+    health.failures += 1;
+    health.lastErrorAt = new Date().toISOString();
+  }
+};
 
 /**
  * Initialize Redis client (supports Standalone, Sentinel proxies, and Redis Cluster)
@@ -87,7 +97,7 @@ export const initRedis = async () => {
     // Error handling
     redisClient.on("error", (err) => {
       logger.error("Redis Client Error:", err);
-      isReady = false;
+      transition("degraded", err);
     });
 
     redisClient.on("connect", () => {
@@ -96,17 +106,18 @@ export const initRedis = async () => {
 
     redisClient.on("ready", () => {
       logger.info("✅ Redis connected and ready");
-      isReady = true;
+      transition("ready");
     });
 
     redisClient.on("reconnecting", () => {
       logger.warn("⚠️  Redis reconnecting...");
-      isReady = false;
+      health.reconnects += 1;
+      transition("reconnecting");
     });
 
     redisClient.on("end", () => {
       logger.warn("⚠️  Redis connection closed");
-      isReady = false;
+      transition("disconnected");
     });
 
     // Connect to Redis
@@ -116,7 +127,7 @@ export const initRedis = async () => {
   } catch (error) {
     logger.error("❌ Failed to connect to Redis:", error);
     redisClient = null;
-    isReady = false;
+    transition("unavailable", error);
     // Don't throw error - app can work without Redis
     return null;
   }
@@ -136,6 +147,12 @@ export const isRedisReady = () => {
   return isReady && redisClient?.isOpen;
 };
 
+export const getRedisHealth = () => ({
+  ...health,
+  ready: Boolean(isRedisReady()),
+  configured: Boolean(redisClient),
+});
+
 /**
  * Graceful shutdown
  */
@@ -154,5 +171,6 @@ export default {
   initRedis,
   getRedisClient,
   isRedisReady,
+  getRedisHealth,
   closeRedis,
 };

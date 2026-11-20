@@ -20,7 +20,7 @@ import {
   submitPayoutBatch,
   recalculateBalancesFromLedger,
 } from "../src/services/payoutService.js";
-import { isPayoutAdmin } from "../src/controllers/payoutController.js";
+import { decidePayoutAccess, PAYOUT_CAPABILITIES } from "../src/security/payoutPolicy.js";
 
 const PLATFORM_WALLET = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
 
@@ -484,16 +484,17 @@ describe("Payout Service & Earnings Ledger", () => {
     });
   });
 
-  describe("Operator Allowlist & RBAC Gating", () => {
-    it("checks isPayoutAdmin against PAYOUT_ADMIN_USER_IDS allowlist", () => {
-      process.env.PAYOUT_ADMIN_USER_IDS = "admin_user_1, admin_user_2";
-
-      expect(isPayoutAdmin({ _id: "admin_user_1" })).toBe(true);
-      expect(isPayoutAdmin({ _id: "admin_user_2" })).toBe(true);
-      expect(isPayoutAdmin({ _id: "student_user_99" })).toBe(false);
-
-      process.env.PAYOUT_ADMIN_USER_IDS = "";
-      expect(isPayoutAdmin({ _id: "admin_user_1" })).toBe(false);
+  describe("central payout capability policy", () => {
+    it("does not use the payout-user allowlist as an authorization decision", () => {
+      expect(decidePayoutAccess({
+        user: { _id: "admin_user_1", role: "admin", isActive: true, twoFactor: { enabled: true } },
+        capability: PAYOUT_CAPABILITIES.INITIATE,
+        is2FAVerified: true,
+      }).allowed).toBe(true);
+      expect(decidePayoutAccess({
+        user: { _id: "student_user_99", role: "student", isActive: true },
+        capability: PAYOUT_CAPABILITIES.INITIATE,
+      }).allowed).toBe(false);
     });
   });
 

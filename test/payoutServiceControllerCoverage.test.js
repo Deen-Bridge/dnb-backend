@@ -104,7 +104,7 @@ jest.unstable_mockModule("../src/models/Transaction.js", () => ({ default: Trans
 
 const mongoose = (await import("mongoose")).default;
 const svc = await import("../src/services/payoutService.js");
-const { isPayoutAdmin, buildBatch, submitBatch } = await import("../src/controllers/payoutController.js");
+const { buildBatch, submitBatch } = await import("../src/controllers/payoutController.js");
 
 const session = {
   startTransaction: jest.fn(),
@@ -483,28 +483,6 @@ describe("recalculateBalancesFromLedger (reconciliation)", () => {
   });
 });
 
-describe("isPayoutAdmin", () => {
-  const prev = process.env.PAYOUT_ADMIN_USER_IDS;
-  afterAll(() => {
-    if (prev === undefined) delete process.env.PAYOUT_ADMIN_USER_IDS;
-    else process.env.PAYOUT_ADMIN_USER_IDS = prev;
-  });
-
-  it("denies when allowlist is empty or user missing", () => {
-    process.env.PAYOUT_ADMIN_USER_IDS = "";
-    expect(isPayoutAdmin({ _id: "a" })).toBe(false);
-    expect(isPayoutAdmin(null)).toBe(false);
-    expect(isPayoutAdmin({})).toBe(false);
-  });
-
-  it("matches trimmed ids, including ObjectIds", () => {
-    const id = oid();
-    process.env.PAYOUT_ADMIN_USER_IDS = ` x , ${id.toString()} ,`;
-    expect(isPayoutAdmin({ _id: id })).toBe(true);
-    expect(isPayoutAdmin({ _id: "y" })).toBe(false);
-  });
-});
-
 describe("payout controller handlers", () => {
   const mkRes = () => {
     const res = {};
@@ -514,14 +492,7 @@ describe("payout controller handlers", () => {
   };
   const admin = { _id: oid() };
   beforeEach(() => {
-    process.env.PAYOUT_ADMIN_USER_IDS = admin._id.toString();
-  });
-
-  it("buildBatch returns 403 for non-operators and builds nothing", async () => {
-    const res = mkRes();
-    await buildBatch({ user: { _id: oid() }, body: {} }, res);
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(store.batches).toHaveLength(0);
+    admin.role = "admin";
   });
 
   it("buildBatch dry run returns 200 plan", async () => {

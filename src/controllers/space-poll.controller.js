@@ -86,7 +86,7 @@ export const exportPollResults = async (req, res) => {
     const { pollId } = req.params;
     const format = req.query.format;
 
-    const exportData = await spacePollService.exportPollResults(pollId);
+    const exportData = await spacePollService.exportPollResults(pollId, req.user._id);
 
     if (format === "csv") {
       res.setHeader("Content-Type", "text/csv");

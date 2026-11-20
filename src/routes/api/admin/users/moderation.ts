@@ -2,8 +2,11 @@ import express from "express";
 import { protect, authorizeRoles } from "../../../../middlewares/authMiddleware.js";
 import userModerationService from "../../../../services/userModeration.js";
 import { catchAsync } from "../../../../middlewares/errorHandler.js";
+import mongoose from "mongoose";
+import rateLimit from "express-rate-limit";
 
 const router = express.Router();
+const moderationLogsLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, skip: () => process.env.NODE_ENV === "test" });
 
 router.use(protect);
 router.use(authorizeRoles("admin"));
@@ -95,10 +98,14 @@ router.post(
 
 router.get(
   "/logs",
+  moderationLogsLimiter,
   catchAsync(async (req, res) => {
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = parseInt(req.query.limit as string, 10) || 20;
     const targetUser = req.query.targetUser as string;
+    if (page < 1 || limit < 1 || limit > 100 || (targetUser && !mongoose.Types.ObjectId.isValid(targetUser))) {
+      return res.status(400).json({ success: false, message: "Invalid pagination or targetUser filter" });
+    }
 
     const result = await userModerationService.getModerationLogs({
       page,

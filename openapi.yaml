@@ -11,6 +11,11 @@ info:
     refunds and disputes,
     educator payouts, media upload signing and the SEP-1 metadata document.
 
+    Versioning contract: `/api/v1` is the stable compatibility surface;
+    `/api/v2` is reserved for explicitly approved breaking changes. Versioned
+    responses include `X-API-Version` and `X-API-Stability`. A v1 sunset is
+    announced only when `Deprecation` and `Sunset` headers are present.
+
     Provenance of this document:
       - Paths, methods and auth requirements are derived from app.js and src/routes/**,
         which are the authoritative mounting and middleware sources.
@@ -2550,7 +2555,7 @@ paths:
     post:
       tags: [Payouts]
       summary: Build a payout batch
-      description: Operator only. Gated by the PAYOUT_ADMIN_USER_IDS allowlist inside the controller.
+      description: Operator only. Requires the central payout.initiate capability, an active admin account, and a verified 2FA session.
       requestBody:
         required: false
         content:
@@ -2570,7 +2575,7 @@ paths:
     post:
       tags: [Payouts]
       summary: Submit a payout batch
-      description: Operator only. Gated by the PAYOUT_ADMIN_USER_IDS allowlist inside the controller.
+      description: Operator only. Requires the central payout.execute capability, an active admin account, and a verified 2FA session.
       parameters:
         - name: batchId
           in: path
