@@ -39,6 +39,7 @@ export interface IExperimentConversion extends Document {
   value: number;
   metadata?: Record<string, any>;
   createdAt: Date;
+  dedupeKey: string;
 }
 
 const variantSchema = new Schema<IVariant>(
@@ -96,9 +97,14 @@ const experimentConversionSchema = new Schema<IExperimentConversion>(
     value: { type: Number, default: 1 },
     metadata: { type: Schema.Types.Mixed, default: {} },
     createdAt: { type: Date, default: Date.now, index: true },
+    dedupeKey: { type: String, required: true },
   },
   { timestamps: true }
 );
+
+// Sparse keeps existing conversion documents (created before dedupeKey) valid
+// while enforcing idempotency for all new events.
+experimentConversionSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
 
 export const Experiment = mongoose.models.Experiment || mongoose.model<IExperiment>("Experiment", experimentSchema);
 export const ExperimentAssignment = mongoose.models.ExperimentAssignment || mongoose.model<IExperimentAssignment>("ExperimentAssignment", experimentAssignmentSchema);

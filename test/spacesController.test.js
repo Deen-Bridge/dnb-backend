@@ -142,6 +142,23 @@ describe("spaceController - lifecycle", () => {
     expect(res.json).toHaveBeenCalledWith({ success: true, space: ended });
   });
 
+  test("updateSpace rejects server-owned membership fields", async () => {
+    const updated = { _id: "s1", title: "safe" };
+    Space.findByIdAndUpdate.mockReturnValue(populated(updated));
+    const res = mockRes();
+
+    await spaces.updateSpace(
+      {
+        params: { id: "s1" },
+        body: { title: "safe", waitList: ["attacker"], enrolledUsers: ["attacker"] },
+        resource: { _id: "s1" },
+      },
+      res
+    );
+
+    expect(Space.findByIdAndUpdate).toHaveBeenCalledWith("s1", { title: "safe" }, { new: true });
+  });
+
   test("updateSpace returns 404 when the space does not exist", async () => {
     Space.findById.mockResolvedValue(null);
     const res = mockRes();

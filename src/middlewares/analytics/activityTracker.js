@@ -10,7 +10,9 @@ import jwt from "jsonwebtoken";
 import logger from "../../config/logger.js";
 import activeUsersService from "../../services/analytics/activeUsersService.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
+const JWT_SECRET =
+  process.env.JWT_SECRET ||
+  (process.env.NODE_ENV === "production" ? "" : "deenbridge-dev-only-secret");
 
 export const trackActivity = (req, res, next) => {
   const authorization = req.headers?.authorization || "";

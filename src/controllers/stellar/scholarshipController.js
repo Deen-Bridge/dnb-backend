@@ -38,25 +38,20 @@ export const getScholarshipMilestoneReports = async (req, res) => {
     const isBeneficiary = state.beneficiary === wallet;
     const isArbiter = req.user.role === "admin" && state.arbiter === wallet;
     if (!isBeneficiary && !isArbiter) return res.status(403).json({ success: false, message: "Only the beneficiary and arbiter can view milestone reports" });
-    const reports = await ScholarshipMilestoneReport.find({ contractId: state.contractId }).sort({ milestoneIndex: 1 });
-    await Promise.all(reports.map(async (report) => {
-      const chainMilestone = state.milestones.find((item) => item.index === report.milestoneIndex);
-      if (!chainMilestone?.released || report.current.status === "released") return;
-      const release = await ScholarshipContribution.findOne({
-        contractId: state.contractId,
-        milestoneIndex: report.milestoneIndex,
-        kind: "release",
-      }).sort({ createdAt: -1 });
-      if (release && release.status !== "confirmed") {
-        release.status = "confirmed";
-        release.confirmedAt = new Date();
-        await release.save();
-      }
-      report.current.status = "released";
-      report.current.releaseTxHash = release?.stellarTxHash;
-      await report.save();
-    }));
-    return res.status(200).json({ success: true, reports: reports.map(serializeMilestoneReport) });
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const [reports, total] = await Promise.all([
+      ScholarshipMilestoneReport.find({ contractId: state.contractId })
+        .sort({ milestoneIndex: 1, _id: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      ScholarshipMilestoneReport.countDocuments({ contractId: state.contractId }),
+    ]);
+    return res.status(200).json({
+      success: true,
+      reports: reports.map(serializeMilestoneReport),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
   } catch (error) {
     logger.warn({ message: error.message }, "Scholarship milestone report lookup failed");
     return res.status(error.statusCode || 503).json({ success: false, message: error.statusCode ? error.message : "Could not retrieve milestone report" });

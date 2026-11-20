@@ -15,12 +15,12 @@ const DEFAULT_BROWSER_ORIGINS = [
 ];
 
 export const getAllowedBrowserOrigins = () => {
-  const configured = process.env.CORS_ALLOWED_ORIGINS
-    ?.split(",")
+  const configured = (process.env.CORS_ALLOWED_ORIGINS || "")
+    .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  return new Set(configured?.length ? configured : DEFAULT_BROWSER_ORIGINS);
+  return new Set([...DEFAULT_BROWSER_ORIGINS, ...configured]);
 };
 
 export const isAllowedBrowserOrigin = (origin) =>

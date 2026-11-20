@@ -7,12 +7,30 @@ import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 export const getEducatorAnalytics = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { from, to } = req.query;
+  const page = Number(req.query.page || 1);
+  const limit = Number(req.query.limit || 25);
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new APIError("Invalid educator ID", 400);
   }
 
   const educatorId = new mongoose.Types.ObjectId(id);
+
+  if (String(req.user._id) !== String(educatorId) && req.user.role !== "admin") {
+    throw new APIError("You may only view your own educator analytics", 403);
+  }
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new APIError("page must be positive and limit must be between 1 and 50", 400);
+  }
+
+  const parsedFrom = from ? new Date(from) : null;
+  const parsedTo = to ? new Date(to) : null;
+  if ((from && Number.isNaN(parsedFrom.getTime())) || (to && Number.isNaN(parsedTo.getTime()))) {
+    throw new APIError("from and to must be valid ISO dates", 400);
+  }
+  if (parsedFrom && parsedTo && parsedFrom > parsedTo) {
+    throw new APIError("from must be earlier than or equal to to", 400);
+  }
 
   // Verify the educator exists
   const educator = await User.findById(educatorId).select("name role").lean();
@@ -24,13 +42,16 @@ export const getEducatorAnalytics = catchAsync(async (req, res) => {
   const courseDateFilter = {};
   if (from || to) {
     courseDateFilter.createdAt = {};
-    if (from) courseDateFilter.createdAt.$gte = new Date(from);
-    if (to) courseDateFilter.createdAt.$lte = new Date(to);
+    if (parsedFrom) courseDateFilter.createdAt.$gte = parsedFrom;
+    if (parsedTo) courseDateFilter.createdAt.$lte = parsedTo;
   }
 
   // Fetch all courses created by this educator
   const courses = await Course.find({ createdBy: educatorId, ...courseDateFilter })
     .select("title enrolledUsers sections createdAt")
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
     .lean();
 
   const courseIds = courses.map((c) => c._id);
@@ -66,8 +87,8 @@ export const getEducatorAnalytics = catchAsync(async (req, res) => {
   // Build progress match filter based on date range (for updatedAt)
   if (from || to) {
     const dateFilter = {};
-    if (from) dateFilter.$gte = new Date(from);
-    if (to) dateFilter.$lte = new Date(to);
+    if (parsedFrom) dateFilter.$gte = parsedFrom;
+    if (parsedTo) dateFilter.$lte = parsedTo;
     progressPipeline[0].$match.updatedAt = dateFilter;
   }
 
@@ -85,6 +106,9 @@ export const getEducatorAnalytics = catchAsync(async (req, res) => {
       0
     ) || 0;
 
+    if (enrolledCount < 5) {
+      return { _id: course._id, title: course.title, suppressed: true };
+    }
     return {
       _id: course._id,
       title: course.title,
@@ -107,7 +131,9 @@ export const getEducatorAnalytics = catchAsync(async (req, res) => {
     data: {
       educator: { _id: educatorId, name: educator.name },
       total_courses: courses.length,
-      total_students: allStudentIds.size,
+      total_students: allStudentIds.size >= 5 ? allStudentIds.size : 0,
+      page,
+      limit,
       courses: coursesStats,
     },
   });

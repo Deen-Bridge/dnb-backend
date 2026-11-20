@@ -15,8 +15,9 @@
 
 Every state-changing request carrying the refresh-token cookie must include:
 
-1. An Origin matching CORS_ALLOWED_ORIGINS, or a matching Referer when
-   the browser does not send Origin.
+1. An Origin in the shared allowlist (the default browser origins plus any
+   exact origins in CORS_ALLOWED_ORIGINS), or a matching Referer when the
+   browser does not send Origin.
 2. A csrfToken cookie and an identical X-CSRF-Token header.
 3. A non-null origin. Wildcard origins are never accepted with credentials.
 

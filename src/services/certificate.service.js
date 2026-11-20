@@ -97,9 +97,7 @@ export class CertificateService {
       valid: true,
       certificate: {
         id: certificate.certificateId,
-        student: certificate.learnerName || certificate.user?.name || "Student",
         course: certificate.courseTitle || certificate.course?.title || "Course",
-        educator: certificate.instructorName || certificate.course?.createdBy?.name || "DeenBridge Instructor",
         completed_at: completedAtStr,
         stellar_tx: certificate.stellarTx || certificate.certificateHash,
       },
@@ -108,6 +106,7 @@ export class CertificateService {
 
   async getUserCertificates(userId) {
     return await Certificate.find({ user: userId })
+      .select("certificateId course completionDate verificationUrl certificateUrl")
       .populate("course", "title category thumbnail rating")
       .sort({ createdAt: -1 });
   }

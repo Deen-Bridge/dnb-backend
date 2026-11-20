@@ -151,7 +151,37 @@ describe("Educators directory API", () => {
   it("exposes header totals in meta", async () => {
     const res = await request(app).get("/api/educators");
 
-    expect(res.body.meta).toEqual({ educators: 3, courses: 3, books: 1, spaces: 1 });
+    expect(res.body.meta).toMatchObject({ educators: 3, courses: 3, books: 1, spaces: 1 });
+  });
+
+  it("paginates the filtered roster with bounded page metadata", async () => {
+    const firstPage = await request(app).get("/api/educators?limit=1&page=2");
+
+    expect(firstPage.statusCode).toBe(200);
+    expect(firstPage.body.data).toHaveLength(1);
+    expect(firstPage.body.data[0]._id).toBe(userId2.toString());
+    expect(firstPage.body.meta.pagination).toEqual({
+      page: 2,
+      limit: 1,
+      total: 3,
+      pages: 3,
+    });
+  });
+
+  it("returns an empty page for a non-matching filter", async () => {
+    const res = await request(app).get("/api/educators?search=does-not-exist");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data).toEqual([]);
+    expect(res.body.meta.pagination.total).toBe(0);
+    expect(res.body.meta.pagination.pages).toBe(0);
+  });
+
+  it("rejects oversized public search queries", async () => {
+    const res = await request(app).get(`/api/educators?search=${"x".repeat(101)}`);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
   });
 
   it("filters by contribution type", async () => {

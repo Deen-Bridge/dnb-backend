@@ -31,9 +31,9 @@ const handleCastErrorDB = (err) => {
 };
 
 const handleDuplicateFieldsDB = (err) => {
-  const value = err.errmsg?.match(/(["'])(\\?.)*?\1/)[0];
-  const message = `Duplicate field value: ${value}. Please use another value!`;
-  return new APIError(message, 409);
+  // Driver versions expose duplicate-key metadata as errmsg, message, or
+  // keyValue. Never include any of those raw values in the public response.
+  return new APIError("A record with these values already exists.", 409);
 };
 
 const handleValidationErrorDB = (err) => {
@@ -91,6 +91,8 @@ const sendError = (err, req, res) => {
 };
 
 export const errorHandler = (err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  err = err instanceof Error ? err : new Error("Unknown error");
   err.statusCode = err.statusCode || 500;
   err.status = err.status || "error";
 

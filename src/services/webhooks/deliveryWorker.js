@@ -51,6 +51,23 @@ const HTTP_TIMEOUT_MS = parseInt(process.env.WEBHOOK_HTTP_TIMEOUT_MS || "10000",
 const POLL_INTERVAL_MS = parseInt(process.env.WEBHOOK_POLL_INTERVAL_MS || "5000", 10);
 const MAX_PER_TICK = parseInt(process.env.WEBHOOK_MAX_PER_TICK || "50", 10);
 
+const workerStats = {
+  startedAt: null,
+  claims: 0,
+  delivered: 0,
+  retried: 0,
+  deadLettered: 0,
+  lastClaimAt: null,
+  lastCompletionAt: null,
+};
+
+export const getDeliveryWorkerStatus = () => ({
+  running,
+  ...workerStats,
+  stalledClaimRecoveryMs: CLAIM_LOCK_MS,
+  maxPerTick: MAX_PER_TICK,
+});
+
 /**
  * Compute the delay before the next attempt given how many attempts have
  * already been made. `attemptCount` is 1-based (1 = first attempt just failed).
@@ -89,7 +106,7 @@ const defaultPost = async (url, body, headers) => {
  * @returns {Promise<Document|null>}
  */
 export const claimNextDelivery = async (now = new Date()) => {
-  return WebhookDelivery.findOneAndUpdate(
+  const delivery = await WebhookDelivery.findOneAndUpdate(
     {
       status: { $in: ["pending", "retrying"] },
       nextAttemptAt: { $lte: now },
@@ -100,6 +117,11 @@ export const claimNextDelivery = async (now = new Date()) => {
     },
     { new: true, sort: { nextAttemptAt: 1 } }
   ).select("+_id");
+  if (delivery) {
+    workerStats.claims += 1;
+    workerStats.lastClaimAt = now;
+  }
+  return delivery;
 };
 
 const recordSuccessOnEndpoint = async (endpointId, when) => {
@@ -211,6 +233,8 @@ export const deliverClaimed = async (delivery, { post = defaultPost, now = new D
     pushAttempt(delivery, { at: now, statusCode, durationMs });
     await delivery.save();
     await recordSuccessOnEndpoint(endpoint._id, now);
+    workerStats.delivered += 1;
+    workerStats.lastCompletionAt = now;
     return delivery;
   }
 
@@ -241,11 +265,14 @@ async function finalizeFailure(delivery, endpoint, { statusCode, error, duration
       { deliveryId: String(delivery._id), attempts: delivery.attemptCount },
       "webhook: delivery moved to dead-letter"
     );
+    workerStats.deadLettered += 1;
   } else {
     delivery.status = "retrying";
     delivery.nextAttemptAt = new Date(now.getTime() + computeBackoffMs(delivery.attemptCount));
     await delivery.save();
+    workerStats.retried += 1;
   }
+  workerStats.lastCompletionAt = now;
   return delivery;
 }
 
@@ -294,6 +321,7 @@ const loop = async () => {
 export const startDeliveryWorker = async () => {
   if (running) return;
   running = true;
+  workerStats.startedAt = new Date();
   logger.info({ intervalMs: POLL_INTERVAL_MS }, "webhook: delivery worker started");
   loop();
 };

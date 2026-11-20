@@ -13,7 +13,8 @@ import {
   getReelDerivatives,
 } from "../controllers/reelController.js";
 import { protect } from "../middlewares/authMiddleware.js";
-import upload from "../middlewares/upload.js";
+import { reelFlagLimiter } from "../middlewares/security.js";
+import { uploadVideo } from "../middlewares/upload.js";
 import { validate, sanitizeInput } from "../middlewares/validate.js";
 import {
   createReelDuetValidation,
@@ -35,18 +36,18 @@ router.get("/:id", protect, reelIdValidation, validate, getReelById);
 router.post(
   "/",
   protect,
-  upload.single("video"),
+  uploadVideo.single("video"),
   sanitizeInput,
   createReelValidation,
   validate,
-  createReel
+  createReel,
 );
 router.post(
   "/:id/react",
   protect,
   reactToReelValidation,
   validate,
-  reactToReel
+  reactToReel,
 );
 router.post(
   "/:id/comments",
@@ -54,23 +55,29 @@ router.post(
   sanitizeInput,
   addReelCommentValidation,
   validate,
-  addReelComment
+  addReelComment,
 );
 router.get(
   "/:id/comments",
   protect,
   listReelCommentsValidation,
   validate,
-  getReelComments
+  getReelComments,
 );
 router.delete(
   "/:id/comments/:commentId",
   protect,
   deleteReelCommentValidation,
   validate,
-  deleteReelComment
+  deleteReelComment,
 );
-router.post("/:id/share", protect, reelIdValidation, validate, registerReelShare);
+router.post(
+  "/:id/share",
+  protect,
+  reelIdValidation,
+  validate,
+  registerReelShare,
+);
 router.post("/:id/view", protect, reelIdValidation, validate, registerReelView);
 
 // Duet / stitch: create a response video linked to the original reel and
@@ -78,18 +85,18 @@ router.post("/:id/view", protect, reelIdValidation, validate, registerReelView);
 router.post(
   "/:id/duet",
   protect,
-  upload.single("video"),
+  uploadVideo.single("video"),
   sanitizeInput,
   createReelDuetValidation,
   validate,
-  createReelDuet
+  createReelDuet,
 );
 router.get(
   "/:id/duets",
   protect,
   listReelDuetsValidation,
   validate,
-  getReelDerivatives
+  getReelDerivatives,
 );
 
 import { flagReel } from "../controllers/moderation.controller.js";
@@ -97,10 +104,11 @@ import { flagReel } from "../controllers/moderation.controller.js";
 router.post(
   "/:reelId/flag",
   protect,
+  reelFlagLimiter,
   sanitizeInput,
   flagReelValidation,
   validate,
-  flagReel
+  flagReel,
 );
 
 export default router;

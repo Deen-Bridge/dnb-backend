@@ -10,6 +10,7 @@
  */
 import { recalculateTrendingScores } from "../services/hashtagService.js";
 import logger from "../config/logger.js";
+import { withDistributedJobLease } from "../services/distributedJobLease.js";
 
 const INTERVAL_MS =
   Number(process.env.TRENDING_HASHTAGS_INTERVAL_MS) || 60 * 60 * 1000; // 1 hour
@@ -18,6 +19,7 @@ const INTERVAL_MS =
  * Run the score recalculation once and log the outcome.
  */
 const runTrendingJob = async () => {
+  const lease = await withDistributedJobLease("trending-hashtags", async () => {
   logger.info("Trending hashtag job: starting recalculation");
   try {
     await recalculateTrendingScores();
@@ -25,6 +27,8 @@ const runTrendingJob = async () => {
   } catch (err) {
     logger.error({ err }, "Trending hashtag job: failed");
   }
+  });
+  if (!lease.acquired) logger.debug({ reason: lease.reason }, "Trending hashtag job skipped");
 };
 
 /**
