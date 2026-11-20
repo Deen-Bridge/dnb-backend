@@ -18,6 +18,7 @@ import {
   isValidPublicKey,
 } from "./stellarService.js";
 import logger from "../../config/logger.js";
+import { getRedisClient, isRedisReady } from "../../config/redis.js";
 
 const CHALLENGE_TIMEOUT = Number(process.env.SEP10_CHALLENGE_TIMEOUT) || 300;
 const HOME_DOMAIN = process.env.SEP10_HOME_DOMAIN || "";
@@ -52,15 +53,47 @@ export const getSigningPublicKey = () =>
 
 // ── Replay protection ──────────────────────────────────────────────────────
 // Challenges are single-use. We remember the hash of every challenge we accept
-// until its time bound expires and reject any reuse. In-memory is sufficient for
-// a single instance (the issue's stated bar); a Redis-backed store can replace
-// this Map without changing the call sites.
+// A local map is retained only for non-production tests. Production requires
+// the shared Redis primitive so replay protection survives replicas/restarts.
 const consumedChallenges = new Map(); // hash(hex) → expiry epoch ms
 
 const pruneExpired = (now) => {
   for (const [hash, expiry] of consumedChallenges) {
     if (expiry <= now) consumedChallenges.delete(hash);
   }
+};
+
+const consumeChallenge = async (challengeHash, expiry, now) => {
+  const redis = getRedisClient();
+  if (isRedisReady() && redis) {
+    const ttl = Math.max(1, Math.ceil((expiry - now) / 1000));
+    try {
+      const claimed = await redis.set(`sep10:challenge:${challengeHash}`, "1", { NX: true, EX: ttl });
+      if (claimed !== "OK") {
+        const err = new Error("This challenge has already been used.");
+        err.code = "CHALLENGE_REPLAYED";
+        throw err;
+      }
+      return;
+    } catch (err) {
+      if (err.code === "CHALLENGE_REPLAYED") throw err;
+      const unavailable = new Error("SEP-10 replay protection is temporarily unavailable.");
+      unavailable.code = "SEP10_REPLAY_UNAVAILABLE";
+      throw unavailable;
+    }
+  }
+  if (process.env.NODE_ENV === "production") {
+    const err = new Error("SEP-10 replay protection is temporarily unavailable.");
+    err.code = "SEP10_REPLAY_UNAVAILABLE";
+    throw err;
+  }
+  pruneExpired(now);
+  if (consumedChallenges.has(challengeHash)) {
+    const err = new Error("This challenge has already been used.");
+    err.code = "CHALLENGE_REPLAYED";
+    throw err;
+  }
+  consumedChallenges.set(challengeHash, expiry);
 };
 
 /**
@@ -135,7 +168,6 @@ export const verifyChallenge = async (signedXdr, now = Date.now()) => {
     throw wrapped;
   }
 
-  // Replay guard — reject a challenge we've already consumed.
   pruneExpired(now);
   const challengeHash = tx.hash().toString("hex");
   if (consumedChallenges.has(challengeHash)) {
@@ -189,7 +221,7 @@ export const verifyChallenge = async (signedXdr, now = Date.now()) => {
   // Consume the challenge until its time bound lapses.
   const maxTime = Number(tx.timeBounds?.maxTime) || 0;
   const expiry = maxTime > 0 ? maxTime * 1000 : now + CHALLENGE_TIMEOUT * 1000;
-  consumedChallenges.set(challengeHash, expiry);
+  await consumeChallenge(challengeHash, expiry, now);
 
   return clientAccountID;
 };
