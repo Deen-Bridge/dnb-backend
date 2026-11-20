@@ -1,0 +1,70 @@
+{
+  "global": {
+    "lines": 20,
+    "statements": 20,
+    "functions": 15,
+    "branches": 10
+  },
+  "critical": [
+    {
+      "name": "authentication",
+      "path": "./src/controllers/authController.js",
+      "threshold": {
+        "lines": 35,
+        "statements": 35,
+        "functions": 25,
+        "branches": 20
+      }
+    },
+    {
+      "name": "payments",
+      "path": "./src/controllers/stellar/paymentController.js",
+      "threshold": {
+        "lines": 30,
+        "statements": 30,
+        "functions": 20,
+        "branches": 15
+      }
+    },
+    {
+      "name": "webhooks",
+      "path": "./src/controllers/webhookController.js",
+      "threshold": {
+        "lines": 30,
+        "statements": 30,
+        "functions": 20,
+        "branches": 15
+      }
+    },
+    {
+      "name": "scholarship escrow",
+      "path": "./src/services/scholarshipEscrowStateMachine.js",
+      "threshold": {
+        "lines": 40,
+        "statements": 40,
+        "functions": 30,
+        "branches": 25
+      }
+    },
+    {
+      "name": "authorization",
+      "path": "./src/middlewares/authorize.js",
+      "threshold": {
+        "lines": 45,
+        "statements": 45,
+        "functions": 35,
+        "branches": 25
+      }
+    },
+    {
+      "name": "privacy and authentication middleware",
+      "path": "./src/middlewares/authMiddleware.js",
+      "threshold": {
+        "lines": 35,
+        "statements": 35,
+        "functions": 25,
+        "branches": 20
+      }
+    }
+  ]
+}

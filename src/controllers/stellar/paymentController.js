@@ -32,6 +32,18 @@ import {
   getSponsorshipStatus,
   SponsorshipError,
 } from "../../services/stellar/feeSponsorService.js";
+
+const toTransactionDto = (tx, role) => {
+  const party = (user) => (user ? { id: String(user._id), name: user.name, avatar: user.avatar } : null);
+  return {
+    id: String(tx._id), type: tx.type, itemType: tx.itemType, itemId: tx.itemId,
+    itemTitle: tx.itemTitle, amount: tx.amount, currency: tx.currency,
+    network: tx.network, status: tx.status, stellarTxHash: tx.stellarTxHash || null,
+    createdAt: tx.createdAt, updatedAt: tx.updatedAt,
+    buyer: role === "buyer" ? party(tx.buyer) : null,
+    creator: role === "creator" ? party(tx.creator) : null,
+  };
+};
 import { recordSaleEarnings } from "../../services/payoutService.js";
 import { grantItemAccess } from "../../services/stellar/reconciliationService.js";
 import { enqueue } from "../../jobs/queue.js";
@@ -1119,9 +1131,8 @@ export const getTransactionHistory = async (req, res) => {
     const total = await Transaction.countDocuments(query);
 
     const transactionsWithUrls = transactions.map((tx) => ({
-      ...tx.toObject(),
-      explorerUrl:
-        tx.status === "confirmed" ? getExplorerUrl(tx.stellarTxHash) : null,
+      ...toTransactionDto(tx, role === "creator" ? "creator" : "buyer"),
+      explorerUrl: tx.status === "confirmed" ? getExplorerUrl(tx.stellarTxHash) : null,
     }));
 
     res.status(200).json({
@@ -1182,7 +1193,7 @@ export const getTransaction = async (req, res) => {
     res.status(200).json({
       success: true,
       transaction: {
-        ...transaction.toObject(),
+        ...toTransactionDto(transaction, transaction.creator?._id?.toString() === userId.toString() ? "creator" : "buyer"),
         explorerUrl:
           transaction.status === "confirmed"
             ? getExplorerUrl(transaction.stellarTxHash)

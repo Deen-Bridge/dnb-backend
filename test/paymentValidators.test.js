@@ -36,6 +36,9 @@ jest.unstable_mockModule("../src/controllers/stellar/pledgeController.js", () =>
 jest.unstable_mockModule("../src/middlewares/authMiddleware.js", () => ({
   protect: (req, _res, next) => {
     req.user = { _id: new mongoose.Types.ObjectId(), role: "admin" };
+    req.user.isActive = true;
+    req.user.twoFactor = { enabled: true };
+    req.is2FAVerified = true;
     next();
   },
   authorizeRoles: () => (_req, _res, next) => next(),

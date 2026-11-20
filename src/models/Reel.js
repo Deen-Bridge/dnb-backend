@@ -10,7 +10,7 @@ const commentSchema = new Schema(
     text: { type: String, required: true, trim: true, maxlength: 500 },
     createdAt: { type: Date, default: Date.now },
   },
-  { _id: true }
+  { _id: true },
 );
 
 const reelSchema = new Schema(
@@ -23,7 +23,11 @@ const reelSchema = new Schema(
     videoPublicId: { type: String },
     thumbnail: { type: String },
     duration: { type: Number },
-    status: { type: String, enum: ["active", "pending", "removed"], default: "active" },
+    status: {
+      type: String,
+      enum: ["active", "pending", "removed"],
+      default: "active",
+    },
     isRemoved: { type: Boolean, default: false },
     createdBy: {
       type: Schema.Types.ObjectId,
@@ -59,11 +63,14 @@ const reelSchema = new Schema(
     stitchCount: { type: Number, default: 0 },
     likes: [{ type: Schema.Types.ObjectId, ref: "User" }],
     loves: [{ type: Schema.Types.ObjectId, ref: "User" }],
-    comments: [commentSchema],
+    // Legacy embedded comments are retained for migration/read compatibility;
+    // all new writes use ReelComment so parent documents stay bounded.
+    comments: { type: [commentSchema], select: false, default: undefined },
+    commentCount: { type: Number, default: 0, min: 0 },
     shareCount: { type: Number, default: 0 },
     viewCount: { type: Number, default: 0 },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 reelSchema.index({ createdAt: -1 });
@@ -82,7 +89,7 @@ reelSchema.virtual("loveCount").get(function () {
 });
 
 reelSchema.virtual("commentCount").get(function () {
-  return this.comments?.length || 0;
+  return this.commentCount ?? this.comments?.length ?? 0;
 });
 
 reelSchema.set("toJSON", { virtuals: true });

@@ -8,9 +8,9 @@ import {
 
 const router = express.Router();
 
-// Public routes
+// The catalog is public; user badge records are private.
 router.get("/", getAllBadgesController);
-router.get("/user/:userId", getUserBadgesController);
+router.get("/user/:userId", protect, getUserBadgesController);
 
 // Protected routes
 router.get("/my-badges", protect, getUserBadgesController);

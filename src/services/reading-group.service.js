@@ -5,6 +5,23 @@ import Notification from "../models/Notification.js";
 import { boundedSearch, QUERY_MAX_TIME_MS, QUERY_MAX_RESULTS, safeSort } from "../utils/queryBudget.js";
 
 export class ReadingGroupService {
+  async requireGroupAccess(groupId, userId, { adminOnly = false } = {}) {
+    const group = await ReadingGroup.findById(groupId);
+    if (!group) throw new Error("Reading group not found");
+
+    const membership = userId
+      ? await ReadingGroupMember.findOne({ group: groupId, user: userId })
+      : null;
+    const isCreator = Boolean(userId) && group.creator.toString() === userId.toString();
+    const isAdmin = membership?.role === "admin" || isCreator;
+    const isActive = membership?.status === "active" || isCreator;
+
+    if (adminOnly ? !isAdmin : group.privacy === "private" && !isActive) {
+      throw new Error("You do not have access to this reading group");
+    }
+    return { group, membership, isAdmin, isActive };
+  }
+
   async createGroup({
     name,
     description,
@@ -81,6 +98,7 @@ export class ReadingGroupService {
   }
 
   async getGroupDetails(groupId, userId) {
+    await this.requireGroupAccess(groupId, userId);
     const group = await ReadingGroup.findById(groupId)
       .populate("book", "title author thumbnail totalPages chapters")
       .populate("creator", "name email avatar");
@@ -216,8 +234,9 @@ export class ReadingGroupService {
     return group.discussions;
   }
 
-  async getDiscussions(groupId, chapter) {
-    const group = await ReadingGroup.findById(groupId).populate("discussions.user", "name email avatar");
+  async getDiscussions(groupId, chapter, userId) {
+    await this.requireGroupAccess(groupId, userId);
+    const group = await ReadingGroup.findById(groupId).populate("discussions.user", "name avatar");
     if (!group) {
       throw new Error("Reading group not found");
     }
@@ -236,7 +255,7 @@ export class ReadingGroupService {
     currentChapter,
     currentProgressPercent,
   }) {
-    const member = await ReadingGroupMember.findOne({ group: groupId, user: userId });
+    const member = await ReadingGroupMember.findOne({ group: groupId, user: userId, status: "active" });
     if (!member) {
       throw new Error("Member not found in reading group");
     }
@@ -249,14 +268,15 @@ export class ReadingGroupService {
     return member;
   }
 
-  async getMemberProgressDashboard(groupId) {
+  async getMemberProgressDashboard(groupId, userId) {
+    await this.requireGroupAccess(groupId, userId, { adminOnly: true });
     const group = await ReadingGroup.findById(groupId).populate("book", "title totalPages");
     if (!group) {
       throw new Error("Reading group not found");
     }
 
     const members = await ReadingGroupMember.find({ group: groupId, status: "active" })
-      .populate("user", "name email avatar")
+      .populate("user", "name avatar")
       .sort({ currentProgressPercent: -1, currentChapter: -1 });
 
     const totalMembers = members.length;

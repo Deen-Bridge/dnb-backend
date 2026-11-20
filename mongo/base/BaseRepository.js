@@ -76,6 +76,18 @@ export class RepositoryValidationError extends RepositoryError {
   }
 }
 
+/**
+ * Thrown when a repository method names a relation that the model does not
+ * support. Maps to HTTP 501 so callers can distinguish an unsupported
+ * capability from a valid query that returned no documents.
+ */
+export class UnsupportedRelationError extends RepositoryError {
+  /** @param {string} message @param {object} [options] */
+  constructor(message, options) {
+    super("RELATION_UNSUPPORTED", message, { statusCode: 501, ...options });
+  }
+}
+
 /** Thrown when a write violates a unique index (Mongo duplicate key `11000`). Maps to HTTP 409. */
 export class DuplicateKeyError extends RepositoryError {
   /** @param {string} message @param {object} [options] */

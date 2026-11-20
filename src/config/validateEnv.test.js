@@ -54,4 +54,8 @@ describe("validateEnv", () => {
     expect(process.env.HORIZON_CB_THRESHOLD).toBe("10");
     expect(process.env.HORIZON_CB_COOLDOWN_MS).toBe("10000");
   });
+
+  it("does not reject the explicit test secret", () => {
+    expect(() => validateEnv()).not.toThrow();
+  });
 });

@@ -108,6 +108,9 @@ const giftClaimSchema = new mongoose.Schema(
 
 giftClaimSchema.index({ sender: 1, status: 1 });
 giftClaimSchema.index({ recipient: 1, status: 1 });
+giftClaimSchema.index({ sender: 1, createdAt: -1 });
+giftClaimSchema.index({ recipient: 1, createdAt: -1 });
+giftClaimSchema.index({ status: 1, expiresAt: 1 });
 giftClaimSchema.index({ recipient: 1, itemType: 1, itemId: 1 });
 
 export default mongoose.model("GiftClaim", giftClaimSchema);

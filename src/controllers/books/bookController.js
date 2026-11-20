@@ -9,6 +9,7 @@ import contentMetricsService from "../../services/analytics/contentMetricsServic
 import { bookService } from "../../services/book.service.js";
 import { createNewBookNotification } from "../notificationController.js";
 import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
+import { revokeCloudinaryAsset } from "../../services/mediaLifecycle.js";
 
 // Magic-byte types accepted for the book's text file.
 const BOOK_FILE_MIME_TYPES = ["application/pdf", "application/epub+zip"];
@@ -239,6 +240,11 @@ export const deleteBook = catchAsync(async (req, res, next) => {
     );
   }
 
+  await Promise.all([
+    revokeCloudinaryAsset(book.filePublicId, "raw"),
+    revokeCloudinaryAsset(book.audioFilePublicId, "video"),
+  ]);
+
   await Book.findByIdAndDelete(book._id);
   res.status(200).json({
     success: true,
@@ -262,6 +268,7 @@ export const uploadBookAudio = catchAsync(async (req, res, next) => {
     return next(new APIError("Audio file is required", 400));
   }
 
+  const previousAudioPublicId = book.audioFilePublicId;
   const audioUpload = await bookService.uploadAudio({ buffer: req.file.buffer });
   const updated = await bookService.attachAudio({
     bookId: id,
@@ -269,6 +276,9 @@ export const uploadBookAudio = catchAsync(async (req, res, next) => {
     audioFilePublicId: audioUpload.publicId,
     duration: audioUpload.duration || parseDuration(duration),
   });
+  if (previousAudioPublicId && previousAudioPublicId !== audioUpload.publicId) {
+    await revokeCloudinaryAsset(previousAudioPublicId, "video");
+  }
 
   res.status(200).json({
     success: true,

@@ -76,6 +76,7 @@ const spaceRecordingSchema = new Schema(
 
 // Speed up listing all recordings for a space (replay page).
 spaceRecordingSchema.index({ space: 1, createdAt: -1 });
+spaceRecordingSchema.index({ space: 1, status: 1, isPublic: 1, createdAt: -1 });
 
 const SpaceRecording = mongoose.model("SpaceRecording", spaceRecordingSchema);
 
