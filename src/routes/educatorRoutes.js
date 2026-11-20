@@ -10,7 +10,7 @@ const router = express.Router();
 const educatorsListCacheKey = (req) =>
   `${CACHE_KEYS.EDUCATORS}list:${req.query.type || "all"}:${(req.query.search || "")
     .toLowerCase()
-    .trim()}`;
+    .trim()}:${req.query.page || "1"}:${req.query.limit || "20"}`;
 
 router.get(
   "/",
