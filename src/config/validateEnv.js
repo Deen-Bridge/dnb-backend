@@ -7,6 +7,11 @@ import { validateProductionConfiguration, redactedConfigurationDiagnostics } fro
  * Validate required environment variables
  */
 const requiredEnvVars = ["MONGO_URI", "JWT_SECRET", "NODE_ENV", "PORT"];
+const JWT_PLACEHOLDERS = new Set([
+  "deenbridge-temp-secret-key-2024",
+  "change-me",
+  "your-jwt-secret",
+]);
 
 const optionalEnvVars = [
   "CLOUDINARY_CLOUD_NAME",
@@ -171,11 +176,19 @@ export const validateEnv = () => {
     process.exit(1);
   }
 
-  // Check JWT_SECRET strength
-  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
-    logger.warn(
-      "⚠️  JWT_SECRET is too short! Use at least 32 characters for production."
+  // Production must never boot with a guessable, placeholder, or undersized
+  // signing secret. Development and test keep explicit local defaults.
+  const jwtSecret = process.env.JWT_SECRET || "";
+  const weakJwtSecret =
+    jwtSecret.length < 32 || JWT_PLACEHOLDERS.has(jwtSecret);
+  if (process.env.NODE_ENV === "production" && weakJwtSecret) {
+    logger.error(
+      "JWT_SECRET must be at least 32 characters and must not be a placeholder in production."
     );
+    process.exit(1);
+  }
+  if (process.env.NODE_ENV !== "production" && weakJwtSecret) {
+    logger.warn("JWT_SECRET is below the production strength policy.");
   }
 
   // Check NODE_ENV

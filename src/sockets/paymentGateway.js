@@ -37,7 +37,9 @@ function transactionModel() {
   return mongoose.model("Transaction");
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || "deenbridge-temp-secret-key-2024";
+const JWT_SECRET =
+  process.env.JWT_SECRET ||
+  (process.env.NODE_ENV === "production" ? "" : "deenbridge-dev-only-secret");
 
 /** Extract the JWT from wherever our REST clients legitimately put it. */
 function extractToken(auth = {}) {
