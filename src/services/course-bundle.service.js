@@ -2,6 +2,7 @@ import CourseBundle from "../models/course-bundle.model.js";
 import Course from "../models/Course.js";
 import User from "../models/User.js";
 import CourseProgress from "../models/CourseProgress.js";
+import mongoose from "mongoose";
 
 export class CourseBundleService {
   calculateDiscount(courses, bundlePrice) {
@@ -124,56 +125,66 @@ export class CourseBundleService {
   }
 
   async purchaseBundle(bundleId, userId) {
-    const bundle = await CourseBundle.findById(bundleId).populate("courses");
-    if (!bundle || !bundle.isActive) {
-      throw new Error("Course bundle not found or inactive");
+    const session = await mongoose.startSession();
+    try {
+      let result;
+      await session.withTransaction(async () => {
+        const bundle = await CourseBundle.findById(bundleId)
+          .populate("courses")
+          .session(session);
+        if (!bundle || !bundle.isActive) {
+          throw new Error("Course bundle not found or inactive");
+        }
+
+        const user = await User.findById(userId).session(session);
+        if (!user) {
+          throw new Error("User not found");
+        }
+
+        let newlyEnrolledCount = 0;
+
+        for (const course of bundle.courses) {
+          const courseIdStr = course._id.toString();
+          const alreadyPurchased = user.purchasedCourses.some(
+            (pc) => pc.courseId && pc.courseId.toString() === courseIdStr
+          );
+
+          if (!alreadyPurchased) {
+            user.purchasedCourses.push({
+              courseId: course._id,
+              purchaseDate: new Date(),
+            });
+            user.stat.coursesEnrolled = (user.stat.coursesEnrolled || 0) + 1;
+            newlyEnrolledCount++;
+          }
+
+          const isEnrolledInCourse = course.enrolledUsers.some(
+            (uId) => uId.toString() === userId.toString()
+          );
+          if (!isEnrolledInCourse) {
+            course.enrolledUsers.push(userId);
+            await course.save({ session });
+          }
+
+          await CourseProgress.findOneAndUpdate(
+            { user: userId, course: course._id },
+            { $setOnInsert: { user: userId, course: course._id, percentComplete: 0 } },
+            { upsert: true, new: true, session }
+          );
+        }
+
+        await user.save({ session });
+        result = {
+          success: true,
+          message: `Enrolled successfully in bundle '${bundle.title}'`,
+          bundle,
+          newlyEnrolledCount,
+        };
+      });
+      return result;
+    } finally {
+      await session.endSession();
     }
-
-    const user = await User.findById(userId);
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    let newlyEnrolledCount = 0;
-
-    for (const course of bundle.courses) {
-      const courseIdStr = course._id.toString();
-      const alreadyPurchased = user.purchasedCourses.some(
-        (pc) => pc.courseId && pc.courseId.toString() === courseIdStr
-      );
-
-      if (!alreadyPurchased) {
-        user.purchasedCourses.push({
-          courseId: course._id,
-          purchaseDate: new Date(),
-        });
-        user.stat.coursesEnrolled = (user.stat.coursesEnrolled || 0) + 1;
-        newlyEnrolledCount++;
-      }
-
-      const isEnrolledInCourse = course.enrolledUsers.some(
-        (uId) => uId.toString() === userId.toString()
-      );
-      if (!isEnrolledInCourse) {
-        course.enrolledUsers.push(userId);
-        await course.save();
-      }
-
-      await CourseProgress.findOneAndUpdate(
-        { user: userId, course: course._id },
-        { $setOnInsert: { user: userId, course: course._id, percentComplete: 0 } },
-        { upsert: true, new: true }
-      );
-    }
-
-    await user.save();
-
-    return {
-      success: true,
-      message: `Enrolled successfully in bundle '${bundle.title}'`,
-      bundle,
-      newlyEnrolledCount,
-    };
   }
 }
 
