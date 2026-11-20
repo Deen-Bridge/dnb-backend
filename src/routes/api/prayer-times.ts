@@ -55,9 +55,11 @@ router.get("/", async (req, res) => {
     });
   } catch (error: any) {
     logger.error("Error handling prayer times request:", error);
-    return res.status(400).json({
+    const providerFailure = ["PRAYER_PROVIDER_UNAVAILABLE"].includes(error.message);
+    return res.status(providerFailure ? 503 : 400).json({
       success: false,
-      message: error.message || "Failed to fetch prayer times",
+      code: error.message?.startsWith("INVALID_") ? error.message : providerFailure ? "PRAYER_PROVIDER_UNAVAILABLE" : "INVALID_PRAYER_REQUEST",
+      message: providerFailure ? "Prayer times are temporarily unavailable" : "Invalid prayer time request",
       data: null,
     });
   }
