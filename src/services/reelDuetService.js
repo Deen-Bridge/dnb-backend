@@ -54,9 +54,14 @@ export const createReelDerivative = async ({
     throw httpError("A valid original reel id is required", 400);
   }
 
-  const original = await Reel.findOne({ _id: originalReelId, ...publicReelFilter() }).select(
-    "_id video duration"
-  );
+  // Derivatives inherit moderation visibility. The state predicate is part of
+  // the read so removed or pending originals cannot be reused.
+  const original = await Reel.findOne({
+    _id: originalReelId,
+    ...publicReelFilter(),
+    status: "active",
+    isRemoved: { $ne: true },
+  }).select("_id video duration status isRemoved");
   if (!original) {
     throw httpError("Original reel not found", 404);
   }
@@ -65,7 +70,7 @@ export const createReelDerivative = async ({
   if (type === "stitch" && !stitchClip) {
     throw httpError(
       "A stitch requires a valid clip range ({ start, end } in seconds, end > start)",
-      400
+      400,
     );
   }
 
@@ -93,10 +98,16 @@ export const createReelDerivative = async ({
 
   // Increment the derivative counter surfaced on the original reel.
   const counterField = type === "duet" ? "duetCount" : "stitchCount";
-  await Reel.updateOne(
-    { _id: original._id },
-    { $inc: { [counterField]: 1 } }
+  const counterUpdate = await Reel.updateOne(
+    { _id: original._id, status: "active", isRemoved: { $ne: true } },
+    { $inc: { [counterField]: 1 } },
   );
+  if (counterUpdate.matchedCount !== 1) {
+    // Moderation won the race after the initial read. Remove the derivative so
+    // the original cannot retain a visible child or an inflated counter.
+    await Reel.deleteOne({ _id: derivative._id });
+    throw httpError("Original reel is no longer available", 409);
+  }
 
   return derivative;
 };
@@ -113,13 +124,18 @@ export const createReelDerivative = async ({
  */
 export const listReelDerivatives = async (
   originalReelId,
-  { page = 1, limit = 10, type } = {}
+  { page = 1, limit = 10, type } = {},
 ) => {
   const safePage = Math.max(parseInt(page, 10) || 1, 1);
   const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
   const skip = (safePage - 1) * safeLimit;
 
-  const filter = { originalReelId, ...publicReelFilter() };
+  const filter = {
+    originalReelId,
+    ...publicReelFilter(),
+    status: "active",
+    isRemoved: { $ne: true },
+  };
   if (isDuetType(type)) {
     filter.duetType = type;
   }
