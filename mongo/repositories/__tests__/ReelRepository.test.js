@@ -158,23 +158,24 @@ describe("ReelRepository", () => {
   /* -------------------------------------------------------------------- */
 
   describe("findBySpace", () => {
-    it("returns empty array when schema has no spaceId field", async () => {
+    it("reports the unsupported relation instead of returning an empty result", async () => {
       await createBulkReels(3);
 
-      const results = await repo.findBySpace(new mongoose.Types.ObjectId());
-      expect(results).toEqual([]);
+      await expect(
+        repo.findBySpace(new mongoose.Types.ObjectId())
+      ).rejects.toMatchObject({
+        code: "RELATION_UNSUPPORTED",
+        statusCode: 501,
+      });
     });
 
-    it("supports paginated mode with empty results", async () => {
-      const page = await repo.findBySpace(new mongoose.Types.ObjectId(), {
-        paginate: true,
-        limit: 10,
-      });
-      expect(page.data).toEqual([]);
-      expect(page.total).toBe(0);
-      expect(page.totalPages).toBe(0);
-      expect(page.hasNextPage).toBe(false);
-      expect(page.hasPrevPage).toBe(false);
+    it("reports the unsupported relation consistently in paginated mode", async () => {
+      await expect(
+        repo.findBySpace(new mongoose.Types.ObjectId(), {
+          paginate: true,
+          limit: 10,
+        })
+      ).rejects.toMatchObject({ code: "RELATION_UNSUPPORTED" });
     });
 
     it("throws when spaceId is missing", async () => {
