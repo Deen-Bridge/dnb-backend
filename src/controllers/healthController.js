@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { isRedisReady } from "../config/redis.js";
+import { isRedisReady, getRedisHealth } from "../config/redis.js";
 
 const mongoStates = {
   0: "disconnected",
@@ -11,6 +11,7 @@ const mongoStates = {
 export const createHealthHandler = ({
   getMongoReadyState = () => mongoose.connection.readyState,
   getRedisReady = isRedisReady,
+  getRedisStatus = getRedisHealth,
   getUptime = () => process.uptime(),
   getEnvironment = () => process.env.NODE_ENV || "unknown",
 } = {}) => {
@@ -37,6 +38,7 @@ export const createHealthHandler = ({
           },
           redis: {
             status: redisReady ? "up" : "down",
+            health: getRedisStatus(),
           },
         },
       },
