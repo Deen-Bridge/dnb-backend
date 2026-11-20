@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { csrfProtection, getAllowedBrowserOrigins } from "./src/middlewares/csrfProtection.js";
 import compression from "compression";
 import crypto from "crypto";
 import "./src/jobs/handlers.js";
@@ -162,18 +163,11 @@ app.use(customSecurityHeaders);
 /* eslint-disable promise/prefer-await-to-callbacks */
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      "https://dnb-frontend.vercel.app",
-      "http://localhost:3000",
-      "http://localhost:3001",
-      "https://deenbridge.vercel.app",
-      "http://deenbridge.vercel.app",
-      ...(process.env.CORS_ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean),
-    ];
+    const allowedOrigins = getAllowedBrowserOrigins();
 
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.has(origin)) {
       callback(null, true);
     } else {
       logger.warn(`Blocked CORS request from origin: ${origin}`);
@@ -183,7 +177,7 @@ const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
 };
 
 app.use(cors(corsOptions));
@@ -204,6 +198,7 @@ app.use("/api/internal", jsonBodyParser(BODY_LIMITS.serviceRequest));
 app.use(jsonBodyParser(BODY_LIMITS.defaultJson));
 app.use(urlencodedBodyParser(BODY_LIMITS.defaultUrlencoded));
 app.use(cookieParser());
+app.use(csrfProtection);
 app.use(
   compression({
     threshold: 1024,
