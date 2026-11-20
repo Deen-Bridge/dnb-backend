@@ -74,6 +74,8 @@ const METADATA_ALLOWLIST = new Set([
 
   // Generic error context
   "reason",
+  "capability",
+  "decision",
   "conflictUserId",
 
   // Service-to-service auth (dnb-ai)

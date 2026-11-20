@@ -55,6 +55,7 @@ export const AUDIT_ACTIONS = Object.freeze({
 
   // Authorization
   AUTHZ_OWNERSHIP_DENIED: "authz.ownership.denied",
+  AUTHZ_PAYOUT_DENIED:    "authz.payout.denied",
 
   // Service-to-service auth (dnb-ai)
   SERVICE_AUTH_DENIED: "service_auth.denied",
