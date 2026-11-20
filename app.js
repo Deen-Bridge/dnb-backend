@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import compression from "compression";
-import crypto from "crypto";
 import "./src/jobs/handlers.js";
 
 import logger from "./src/config/logger.js";
@@ -23,6 +22,7 @@ import {
 import { sanitizeInput } from "./src/middlewares/validate.js";
 import { rtlMiddleware } from "./src/middlewares/rtl.js";
 import { trackActivity } from "./src/middlewares/analytics/activityTracker.js";
+import { getSafeRequestId } from "./src/utils/requestCorrelation.js";
 import {
   errorHandler,
   notFound,
@@ -117,7 +117,7 @@ app.set("trust proxy", 1);
 // ======================
 
 app.use((req, res, next) => {
-  req.id = req.headers["x-request-id"] || crypto.randomUUID();
+  req.id = getSafeRequestId(req.headers["x-request-id"]);
   req.log = logger.child({ reqId: req.id });
   res.setHeader("X-Request-Id", req.id);
   next();
@@ -129,7 +129,16 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     const level = res.statusCode >= 400 ? "warn" : "info";
     req.log[level](
-      { method: req.method, url: req.originalUrl, status: res.statusCode, durationMs: duration },
+      {
+        service: "dnb-backend",
+        route: req.route?.path || req.path,
+        operation: `${req.method} ${req.route?.path || req.path}`,
+        method: req.method,
+        url: req.originalUrl,
+        status: res.statusCode,
+        outcome: res.statusCode >= 400 ? "failure" : "success",
+        durationMs: duration,
+      },
       `${req.method} ${req.originalUrl} ${res.statusCode}`
     );
   });
