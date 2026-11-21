@@ -9,6 +9,7 @@ import contentMetricsService from "../../services/analytics/contentMetricsServic
 import { bookService } from "../../services/book.service.js";
 import { createNewBookNotification } from "../notificationController.js";
 import { APIError, catchAsync } from "../../middlewares/errorHandler.js";
+import { scanUpload } from "../../security/uploadScanner.js";
 import {
   isSafeStorageId,
   isAllowedMediaUrl,
@@ -54,6 +55,22 @@ export const createBook = async (req, res) => {
       if (!isFileValid) {
         return res.status(400).json({ success: false, message: "Invalid file content detected. Magic bytes do not match expected types.", data: null });
       }
+    }
+
+    try {
+      const files = [req.files.thumbnail[0], ...(hasTextFile ? [req.files.file[0]] : []), ...(hasAudioFile ? [req.files.audio[0]] : [])];
+      await Promise.all(files.map((file) => scanUpload({
+        buffer: file.buffer,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+      })));
+    } catch (scanError) {
+      logger.warn({ code: scanError.code }, "Book upload quarantined");
+      return res.status(scanError.code === "MALWARE_DETECTED" ? 400 : 503).json({
+        success: false,
+        message: "Book upload could not be cleared for publication.",
+        data: null,
+      });
     }
 
     // Upload thumbnail to Cloudinary

@@ -31,6 +31,7 @@ const bookService = {
   getSignedAudioUrl: jest.fn(),
 };
 const createNewBookNotification = jest.fn();
+const scanUpload = jest.fn();
 const logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() };
 
 jest.unstable_mockModule("../src/models/Book.js", () => ({ default: Book }));
@@ -51,6 +52,7 @@ jest.unstable_mockModule("../src/controllers/reviewController.js", () => ({
   updateBookReview: jest.fn(),
   deleteBookReview: jest.fn(),
 }));
+jest.unstable_mockModule("../src/security/uploadScanner.js", () => ({ scanUpload }));
 
 const {
   createBook,
@@ -101,6 +103,7 @@ beforeEach(() => {
   createNewBookNotification.mockResolvedValue();
   contentMetricsService.recordBookView.mockResolvedValue();
   validateMagicBytes.mockResolvedValue(true);
+  scanUpload.mockResolvedValue({ verdict: "clean" });
   cloudinary.uploader.upload_stream.mockImplementation((opts, cb) => ({
     end: () => cb(null, { secure_url: "https://cdn/x", public_id: "pid" }),
   }));
@@ -145,6 +148,42 @@ describe("createBook", () => {
     await createBook({ body, files: files(), user }, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled();
+  });
+
+  it("quarantines book uploads until the malware scanner clears them", async () => {
+    const res = mockRes();
+    await createBook({ body, files: files(), user }, res);
+
+    expect(scanUpload).toHaveBeenCalledWith({
+      buffer: files().thumbnail[0].buffer,
+      originalName: undefined,
+      mimeType: undefined,
+    });
+    expect(scanUpload).toHaveBeenCalledTimes(2);
+    expect(cloudinary.uploader.upload_stream).toHaveBeenCalled();
+  });
+
+  it("returns 400 and skips publication when malware is detected", async () => {
+    scanUpload.mockRejectedValue(Object.assign(new Error("infected"), { code: "MALWARE_DETECTED" }));
+    const res = mockRes();
+    await createBook({ body, files: files(), user }, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Book upload could not be cleared for publication." })
+    );
+    expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled();
+    expect(Book.create).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 and skips publication when the scanner is unavailable", async () => {
+    scanUpload.mockRejectedValue(Object.assign(new Error("scanner down"), { code: "SCANNER_UNAVAILABLE" }));
+    const res = mockRes();
+    await createBook({ body, files: files(), user }, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled();
+    expect(Book.create).not.toHaveBeenCalled();
   });
 
   it("returns 400 when audio upload fails", async () => {
