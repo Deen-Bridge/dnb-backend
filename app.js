@@ -1,8 +1,8 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { csrfProtection, getAllowedBrowserOrigins } from "./src/middlewares/csrfProtection.js";
 import compression from "compression";
-import crypto from "crypto";
 import "./src/jobs/handlers.js";
 
 import logger from "./src/config/logger.js";
@@ -23,6 +23,7 @@ import {
 import { sanitizeInput } from "./src/middlewares/validate.js";
 import { rtlMiddleware } from "./src/middlewares/rtl.js";
 import { trackActivity } from "./src/middlewares/analytics/activityTracker.js";
+import { getSafeRequestId } from "./src/utils/requestCorrelation.js";
 import {
   errorHandler,
   notFound,
@@ -78,7 +79,7 @@ import badgeRoutes from "./src/routes/badge.routes.js";
 import achievementRoutes from "./src/routes/api/achievements.js";
 import activeUsersRoutes from "./src/routes/analytics/activeUsersRoutes.js";
 import contentPerformanceRoutes from "./src/routes/analytics/contentPerformanceRoutes.js";
-import { healthCheck, ping } from "./src/controllers/healthController.js";
+import { healthCheck, ping, startupCheck } from "./src/controllers/healthController.js";
 import databaseHealthRoutes from "./src/routes/health/database.js";
 import databaseMetricsRoutes from "./src/routes/metrics/database.js";
 import searchAnalyticsRoutes from "./src/routes/analytics/search.js";
@@ -117,7 +118,7 @@ app.set("trust proxy", 1);
 // ======================
 
 app.use((req, res, next) => {
-  req.id = req.headers["x-request-id"] || crypto.randomUUID();
+  req.id = getSafeRequestId(req.headers["x-request-id"]);
   req.log = logger.child({ reqId: req.id });
   res.setHeader("X-Request-Id", req.id);
   next();
@@ -129,7 +130,16 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     const level = res.statusCode >= 400 ? "warn" : "info";
     req.log[level](
-      { method: req.method, url: req.originalUrl, status: res.statusCode, durationMs: duration },
+      {
+        service: "dnb-backend",
+        route: req.route?.path || req.path,
+        operation: `${req.method} ${req.route?.path || req.path}`,
+        method: req.method,
+        url: req.originalUrl,
+        status: res.statusCode,
+        outcome: res.statusCode >= 400 ? "failure" : "success",
+        durationMs: duration,
+      },
       `${req.method} ${req.originalUrl} ${res.statusCode}`
     );
   });
@@ -162,18 +172,11 @@ app.use(customSecurityHeaders);
 /* eslint-disable promise/prefer-await-to-callbacks */
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      "https://dnb-frontend.vercel.app",
-      "http://localhost:3000",
-      "http://localhost:3001",
-      "https://deenbridge.vercel.app",
-      "http://deenbridge.vercel.app",
-      ...(process.env.CORS_ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean),
-    ];
+    const allowedOrigins = getAllowedBrowserOrigins();
 
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.has(origin)) {
       callback(null, true);
     } else {
       logger.warn(`Blocked CORS request from origin: ${origin}`);
@@ -183,7 +186,7 @@ const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
 };
 
 app.use(cors(corsOptions));
@@ -204,6 +207,7 @@ app.use("/api/internal", jsonBodyParser(BODY_LIMITS.serviceRequest));
 app.use(jsonBodyParser(BODY_LIMITS.defaultJson));
 app.use(urlencodedBodyParser(BODY_LIMITS.defaultUrlencoded));
 app.use(cookieParser());
+app.use(csrfProtection);
 app.use(
   compression({
     threshold: 1024,
@@ -242,9 +246,10 @@ app.get("/", (req, res) => {
 });
 
 app.get("/ping", ping);
-app.get("/health", ping);
+app.get("/health", healthCheck);
 app.get("/health/live", ping);
 app.get("/health/ready", healthCheck);
+app.get("/health/startup", startupCheck);
 app.use("/health/database", databaseHealthRoutes);
 
 // SEP-1 stellar.toml — must be outside /api rate limiter

@@ -4,6 +4,7 @@ import cloudinary from "../utils/cloudinary.js";
 import Course from "../models/Course.js";
 import Book from "../models/Book.js";
 import logger from "../config/logger.js";
+import { createPrivacyRequest } from "../services/privacyWorkflowService.js";
 import { validateMagicBytes } from "../utils/fileValidation.js";
 import CourseProgress from "../models/CourseProgress.js";
 import {
@@ -210,16 +211,30 @@ export const deleteUser = async (req, res) => {
       });
     }
 
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.params.id).select("_id");
     if (!user) {
       return res.status(404).json({
         success: false,
         message: "User not found",
       });
     }
-    res.status(200).json({
+    const requestKey =
+      req.headers["idempotency-key"] ||
+      req.headers["x-idempotency-key"] ||
+      `legacy-delete:${req.params.id}`;
+    const result = await createPrivacyRequest({
+      userId: user._id,
+      type: "delete",
+      requestKey,
+      req,
+    });
+
+    res.status(202).json({
       success: true,
-      message: "User deleted successfully",
+      message: "Account deletion workflow accepted",
+      requestId: result.request._id,
+      status: result.request.status,
+      progress: result.request.progress,
     });
   } catch (error) {
     logger.error("Delete user error:", error);

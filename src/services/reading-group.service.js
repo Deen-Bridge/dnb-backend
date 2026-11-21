@@ -2,8 +2,7 @@ import ReadingGroup from "../models/reading-group.model.js";
 import ReadingGroupMember from "../models/reading-group-member.model.js";
 import Book from "../models/Book.js";
 import Notification from "../models/Notification.js";
-
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+import { boundedSearch, QUERY_MAX_TIME_MS, QUERY_MAX_RESULTS, safeSort } from "../utils/queryBudget.js";
 
 export class ReadingGroupService {
   async requireGroupAccess(groupId, userId, { adminOnly = false } = {}) {
@@ -63,24 +62,28 @@ export class ReadingGroupService {
     search,
     page = 1,
     limit = 20,
+    sort,
   }) {
     const query = {};
     if (bookId) query.book = bookId;
     if (privacy) query.privacy = privacy;
-    if (search && search.trim() !== "") {
-      const regex = new RegExp(escapeRegex(search.trim()), "i");
+    const regex = boundedSearch(search);
+    if (regex) {
       query.$or = [{ name: regex }, { description: regex }];
     }
 
     const skip = (page - 1) * limit;
+    const sortSpec = safeSort(sort, ["createdAt", "name"], { createdAt: -1 });
     const [groups, total] = await Promise.all([
       ReadingGroup.find(query)
+        .select("name description book creator privacy chaptersPerWeek readingSchedule createdAt updatedAt")
         .populate("book", "title author thumbnail")
         .populate("creator", "name email avatar")
-        .sort({ createdAt: -1 })
+        .sort(sortSpec)
         .skip(skip)
-        .limit(limit),
-      ReadingGroup.countDocuments(query),
+        .limit(Math.min(limit, QUERY_MAX_RESULTS))
+        .maxTimeMS(QUERY_MAX_TIME_MS),
+      ReadingGroup.countDocuments(query).maxTimeMS(QUERY_MAX_TIME_MS),
     ]);
 
     return {

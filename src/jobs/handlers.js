@@ -9,6 +9,7 @@ import { verifyPaymentOperations, getExplorerUrl } from "../services/stellar/ste
 import { recordSaleEarnings } from "../services/payoutService.js";
 import { registerJob, enqueue } from "./queue.js";
 import { markPledgeTransactionPaid } from "../services/pledgeService.js";
+import { upsertDurableNotification } from "../services/notificationDeliveryService.js";
 
 const expectedPaymentsFor = (transaction) =>
   transaction.type === "donation"
@@ -121,9 +122,13 @@ registerJob("notifications.bulk", async ({ courseId, senderId, title, message, t
     message,
     data: { courseId: course._id },
     priority: "medium",
+    eventId: `course-bulk:${courseId}:${title}:${message}`,
   }));
 
-  const inserted = await Notification.insertMany(notifDocs);
+  const inserted = [];
+  for (const doc of notifDocs) {
+    inserted.push(await upsertDurableNotification(doc));
+  }
 
   for (const notif of inserted) {
     try {
