@@ -29,7 +29,14 @@ All indexes below are non-unique, so they cannot fail on existing data.
 | `{ creator: 1, createdAt: -1 }` **new** | creator earnings / payout listings |
 | `{ itemType: 1, itemId: 1 }` | access checks per item |
 | `{ type: 1, status: 1, createdAt: -1 }` | donation stats |
+| `{ paymentReference: 1 }` unique, partial (`$type: "string"`) **new** | canonical memo reconciliation (#695) |
+| `{ memo: 1, itemType: 1, status: 1, buyerWallet: 1 }` **new** | bounded legacy memo reconciliation (#695) |
 | field-level indexes (hash unique, etc.), partial TTL | idempotency lookup, expiry of pending checkouts |
+
+The `paymentReference` index is unique (the exception to the note above), but
+the field is new and only set on new checkouts, so it cannot fail on existing
+data. Build it with `npm run migrate:payment-references`; see
+[payment-reconciliation.md](payment-reconciliation.md).
 
 ## Reel (`Reel.js`)
 | Index | Supports |

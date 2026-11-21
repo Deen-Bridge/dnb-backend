@@ -25,6 +25,12 @@ const transactionSchema = new mongoose.Schema(
     memo: {
       type: String,
     },
+    // Canonical, collision-resistant purchase reference minted at initialize
+    // and carried on-chain inside `memo` (see services/stellar/paymentReference.js).
+    // Unique via the partial index below; legacy rows simply don't have one.
+    paymentReference: {
+      type: String,
+    },
     stellarLedger: {
       type: Number,
     },
@@ -171,6 +177,9 @@ const transactionSchema = new mongoose.Schema(
     // Timestamps
     submittedAt: Date,
     confirmedAt: Date,
+    // Set only when the ingestion worker (not the submit flow) confirmed the
+    // row, so a replayed Horizon event knows it owns the follow-up effects.
+    reconciledAt: Date,
     expiresAt: {
       type: Date,
       // Only abandoned `pending` checkouts get a reaping deadline. Records
@@ -208,6 +217,17 @@ transactionSchema.index({ creator: 1, createdAt: -1 }); // creator earnings/payo
 transactionSchema.index({ creator: 1, status: 1 });
 transactionSchema.index({ itemType: 1, itemId: 1 });
 transactionSchema.index({ type: 1, status: 1, createdAt: -1 }); // Donation stats
+// Reconciliation (#695): a payment memo resolves to exactly one checkout via
+// its canonical reference. Partial rather than sparse so explicit nulls on
+// older rows can never collide; lookups must therefore restate the
+// `$type: "string"` predicate for the planner to pick this index.
+transactionSchema.index(
+  { paymentReference: 1 },
+  { unique: true, partialFilterExpression: { paymentReference: { $type: "string" } } }
+);
+// Legacy suffix memos are resolved only by exact memo + item type + state +
+// payer, never by scanning.
+transactionSchema.index({ memo: 1, itemType: 1, status: 1, buyerWallet: 1 });
 // TTL for expired pending checkouts only — a blanket index would also reap
 // confirmed purchases/donations once their original 30-minute expiry passes.
 transactionSchema.index(

@@ -76,6 +76,71 @@ const sponsorshipsRejected = new promClient.Counter({
   registers: [registry],
 });
 
+// Payment reconciliation (#695). Labels are drawn from fixed sets so a hostile
+// memo can never mint new series; wallet addresses and memos are never labels.
+const RECONCILIATION_STRATEGIES = new Set(["tx_hash", "canonical", "legacy", "donation", "none"]);
+const RECONCILIATION_OUTCOMES = new Set(["matched", "duplicate", "rejected", "ambiguous", "not_found", "error"]);
+const RECONCILIATION_SCHEMES = new Set(["canonical", "legacy"]);
+const RECONCILIATION_REASONS = new Set([
+  "no_reference", "malformed_reference", "reference_not_found", "ambiguous_reference",
+  "item_type_mismatch", "item_not_found", "reference_already_settled",
+  "reference_hash_mismatch", "transaction_not_reconcilable", "network_mismatch",
+  "asset_mismatch", "source_mismatch", "destination_mismatch", "amount_mismatch",
+  "verification_failed",
+  "verification_unavailable", "unknown_donor", "lookup_failed",
+]);
+
+const reconciliationLookupDuration = new promClient.Histogram({
+  name: "payment_reconciliation_lookup_duration_seconds",
+  help: "Time spent resolving an ingested payment to a checkout",
+  labelNames: ["strategy", "outcome"],
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
+  registers: [registry],
+});
+
+const reconciliationAmbiguousReferences = new promClient.Counter({
+  name: "payment_reconciliation_ambiguous_references_total",
+  help: "Payment references that resolved to more than one checkout",
+  labelNames: ["scheme"],
+  registers: [registry],
+});
+
+const reconciliationRejectedReferences = new promClient.Counter({
+  name: "payment_reconciliation_rejected_references_total",
+  help: "Payment references rejected during reconciliation",
+  labelNames: ["reason"],
+  registers: [registry],
+});
+
+const reconciliationUnreconciledPayments = new promClient.Counter({
+  name: "payment_reconciliation_unreconciled_total",
+  help: "Payments persisted as unreconciled for manual review",
+  labelNames: ["reason"],
+  registers: [registry],
+});
+
+function observeReconciliationLookup(strategy, outcome, durationMs) {
+  reconciliationLookupDuration.observe(
+    {
+      strategy: boundedLabel(strategy, RECONCILIATION_STRATEGIES, "none"),
+      outcome: boundedLabel(outcome, RECONCILIATION_OUTCOMES, "error"),
+    },
+    durationMs / 1000
+  );
+}
+
+function recordAmbiguousReference(scheme) {
+  reconciliationAmbiguousReferences.inc({ scheme: boundedLabel(scheme, RECONCILIATION_SCHEMES, "legacy") });
+}
+
+function recordRejectedReference(reason) {
+  reconciliationRejectedReferences.inc({ reason: boundedLabel(reason, RECONCILIATION_REASONS) });
+}
+
+function recordUnreconciledPayment(reason) {
+  reconciliationUnreconciledPayments.inc({ reason: boundedLabel(reason, RECONCILIATION_REASONS) });
+}
+
 function observeHttpDuration(method, route, statusCode, durationMs) {
   httpRequestDuration.observe(
     { method: ALLOWED_METHODS.has(method) ? method : "OTHER", route: safeRoute(route), status_code: ["2", "3", "4", "5"].includes(String(statusCode)[0]) ? String(statusCode)[0] + "xx" : "other" },
@@ -120,7 +185,15 @@ export {
   paymentsFailed,
   sponsorshipsApproved,
   sponsorshipsRejected,
+  reconciliationLookupDuration,
+  reconciliationAmbiguousReferences,
+  reconciliationRejectedReferences,
+  reconciliationUnreconciledPayments,
   observeHttpDuration,
   observeHorizonDuration,
+  observeReconciliationLookup,
+  recordAmbiguousReference,
+  recordRejectedReference,
+  recordUnreconciledPayment,
   metricsMiddleware,
 };

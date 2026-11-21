@@ -46,6 +46,7 @@ const toTransactionDto = (tx, role) => {
 };
 import { recordSaleEarnings } from "../../services/payoutService.js";
 import { grantItemAccess } from "../../services/stellar/reconciliationService.js";
+import { buildPurchaseMemo, generatePaymentReference } from "../../services/stellar/paymentReference.js";
 import { enqueue } from "../../jobs/queue.js";
 import logger from "../../config/logger.js";
 import {
@@ -117,14 +118,27 @@ const resolvePaymentDestination = async ({ itemType, itemId, session }) => {
  */
 const resolveItemCurrency = (item) => item.currency || "USDC";
 
+// Unique-index collisions on a 110-bit random value are not expected in
+// practice; the bounded retry only exists so one never surfaces as a 500.
+const MAX_REFERENCE_ATTEMPTS = 3;
+
 /**
- * Platform memo convention: purchases are tagged DNB-<ITEMTYPE>-<last 8 chars
- * of the Mongo item id>, always as a text memo. This is always non-empty, so
- * it already satisfies SEP-29 "some memo present" destinations; it does not
+ * Mint a payment reference that is not yet bound to any checkout.
+ *
+ * Platform memo convention (#695): purchases carry DNB-<B|C>-<reference> as a
+ * text memo, where the reference is stored on the Transaction under a unique
+ * index and is what reconciliation resolves. The memo is always non-empty, so
+ * it satisfies SEP-29 "some memo present" destinations; it does not
  * substitute for a destination-specific memo (e.g. an exchange deposit id).
  */
-const buildPurchaseMemo = (itemType, itemId) =>
-  `DNB-${itemType.toUpperCase()}-${itemId.toString().slice(-8)}`;
+const mintPaymentReference = async (session) => {
+  for (let attempt = 0; attempt < MAX_REFERENCE_ATTEMPTS; attempt += 1) {
+    const reference = generatePaymentReference();
+    const taken = await Transaction.exists({ paymentReference: reference }).session(session || null);
+    if (!taken) return reference;
+  }
+  throw new Error("Could not mint a unique payment reference");
+};
 
 /**
  * Get a quote for paying with a non-USDC asset via path payment
@@ -293,7 +307,9 @@ export const getPaymentPreflight = async (req, res) => {
       });
     }
 
-    const memo = buildPurchaseMemo(itemType, itemId);
+    // Pre-flight only needs a representative memo (SEP-29 presence/size);
+    // the real reference is minted and persisted by initializePayment.
+    const memo = buildPurchaseMemo(itemType, generatePaymentReference());
     const feeSplitPreview =
       settlementMode === "direct" ? calculateFeeSplit(item.price) : null;
 
@@ -432,7 +448,8 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    const memo = buildPurchaseMemo(itemType, itemId);
+    const paymentReference = await mintPaymentReference(session);
+    const memo = buildPurchaseMemo(itemType, paymentReference);
 
     const isPathPayment = sendAssetInput && sendMax;
     let paymentTx;
@@ -539,6 +556,7 @@ export const initializePayment = async (req, res) => {
       expectedHash: paymentTx.hash,
       unsignedXdr: paymentTx.xdr,
       memo,
+      paymentReference,
       ...(sendAssetInput && {
         sendAsset: sendAssetInput,
         sendMax,

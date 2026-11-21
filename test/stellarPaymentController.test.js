@@ -166,6 +166,7 @@ describe("Stellar payment controller", () => {
     jest.spyOn(User, "findById").mockReturnValue(makeQuery(buyer));
     jest.spyOn(Book, "findById").mockReturnValue(makeQuery(book));
     jest.spyOn(Transaction, "findOne").mockReturnValue(makeQuery(null));
+    const referenceLookup = jest.spyOn(Transaction, "exists").mockReturnValue(makeQuery(null));
     buildPaymentTransaction.mockResolvedValue({
       xdr: "unsigned-xdr",
       hash: "expected-hash",
@@ -207,6 +208,15 @@ describe("Stellar payment controller", () => {
       // XDR validation; stellarTxHash is only set after actual submission.
       expectedHash: "expected-hash",
     });
+    // #695: the checkout carries a canonical reference, and the on-chain memo
+    // embeds it rather than a fragment of the item id.
+    const { paymentReference, memo } = savedTransactions[0];
+    expect(paymentReference).toMatch(/^[0-9A-HJKMNP-TV-Z]{22}$/);
+    expect(memo).toBe(`DNB-B-${paymentReference}`);
+    expect(Buffer.byteLength(memo)).toBeLessThanOrEqual(28);
+    expect(memo).not.toContain(itemId.toString().slice(-8));
+    expect(referenceLookup).toHaveBeenCalledWith({ paymentReference });
+    expect(buildPaymentTransaction).toHaveBeenCalledWith(expect.objectContaining({ memo }));
     expect(session.commitTransaction).toHaveBeenCalledTimes(1);
     expect(session.abortTransaction).not.toHaveBeenCalled();
   });

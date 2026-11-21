@@ -114,9 +114,15 @@ Route mounts are in `app.js`: `/api/stellar/payment` (`paymentLimiter`),
    without a clean confirm call. The ingestion worker (section 5) feeds Horizon
    payments to `reconcilePayment` in
    `services/stellar/reconciliationService.js`, which matches by transaction
-   hash, then by memo, and otherwise records an `UnreconciledPayment` for
-   manual review. `GET /api/stellar/payment/reconciliation/status` (admin)
-   reports cursors and counts.
+   hash, then by the canonical payment reference in the memo
+   (`DNB-B-<ref>` / `DNB-C-<ref>`, minted at initialize and stored in
+   `Transaction.paymentReference`). Every lookup is indexed and bounded; zero,
+   multiple or mismatched matches are recorded as an `UnreconciledPayment`
+   with a `reasonCode` for manual review. See
+   [payment-reconciliation.md](payment-reconciliation.md) for the full
+   contract and the legacy memo migration plan.
+   `GET /api/stellar/payment/reconciliation/status` (admin) reports cursors
+   and open unreconciled counts by reason.
 4. **Record** - on confirmation, the buyer gets access (`grantItemAccess` in
    the reconciliation service; direct purchase update in the controller/job),
    donation pledges are marked paid, a receipt is queued, and for purchases
@@ -275,7 +281,7 @@ store.
 | Refunds | `REFUND_WINDOW_DAYS` | no |
 | Webhooks | `WEBHOOK_WORKER_ENABLED`, `WEBHOOK_POLL_INTERVAL_MS`, `WEBHOOK_MAX_ATTEMPTS`, `WEBHOOK_AUTO_DISABLE_THRESHOLD`, `WEBHOOK_BACKOFF_JITTER_MS`, `WEBHOOK_HTTP_TIMEOUT_MS`, `WEBHOOK_API_VERSION`, `WEBHOOK_MAX_PER_TICK` | no |
 | | `WEBHOOK_SECRET_ENCRYPTION_KEY` | **yes** |
-| Workers | `INGESTION_WORKER_ENABLED`, `INGESTION_POLL_INTERVAL_MS`, `PLEDGE_SCHEDULER_ENABLED`, `QUEUE_DRIVER`, `JOBS_ENABLED` | no |
+| Workers | `INGESTION_WORKER_ENABLED`, `INGESTION_POLL_INTERVAL_MS`, `RECONCILIATION_QUERY_TIMEOUT_MS`, `PLEDGE_SCHEDULER_ENABLED`, `QUEUE_DRIVER`, `JOBS_ENABLED` | no |
 
 The donation fund and platform wallet entries are public keys only. Signing keys
 for those wallets are never configured in the backend; payout and refund
