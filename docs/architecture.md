@@ -50,7 +50,7 @@ Other inconsistencies to know about (verified by listing, not by auditing):
 - **Caching**: `cacheMiddleware(ttl, keyGen)` in `src/middlewares/cache.js` caches GET JSON responses in Redis through `src/utils/cache.js` (TTL constants in `CACHE_TTL`); applied on routes such as `userRoutes.js`, `searchRoutes.js`, `spaceRoutes.js`. Redis is optional. See `docs/caching.md`.
 - **Rate limiting / security headers**: `security.js` (`authLimiter`, `standardLimiter`, `generousLimiter`, `paymentLimiter`, helmet), applied per mount in `app.js`.
 - **Audit and webhooks**: `recordAudit` in `src/services/audit/auditService.js`; outbound events via `emitEvent` in `src/services/webhooks/webhookService.js`.
-- **Observability**: per-request id (`X-Request-Id`) and child logger in `app.js`; `/metrics`, `/health`, `/ping`.
+- **Observability**: per-request id (`X-Request-Id`) and child logger in `app.js`; `/metrics`, `/health/ready`, `/health/live` and `/health/startup`.
 
 ## Example: `POST /api/stellar/payment/initialize`
 

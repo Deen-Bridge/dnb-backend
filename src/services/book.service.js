@@ -8,6 +8,7 @@
 import cloudinary from "../utils/cloudinary.js";
 import Book from "../models/Book.js";
 import { validateMagicBytes } from "../utils/fileValidation.js";
+import { MEDIA_URL_TTL_SECONDS } from "../utils/mediaDownloadSecurity.js";
 
 // Magic-byte MIME types the audio upload accepts. `file-type` reports MP3 as
 // audio/mpeg and M4A as audio/mp4.
@@ -91,13 +92,13 @@ export class BookService {
    * Mint a short-lived signed URL for streaming an authenticated audio file.
    *
    * @param {object} book - Book document with `audioFilePublicId`.
-   * @returns {string} Signed Cloudinary download URL valid for 1 hour.
+   * @returns {string} Signed Cloudinary download URL valid for 10 minutes.
    */
   getSignedAudioUrl(book) {
     return cloudinary.utils.private_download_url(
       book.audioFilePublicId,
       "video",
-      { expires_at: Math.floor(Date.now() / 1000) + 3600 } // 1 hour
+      { expires_at: Math.floor(Date.now() / 1000) + MEDIA_URL_TTL_SECONDS }
     );
   }
 }

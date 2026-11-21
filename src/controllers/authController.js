@@ -14,6 +14,7 @@ import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 import { generateOtp, hashOtp, verifyOtp } from "../utils/otp.js";
 import { firstPasswordIssue } from "../utils/passwordPolicy.js";
 import { isPasswordBreached } from "../utils/hibp.js";
+import { clearCsrfCookie, setCsrfCookie } from "../middlewares/csrfProtection.js";
 
 import { catchAsync, APIError } from "../middlewares/errorHandler.js";
 import qrcode from "qrcode";
@@ -151,6 +152,7 @@ export const createSessionAndTokens = async (user, req, res, options = {}) => {
     path: "/api/auth/refresh",
     maxAge: refreshDurationMs,
   });
+  setCsrfCookie(res);
 
   return { accessToken, refreshToken: rawRefreshToken };
 };
@@ -799,6 +801,7 @@ export const refreshSession = catchAsync(async (req, res, next) => {
     path: "/api/auth/refresh",
     maxAge: refreshDurationMs,
   });
+  setCsrfCookie(res);
 
   res.status(200).json({
     success: true,
@@ -917,6 +920,7 @@ export const logoutUser = catchAsync(async (req, res, next) => {
     sameSite: isProd ? "None" : "Lax",
     path: "/api/auth/refresh",
   });
+  clearCsrfCookie(res);
 
   res.status(200).json({
     success: true,

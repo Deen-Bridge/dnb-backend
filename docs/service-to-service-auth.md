@@ -27,14 +27,16 @@ Every S2S request MUST send all four headers:
 
 ## Canonical signing string
 
-The signature is computed over this exact string — four fields joined by a
+The signature is computed over this exact string — five fields joined by a
 single `\n` (LF), with **no trailing newline**:
 
 ```
-METHOD \n PATH \n TIMESTAMP \n sha256hex(rawBody || "")
+SERVICE_ID \n METHOD \n PATH \n TIMESTAMP \n sha256hex(rawBody || "")
 ```
 
 - `METHOD` — HTTP method, uppercased (`GET`, `POST`, …).
+- `SERVICE_ID` — the logical caller from `X-Service-Id`; when a key declares
+  `serviceId`, it must match this value.
 - `PATH` — the request path exactly as sent, **including any query string**
   (Express `req.originalUrl`, e.g. `/api/internal/ai/whoami`).
 - `TIMESTAMP` — the same value sent in `X-Timestamp` (Unix seconds).
@@ -56,7 +58,7 @@ import crypto from "crypto";
 function signRequest({ method, path, secret, kid, serviceId, body }) {
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const bodyHash = crypto.createHash("sha256").update(body || "").digest("hex");
-  const canonical = [method.toUpperCase(), path, timestamp, bodyHash].join("\n");
+  const canonical = [serviceId, method.toUpperCase(), path, timestamp, bodyHash].join("\n");
   const signature = crypto.createHmac("sha256", secret).update(canonical).digest("hex");
   return {
     "X-Service-Id": serviceId,
@@ -112,6 +114,7 @@ Keys are provisioned via the `AI_SERVICE_KEYS` env var — a JSON array:
 [
   {
     "kid": "k1",
+    "serviceId": "dnb-ai",
     "secret": "a-long-random-hmac-secret",
     "scopes": ["ai:read-content"],
     "active": true
