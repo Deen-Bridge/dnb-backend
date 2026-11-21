@@ -8,16 +8,25 @@ const Reel = {
   find: jest.fn(),
   findById: jest.fn(),
   findOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
   findByIdAndUpdate: jest.fn(),
   countDocuments: jest.fn(),
   create: jest.fn(),
 };
+const ReelComment = {
+  create: jest.fn(), find: jest.fn(), findById: jest.fn(), findOne: jest.fn(),
+  updateOne: jest.fn(), countDocuments: jest.fn(),
+};
+const ReelEngagement = { create: jest.fn() };
 const uploadStream = jest.fn();
 const createReelDerivative = jest.fn();
 const listReelDerivatives = jest.fn();
 const moderationFlagReel = jest.fn();
 
 jest.unstable_mockModule("../src/models/Reel.js", () => ({ default: Reel }));
+jest.unstable_mockModule("../src/models/ReelComment.js", () => ({ default: ReelComment }));
+jest.unstable_mockModule("../src/models/ReelEngagement.js", () => ({ default: ReelEngagement }));
 jest.unstable_mockModule("../src/utils/cloudinary.js", () => ({
   default: { uploader: { upload_stream: uploadStream } },
 }));
@@ -140,7 +149,7 @@ describe("reel list / visibility / scheduling", () => {
     expect(body.reels[0].stats.comments).toBe(2);
   });
 
-  it("clamps out-of-range page/limit and applies no visibility or schedule filter", async () => {
+  it("clamps out-of-range page/limit and filters to visible active reels", async () => {
     const chain = listChain([]);
     Reel.find.mockReturnValue(chain);
     Reel.countDocuments.mockResolvedValue(0);
@@ -148,18 +157,16 @@ describe("reel list / visibility / scheduling", () => {
     await controller.getReels({ query: { limit: "999", page: "-4" }, user: { _id: ID() } }, res);
     expect(chain.limit).toHaveBeenCalledWith(50);
     expect(chain.skip).toHaveBeenCalledWith(0);
-    // Documents current behavior: the Reel model has no visibility/scheduledAt
-    // support, so listing is unfiltered.
-    expect(Reel.find).toHaveBeenCalledWith();
+    expect(Reel.find).toHaveBeenCalledWith({ isRemoved: false, status: "active" });
   });
 
   it("getReelById returns 404 for unknown reel and 500 on DB error", async () => {
     const q = (v) => ({ populate: () => ({ lean: v }) });
-    Reel.findById.mockReturnValue(q(jest.fn().mockResolvedValue(null)));
+    Reel.findOne.mockReturnValue(q(jest.fn().mockResolvedValue(null)));
     let res = mockRes();
     await controller.getReelById({ params: { id: ID() }, user: { _id: ID() } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
-    Reel.findById.mockReturnValue(q(jest.fn().mockRejectedValue(new Error("db"))));
+    Reel.findOne.mockReturnValue(q(jest.fn().mockRejectedValue(new Error("db"))));
     res = mockRes();
     await controller.getReelById({ params: { id: ID() }, user: { _id: ID() } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
@@ -167,26 +174,23 @@ describe("reel list / visibility / scheduling", () => {
 });
 
 describe("reactions", () => {
-  const makeReel = (likes = [], loves = []) => ({ likes, loves, save: jest.fn().mockResolvedValue() });
   const uid = ID();
 
   it("adds a like and removes an existing love", async () => {
-    const reel = makeReel([], [uid]);
-    Reel.findById.mockResolvedValue(reel);
+    Reel.findOneAndUpdate.mockReturnValue({ lean: async () => ({ likes: [uid], loves: [] }) });
     const res = mockRes();
     await controller.reactToReel({ params: { id: ID() }, body: { type: "like" }, user: { _id: uid } }, res);
-    expect(reel.likes).toHaveLength(1);
-    expect(reel.loves).toHaveLength(0);
-    expect(reel.save).toHaveBeenCalled();
+    expect(Reel.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: expect.any(String), isRemoved: false, status: "active" }),
+      expect.any(Array), { new: true }
+    );
     expect(res.json.mock.calls[0][0].viewerState).toEqual({ liked: true, loved: false });
   });
 
   it("toggles an existing like off", async () => {
-    const reel = makeReel([uid]);
-    Reel.findById.mockResolvedValue(reel);
+    Reel.findOneAndUpdate.mockReturnValue({ lean: async () => ({ likes: [], loves: [] }) });
     const res = mockRes();
     await controller.reactToReel({ params: { id: ID() }, body: { type: "like" }, user: { _id: uid } }, res);
-    expect(reel.likes).toHaveLength(0);
     expect(res.json.mock.calls[0][0].viewerState.liked).toBe(false);
   });
 
@@ -194,7 +198,7 @@ describe("reactions", () => {
     let res = mockRes();
     await controller.reactToReel({ params: { id: ID() }, body: { type: "hate" }, user: { _id: uid } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
-    Reel.findById.mockResolvedValue(null);
+    Reel.findOneAndUpdate.mockReturnValue({ lean: async () => null });
     res = mockRes();
     await controller.reactToReel({ params: { id: ID() }, body: { type: "love" }, user: { _id: uid } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
@@ -204,15 +208,16 @@ describe("reactions", () => {
 describe("comments", () => {
   const uid = ID();
 
-  it("adds a trimmed comment", async () => {
-    const reel = { _id: ID(), comments: [], save: jest.fn().mockResolvedValue() };
-    Reel.findById.mockResolvedValue(reel);
-    Reel.findOne.mockReturnValue({
-      populate: () => ({ lean: async () => ({ comments: [{ text: "nice" }] }) }),
-    });
+  it("adds a trimmed comment to the separate comment collection", async () => {
+    const reel = { _id: ID() };
+    Reel.findOne.mockResolvedValue(reel);
+    ReelComment.create.mockResolvedValue({ _id: ID() });
+    Reel.updateOne.mockResolvedValue({ modifiedCount: 1 });
+    ReelComment.findById.mockReturnValue({ populate: () => ({ lean: async () => ({ text: "nice" }) }) });
+    ReelComment.countDocuments.mockResolvedValue(1);
     const res = mockRes();
     await controller.addReelComment({ params: { id: reel._id }, body: { text: "  nice " }, user: { _id: uid } }, res);
-    expect(reel.comments[0].text).toBe("nice");
+    expect(ReelComment.create).toHaveBeenCalledWith({ reel: reel._id, user: uid, text: "nice" });
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json.mock.calls[0][0].stats.comments).toBe(1);
   });
@@ -230,39 +235,42 @@ describe("comments", () => {
       { _id: 2, createdAt: 3 },
       { _id: 3, createdAt: 2 },
     ];
-    Reel.findById.mockReturnValue({
-      select: () => ({ populate: () => ({ lean: async () => ({ comments }) }) }),
-    });
+    Reel.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ _id: ID() }) }) });
+    ReelComment.find.mockReturnValue(listChain(comments.slice(1).reverse()));
+    ReelComment.countDocuments.mockResolvedValue(3);
     const res = mockRes();
     await controller.getReelComments({ params: { id: ID() }, query: { limit: "2" } }, res);
     const body = res.json.mock.calls[0][0];
-    expect(body.comments.map((c) => c._id)).toEqual([2, 3]);
+    expect(body.comments.map((c) => c._id)).toEqual([3, 2]);
     expect(body.hasMore).toBe(true);
   });
 
   it("deletes own comment but forbids others", async () => {
     const commentId = ID();
     const owner = ID();
-    const remove = jest.fn();
-    const mk = () => ({
-      createdBy: ID(),
-      comments: arrayLike([{ _id: commentId, user: owner, remove }]),
-      save: jest.fn().mockResolvedValue(),
-    });
-    Reel.findById.mockResolvedValue(mk());
+    Reel.findOne.mockResolvedValue({ createdBy: ID() });
+    ReelComment.findOne.mockResolvedValue({ user: owner });
+    ReelComment.updateOne.mockResolvedValue({ modifiedCount: 1 });
+    Reel.updateOne.mockResolvedValue({ modifiedCount: 1 });
+    ReelComment.countDocuments.mockResolvedValue(0);
     let res = mockRes();
     await controller.deleteReelComment({ params: { id: ID(), commentId }, user: { _id: owner } }, res);
-    expect(remove).toHaveBeenCalled();
+    expect(ReelComment.updateOne).toHaveBeenCalledWith(
+      { _id: commentId, reel: expect.any(String), status: "active" },
+      expect.objectContaining({ $set: expect.objectContaining({ status: "removed" }) })
+    );
     expect(res.status).toHaveBeenCalledWith(200);
 
-    Reel.findById.mockResolvedValue(mk());
+    Reel.findOne.mockResolvedValue({ createdBy: ID() });
+    ReelComment.findOne.mockResolvedValue({ user: owner });
     res = mockRes();
     await controller.deleteReelComment({ params: { id: ID(), commentId }, user: { _id: ID() } }, res);
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it("returns 404 for a missing comment", async () => {
-    Reel.findById.mockResolvedValue({ createdBy: ID(), comments: arrayLike([]) });
+    Reel.findOne.mockResolvedValue({ createdBy: ID() });
+    ReelComment.findOne.mockResolvedValue(null);
     const res = mockRes();
     await controller.deleteReelComment({ params: { id: ID(), commentId: ID() }, user: { _id: ID() } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
@@ -271,17 +279,19 @@ describe("comments", () => {
 
 describe("share / view counters", () => {
   it("increments counters and 404s for unknown reels", async () => {
-    Reel.findByIdAndUpdate.mockReturnValue({ lean: async () => ({ shareCount: 4, viewCount: 9 }) });
+    const viewer = ID();
+    ReelEngagement.create.mockResolvedValue({});
+    Reel.findOneAndUpdate.mockReturnValue({ lean: async () => ({ shareCount: 4, viewCount: 9 }) });
     let res = mockRes();
-    await controller.registerReelShare({ params: { id: ID() } }, res);
+    await controller.registerReelShare({ params: { id: ID() }, user: { _id: viewer } }, res);
     expect(res.json).toHaveBeenCalledWith({ success: true, shareCount: 4 });
     res = mockRes();
-    await controller.registerReelView({ params: { id: ID() } }, res);
+    await controller.registerReelView({ params: { id: ID() }, user: { _id: viewer } }, res);
     expect(res.json).toHaveBeenCalledWith({ success: true, viewCount: 9 });
 
-    Reel.findByIdAndUpdate.mockReturnValue({ lean: async () => null });
+    Reel.findOneAndUpdate.mockReturnValue({ lean: async () => null });
     res = mockRes();
-    await controller.registerReelView({ params: { id: ID() } }, res);
+    await controller.registerReelView({ params: { id: ID() }, user: { _id: viewer } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
   });
 });
