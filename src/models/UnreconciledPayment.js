@@ -81,5 +81,10 @@ const unreconciledPaymentSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 unreconciledPaymentSchema.index({ resolvedAt: 1, reasonCode: 1, createdAt: -1 });
+// Reconciliation health (#696): open-backlog age buckets and the oldest-first
+// sample walk { resolvedAt: null, createdAt }, and the arrival rate is a
+// createdAt range. Both stay index-bounded as the collection grows.
+unreconciledPaymentSchema.index({ resolvedAt: 1, createdAt: 1 });
+unreconciledPaymentSchema.index({ createdAt: 1 });
 
 export default mongoose.model("UnreconciledPayment", unreconciledPaymentSchema);

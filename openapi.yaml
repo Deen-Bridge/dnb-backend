@@ -469,6 +469,116 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [stellarTxHash, buyer, buyerWallet, creatorWallet, amount, network]
+    ReconciliationStatusV1:
+      type: object
+      description: >
+        Versioned reconciliation health DTO. Fields are only ever added within
+        a version; a breaking change bumps `version`.
+      required: [version, generatedAt, state, reasons, thresholds, ingestion, backlog, throughput, runbook]
+      properties:
+        version: { type: integer, enum: [1] }
+        generatedAt: { type: string, format: date-time }
+        state: { type: string, enum: [healthy, degraded, stalled] }
+        reasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - no_watched_accounts
+              - cursor_missing
+              - cursor_stalled
+              - cursor_stale
+              - worker_failing
+              - worker_lease_expired
+              - backlog_aged
+              - backlog_large
+              - backlog_growing
+        thresholds:
+          type: object
+          properties:
+            cursorStaleAfterSeconds: { type: integer }
+            cursorStalledAfterSeconds: { type: integer }
+            workerFailureThreshold: { type: integer }
+            backlogMaxAgeSeconds: { type: integer }
+            backlogCountThreshold: { type: integer }
+            backlogGrowthPerHour: { type: integer }
+        ingestion:
+          type: object
+          properties:
+            pollIntervalSeconds: { type: integer }
+            leaseSeconds: { type: integer }
+            unwatchedCursorCount: { type: integer }
+            accounts:
+              type: array
+              maxItems: 2
+              items:
+                type: object
+                properties:
+                  role: { type: string, enum: [platform, donation] }
+                  account: { type: string, description: "Truncated public key, e.g. GABC…WXYZ", examples: ["GABC…WXYZ"] }
+                  state: { type: string, enum: [fresh, failing, stale, stalled, missing] }
+                  lastPollAt: { type: [string, "null"], format: date-time }
+                  lastSuccessAt: { type: [string, "null"], format: date-time }
+                  secondsSinceLastSuccess: { type: [integer, "null"] }
+                  consecutiveFailures: { type: integer }
+                  lastError:
+                    type: [object, "null"]
+                    properties:
+                      code:
+                        type: string
+                        enum: [horizon_rate_limited, horizon_unavailable, horizon_error, reconcile_failed, persistence_error, unclassified]
+                      at: { type: string, format: date-time }
+                  worker:
+                    type: object
+                    properties:
+                      state: { type: string, enum: [active, expired, unknown] }
+                      heartbeatAt: { type: [string, "null"], format: date-time }
+                      leaseExpiresAt: { type: [string, "null"], format: date-time }
+        backlog:
+          type: object
+          properties:
+            unreconciledCount: { type: integer }
+            byAge:
+              type: object
+              properties:
+                under1h: { type: integer }
+                from1hTo24h: { type: integer }
+                from24hTo7d: { type: integer }
+                over7d: { type: integer }
+            oldestAgeSeconds: { type: [integer, "null"] }
+            byReason:
+              type: object
+              description: Open rows per UnreconciledPayment reason code (plus `unclassified`)
+              additionalProperties: { type: integer }
+            sampleLimit: { type: integer, enum: [5] }
+            sample:
+              type: array
+              maxItems: 5
+              description: Oldest open rows first
+              items:
+                type: object
+                properties:
+                  txHash: { type: string, description: "Truncated transaction hash", examples: ["3f9a1c…7be2"] }
+                  reasonCode: { type: string }
+                  referenceKind: { type: [string, "null"] }
+                  attempts: { type: integer }
+                  firstSeenAt: { type: [string, "null"], format: date-time }
+                  lastSeenAt: { type: [string, "null"], format: date-time }
+                  ageSeconds: { type: [integer, "null"] }
+        throughput:
+          type: object
+          properties:
+            lastHour: { $ref: "#/components/schemas/ReconciliationWindow" }
+            last24h: { $ref: "#/components/schemas/ReconciliationWindow" }
+        runbook: { type: string, format: uri }
+    ReconciliationWindow:
+      type: object
+      properties:
+        windowSeconds: { type: integer }
+        unreconciledArrived: { type: integer, description: UnreconciledPayment rows first seen in the window }
+        unreconciledResolved: { type: integer, description: UnreconciledPayment rows resolved in the window }
+        confirmedByWorker: { type: integer, description: Checkouts confirmed by the ingestion worker in the window }
+        netBacklogChange: { type: integer, description: unreconciledArrived minus unreconciledResolved }
     Notification:
       type: object
       description: Persisted notification. No HTTP routes are mounted for it in app.js today.
@@ -2211,12 +2321,38 @@ paths:
   /api/stellar/payment/reconciliation/status:
     get:
       tags: [Payments]
-      summary: Reconciliation status for unmatched on chain payments
-      description: Restricted to the admin and arbiter roles.
+      summary: Payment ingestion and reconciliation health (v1)
+      description: >
+        Admin only (role `admin` with TOTP 2FA enabled). Returns a versioned
+        health DTO: an overall `state` (`healthy`, `degraded`, `stalled`) with
+        machine-readable `reasons`, per-account cursor freshness and worker
+        lease state, the open unreconciled backlog by age, and recent
+        arrival/resolution/confirmation rates. Wallet addresses and transaction
+        hashes are truncated; memos, amounts and sender accounts are never
+        returned, and the backlog sample holds at most five rows. A 200 is
+        returned whatever the state; a 503 means the status itself is unknown.
+        Thresholds and runbook: docs/payment-reconciliation.md.
       responses:
-        "200": { $ref: "#/components/responses/Ok" }
+        "200":
+          description: Reconciliation health snapshot
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, reconciliation]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  reconciliation: { $ref: "#/components/schemas/ReconciliationStatusV1" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: The status could not be computed (treat as unknown)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/stellar/payment/sponsorship/status:
     get:
       tags: [Payments]

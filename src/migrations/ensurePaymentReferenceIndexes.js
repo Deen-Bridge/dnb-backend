@@ -18,7 +18,9 @@ dotenv.config();
  *      Mongoose `autoIndex` normally does this, but production deployments
  *      that disable it must run this before the new worker is rolled out —
  *      without the unique index, reconciliation fails closed as ambiguous.
- *   2. Builds the triage index on `UnreconciledPayment`.
+ *   2. Builds the triage index on `UnreconciledPayment`, plus the backlog
+ *      and throughput indexes read by the reconciliation status endpoint
+ *      (#696).
  *   3. Reports how many open checkouts still carry a legacy suffix memo. No
  *      data is rewritten: those memos are already inside signed transactions,
  *      so they keep resolving by exact memo + payer until they settle or
@@ -36,6 +38,10 @@ export const ensurePaymentReferenceIndexes = async () => {
   );
   await transactions.createIndex({ memo: 1, itemType: 1, status: 1, buyerWallet: 1 });
   await UnreconciledPayment.collection.createIndex({ resolvedAt: 1, reasonCode: 1, createdAt: -1 });
+  // Reconciliation health endpoint (#696).
+  await UnreconciledPayment.collection.createIndex({ resolvedAt: 1, createdAt: 1 });
+  await UnreconciledPayment.collection.createIndex({ createdAt: 1 });
+  await transactions.createIndex({ reconciledAt: 1 }, { sparse: true });
   logger.info("Ensured payment reference and reconciliation indexes.");
 
   const openLegacyCheckouts = await Transaction.countDocuments({

@@ -120,7 +120,92 @@ describe("payment ingestion worker", () => {
 
     expect(mockLogger.error).toHaveBeenCalled();
     expect(mockReconcile).not.toHaveBeenCalled();
-    expect(mockCursor.updateOne).not.toHaveBeenCalled();
+    // Only failure state is written; the cursor and success time never move.
+    expect(mockCursor.updateOne).toHaveBeenCalledTimes(1);
+    const [, update] = mockCursor.updateOne.mock.calls[0];
+    expect(update.$set.cursor).toBeUndefined();
+    expect(update.$set.lastSuccessAt).toBeUndefined();
+    expect(update.$set.lastSyncAt).toBeUndefined();
+  });
+
+  it("records a classified failure, heartbeat and lease when Horizon fails", async () => {
+    buildPaymentsChain(async () => {
+      throw Object.assign(new Error("Too Many Requests"), { response: { status: 429 } });
+    });
+
+    await startIngestionWorker();
+    await flush();
+
+    const [filter, update] = mockCursor.updateOne.mock.calls[0];
+    expect(filter).toEqual({ account: "GPLATFORM" });
+    expect(update.$inc).toEqual({ consecutiveFailures: 1 });
+    expect(update.$set.lastErrorCode).toBe("horizon_rate_limited");
+    expect(update.$set.lastErrorAt).toBeInstanceOf(Date);
+    expect(update.$set.lastPollAt).toBeInstanceOf(Date);
+    expect(update.$set.leaseExpiresAt.getTime()).toBeGreaterThan(update.$set.lastPollAt.getTime());
+    // Raw error text stays in the logs, never on the cursor.
+    expect(JSON.stringify(update)).not.toContain("Too Many Requests");
+  });
+
+  it("classifies network and 5xx failures as horizon_unavailable", async () => {
+    buildPaymentsChain(async () => {
+      throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+    });
+
+    await startIngestionWorker();
+    await flush();
+
+    expect(mockCursor.updateOne.mock.calls[0][1].$set.lastErrorCode).toBe("horizon_unavailable");
+  });
+
+  it("resets the failure streak and renews the lease on success", async () => {
+    buildPaymentsChain({ records: [] });
+
+    await startIngestionWorker();
+    await flush();
+
+    const update = mockCursor.updateOne.mock.calls[0][1].$set;
+    expect(update.consecutiveFailures).toBe(0);
+    expect(update.lastSuccessAt).toBeInstanceOf(Date);
+    expect(update.lastSyncAt).toEqual(update.lastSuccessAt);
+    expect(update.lastPollAt).toEqual(update.lastSuccessAt);
+    expect(update.workerId).toEqual(expect.any(String));
+    expect(update.leaseExpiresAt.getTime()).toBeGreaterThan(update.lastPollAt.getTime());
+  });
+
+  it("flags a page with a failed payment as reconcile_failed but still advances", async () => {
+    buildPaymentsChain({
+      records: [
+        { type: "payment", asset_code: "USDC", asset_issuer: USDC_ISSUER, transaction_hash: "h1", paging_token: "7" },
+      ],
+    });
+    mockReconcile.mockRejectedValueOnce(new Error("db write failed"));
+
+    await startIngestionWorker();
+    await flush();
+
+    const update = mockCursor.updateOne.mock.calls[0][1].$set;
+    expect(update.cursor).toBe("7");
+    expect(update.consecutiveFailures).toBe(0);
+    expect(update.lastErrorCode).toBe("reconcile_failed");
+  });
+
+  it("keeps polling other accounts when one account hits a database error", async () => {
+    process.env.DONATION_WALLET_PUBLIC_KEY = "GDONATION";
+    mockCursor.findOne
+      .mockRejectedValueOnce(new Error("mongo down"))
+      .mockResolvedValueOnce({ account: "GDONATION", cursor: "" });
+    buildPaymentsChain({ records: [] });
+
+    await startIngestionWorker();
+    await flush();
+    await flush();
+
+    expect(mockServer.payments).toHaveBeenCalledTimes(1);
+    const failure = mockCursor.updateOne.mock.calls.find(([filter]) => filter.account === "GPLATFORM");
+    expect(failure[1].$set.lastErrorCode).toBe("persistence_error");
+    const success = mockCursor.updateOne.mock.calls.find(([filter]) => filter.account === "GDONATION");
+    expect(success[1].$set.lastSuccessAt).toBeInstanceOf(Date);
   });
 
   it("continues past a reconcile error and still advances the cursor", async () => {

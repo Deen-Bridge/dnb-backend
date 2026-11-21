@@ -20,6 +20,12 @@ await connectDB();
 handleUnhandledRejection();
 
 const { default: app } = await import("./app.js");
+const { registerReconciliationHealthMetrics } = await import(
+  "./src/services/stellar/reconciliationHealthService.js"
+);
+// Reconciliation health gauges are computed on scrape (cached briefly), so
+// stale-cursor and backlog alerts work without anyone opening the endpoint.
+registerReconciliationHealthMetrics();
 const PORT = process.env.PORT || 5000;
 
 // Initialize Redis

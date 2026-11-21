@@ -121,8 +121,11 @@ Route mounts are in `app.js`: `/api/stellar/payment` (`paymentLimiter`),
    with a `reasonCode` for manual review. See
    [payment-reconciliation.md](payment-reconciliation.md) for the full
    contract and the legacy memo migration plan.
-   `GET /api/stellar/payment/reconciliation/status` (admin) reports cursors
-   and open unreconciled counts by reason.
+   `GET /api/stellar/payment/reconciliation/status` (admin) returns a
+   versioned health DTO: `healthy` / `degraded` / `stalled` with reasons,
+   per-wallet cursor freshness and worker lease, and the unreconciled backlog
+   by age and reason. See
+   [payment-reconciliation.md](payment-reconciliation.md#health-status-and-runbook).
 4. **Record** - on confirmation, the buyer gets access (`grantItemAccess` in
    the reconciliation service; direct purchase update in the controller/job),
    donation pledges are marked paid, a receipt is queued, and for purchases
@@ -248,7 +251,10 @@ is stored in `IngestionCursor`, so restarts resume where they left off.
 It runs either inside the API process (`INGESTION_WORKER_ENABLED=true` in
 `server.js`) or as its own process via `src/workers/runIngestionWorker.js`.
 Poll interval: `INGESTION_POLL_INTERVAL_MS` (default 30000). If neither wallet
-variable is set the loop logs a warning and exits. It only handles USDC; other
+variable is set the loop logs a warning and exits. Each poll records a
+heartbeat, an advisory lease, the last successful poll, the failure streak and
+the last classified error on the account's cursor. The reconciliation status
+endpoint reads these fields. A failure on one account no longer stops the loop. It only handles USDC; other
 registry assets are not ingested (**unverified** whether that is intentional).
 
 ### Other background jobs

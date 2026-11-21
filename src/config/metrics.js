@@ -119,6 +119,175 @@ const reconciliationUnreconciledPayments = new promClient.Counter({
   registers: [registry],
 });
 
+// Reconciliation health (#696). The ingestion worker may run in its own
+// process, so cross-process signals come from the persisted status snapshot
+// (see reconciliationHealthService) rather than from worker-local counters.
+// Account labels are roles, never wallet addresses.
+const HEALTH_STATES = ["healthy", "degraded", "stalled", "unknown"];
+const CURSOR_STATES = ["fresh", "failing", "stale", "stalled", "missing"];
+const ACCOUNT_ROLES = new Set(["platform", "donation"]);
+const BACKLOG_BUCKETS = ["under1h", "from1hTo24h", "from24hTo7d", "over7d"];
+const POLL_OUTCOMES = new Set(["success", "partial", "failed"]);
+const HEALTH_REFRESH_TTL_MS = 15 * 1000;
+
+let healthProvider = null;
+let healthRefresh = null;
+let healthRefreshedAt = 0;
+
+const applyReconciliationHealth = (status) => {
+  for (const state of HEALTH_STATES) {
+    reconciliationHealthState.set({ state }, state === status.state ? 1 : 0);
+  }
+
+  // Reset per-account series so an account that disappears from config does
+  // not leave a frozen value behind.
+  ingestionCursorState.reset();
+  ingestionCursorLag.reset();
+  ingestionConsecutiveFailures.reset();
+  for (const account of status.ingestion?.accounts ?? []) {
+    if (!ACCOUNT_ROLES.has(account.role)) continue;
+    for (const state of CURSOR_STATES) {
+      ingestionCursorState.set({ role: account.role, state }, state === account.state ? 1 : 0);
+    }
+    if (account.secondsSinceLastSuccess !== null) {
+      ingestionCursorLag.set({ role: account.role }, account.secondsSinceLastSuccess);
+    }
+    ingestionConsecutiveFailures.set({ role: account.role }, account.consecutiveFailures);
+  }
+
+  const backlog = status.backlog ?? {};
+  for (const bucket of BACKLOG_BUCKETS) {
+    reconciliationBacklog.set({ age_bucket: bucket }, backlog.byAge?.[bucket] ?? 0);
+  }
+  reconciliationBacklogOldestAge.set(backlog.oldestAgeSeconds ?? 0);
+};
+
+const markReconciliationHealthUnknown = () => {
+  for (const state of HEALTH_STATES) {
+    reconciliationHealthState.set({ state }, state === "unknown" ? 1 : 0);
+  }
+};
+
+const runHealthRefresh = async (provider) => {
+  try {
+    const status = await provider();
+    if (status) applyReconciliationHealth(status);
+  } catch (err) {
+    markReconciliationHealthUnknown();
+    logger.warn({ err: err?.message }, "Failed to refresh reconciliation health metrics");
+  } finally {
+    healthRefreshedAt = Date.now();
+  }
+};
+
+/**
+ * Refresh the health gauges from the registered provider. Every gauge's
+ * collect() awaits the same in-flight promise, so one scrape costs at most
+ * one status computation, and results are reused for HEALTH_REFRESH_TTL_MS.
+ */
+const refreshReconciliationHealth = async () => {
+  if (!healthProvider) return;
+  if (healthRefresh) {
+    await healthRefresh;
+    return;
+  }
+  if (Date.now() - healthRefreshedAt < HEALTH_REFRESH_TTL_MS) return;
+
+  const pending = runHealthRefresh(healthProvider);
+  healthRefresh = pending;
+  try {
+    await pending;
+  } finally {
+    if (healthRefresh === pending) healthRefresh = null;
+  }
+};
+
+const healthCollect = async () => {
+  await refreshReconciliationHealth();
+};
+
+const reconciliationHealthState = new promClient.Gauge({
+  name: "payment_reconciliation_health_state",
+  help: "Overall reconciliation health; exactly one state is 1 (see docs/payment-reconciliation.md)",
+  labelNames: ["state"],
+  registers: [registry],
+  collect: healthCollect,
+});
+
+const ingestionCursorState = new promClient.Gauge({
+  name: "payment_ingestion_cursor_state",
+  help: "Per-account ingestion cursor state; exactly one state per role is 1",
+  labelNames: ["role", "state"],
+  registers: [registry],
+  collect: healthCollect,
+});
+
+const ingestionCursorLag = new promClient.Gauge({
+  name: "payment_ingestion_cursor_lag_seconds",
+  help: "Seconds since the ingestion worker last polled this account successfully",
+  labelNames: ["role"],
+  registers: [registry],
+  collect: healthCollect,
+});
+
+const ingestionConsecutiveFailures = new promClient.Gauge({
+  name: "payment_ingestion_consecutive_failures",
+  help: "Consecutive failed Horizon polls for this account",
+  labelNames: ["role"],
+  registers: [registry],
+  collect: healthCollect,
+});
+
+const reconciliationBacklog = new promClient.Gauge({
+  name: "payment_reconciliation_backlog",
+  help: "Open unreconciled payments by age since first seen",
+  labelNames: ["age_bucket"],
+  registers: [registry],
+  collect: healthCollect,
+});
+
+const reconciliationBacklogOldestAge = new promClient.Gauge({
+  name: "payment_reconciliation_backlog_oldest_age_seconds",
+  help: "Age of the oldest open unreconciled payment (0 when the backlog is empty)",
+  registers: [registry],
+  collect: healthCollect,
+});
+
+// Only scraped when the worker runs inside the API process
+// (INGESTION_WORKER_ENABLED=true); the persisted gauges above cover both modes.
+const ingestionPolls = new promClient.Counter({
+  name: "payment_ingestion_polls_total",
+  help: "Ingestion worker polls by account role and outcome",
+  labelNames: ["role", "outcome"],
+  registers: [registry],
+});
+
+/**
+ * Register the function that computes the reconciliation status snapshot.
+ * Called once at API startup; until then the health gauges stay empty, which
+ * keeps unit tests and tools that import the registry free of DB queries.
+ *
+ * @param {(() => Promise<object>)|null} provider
+ */
+function setReconciliationHealthProvider(provider) {
+  healthProvider = typeof provider === "function" ? provider : null;
+  healthRefresh = null;
+  healthRefreshedAt = 0;
+}
+
+/** Push a freshly computed status into the gauges (e.g. from the endpoint). */
+function recordReconciliationHealth(status) {
+  applyReconciliationHealth(status);
+  healthRefreshedAt = Date.now();
+}
+
+function recordIngestionPoll(role, outcome) {
+  ingestionPolls.inc({
+    role: ACCOUNT_ROLES.has(role) ? role : "other",
+    outcome: POLL_OUTCOMES.has(outcome) ? outcome : "failed",
+  });
+}
+
 function observeReconciliationLookup(strategy, outcome, durationMs) {
   reconciliationLookupDuration.observe(
     {
@@ -189,6 +358,17 @@ export {
   reconciliationAmbiguousReferences,
   reconciliationRejectedReferences,
   reconciliationUnreconciledPayments,
+  reconciliationHealthState,
+  ingestionCursorState,
+  ingestionCursorLag,
+  ingestionConsecutiveFailures,
+  reconciliationBacklog,
+  reconciliationBacklogOldestAge,
+  ingestionPolls,
+  setReconciliationHealthProvider,
+  recordReconciliationHealth,
+  refreshReconciliationHealth,
+  recordIngestionPoll,
   observeHttpDuration,
   observeHorizonDuration,
   observeReconciliationLookup,

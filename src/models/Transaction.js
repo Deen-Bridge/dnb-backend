@@ -228,6 +228,9 @@ transactionSchema.index(
 // Legacy suffix memos are resolved only by exact memo + item type + state +
 // payer, never by scanning.
 transactionSchema.index({ memo: 1, itemType: 1, status: 1, buyerWallet: 1 });
+// Worker throughput on the reconciliation status endpoint (#696) counts rows
+// by reconciledAt range. Sparse: only worker-confirmed rows carry the field.
+transactionSchema.index({ reconciledAt: 1 }, { sparse: true });
 // TTL for expired pending checkouts only — a blanket index would also reap
 // confirmed purchases/donations once their original 30-minute expiry passes.
 transactionSchema.index(

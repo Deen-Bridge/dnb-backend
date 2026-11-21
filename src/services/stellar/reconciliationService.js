@@ -638,23 +638,3 @@ export const reconcilePayment = async (paymentRecord, txRecord) => {
   await markResolved(payment.txHash);
   return result;
 };
-
-export const getReconciliationStatus = async () => {
-  const CursorModel = (await import("../../models/IngestionCursor.js")).default;
-  const cursors = await CursorModel.find({}).lean();
-  const unreconciledCount = await UnreconciledPayment.countDocuments({ resolvedAt: null });
-  const byReason = await UnreconciledPayment.aggregate([
-    { $match: { resolvedAt: null } },
-    { $group: { _id: { $ifNull: ["$reasonCode", "unclassified"] }, count: { $sum: 1 } } },
-  ]);
-  const confirmedByWorker = await Transaction.countDocuments({
-    status: "confirmed",
-    reconciledAt: { $exists: true },
-  });
-  return {
-    cursors,
-    unreconciledCount,
-    unreconciledByReason: Object.fromEntries(byReason.map(({ _id, count }) => [_id, count])),
-    confirmedByWorker,
-  };
-};

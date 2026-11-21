@@ -37,9 +37,9 @@ const {
   reconcilePayment,
   matchByTxHash,
   resolvePaymentReference,
-  getReconciliationStatus,
   grantItemAccess,
 } = await import("../src/services/stellar/reconciliationService.js");
+const { getReconciliationStatus } = await import("../src/services/stellar/reconciliationHealthService.js");
 
 const makeKey = (prefix) => "G" + prefix.padEnd(55, "0").slice(0, 55).toUpperCase();
 
@@ -650,7 +650,7 @@ describe("Payment Reconciliation Service", () => {
 
       expect(retry.outcome).toBe("confirmed");
       expect((await unreconciledFor("chain-hash-1")).resolvedAt).toBeInstanceOf(Date);
-      expect((await getReconciliationStatus()).unreconciledCount).toBe(0);
+      expect((await getReconciliationStatus()).backlog.unreconciledCount).toBe(0);
     });
 
     it("persists lookup timeouts instead of losing the payment", async () => {
@@ -729,43 +729,6 @@ describe("Payment Reconciliation Service", () => {
       await expect(
         grantItemAccess({ buyerId: new mongoose.Types.ObjectId(), itemType: "book", itemId: book._id })
       ).rejects.toThrow(/buyer .* not found/);
-    });
-  });
-
-  describe("getReconciliationStatus", () => {
-    it("returns cursor positions and counts", async () => {
-      await IngestionCursor.create({
-        account: "GPLATFORM123",
-        cursor: "12345-1",
-        lastSyncAt: new Date(),
-      });
-
-      await UnreconciledPayment.create({
-        stellarTxHash: "bad-hash",
-        from: "GABC",
-        to: "GDEF",
-        amount: "100",
-        reason: "No match found",
-      });
-
-      const status = await getReconciliationStatus();
-      expect(Array.isArray(status.cursors)).toBe(true);
-      expect(status.cursors).toHaveLength(1);
-      expect(status.cursors[0].account).toBe("GPLATFORM123");
-      expect(status.cursors[0].cursor).toBe("12345-1");
-      expect(status.unreconciledCount).toBe(1);
-    });
-
-    it("excludes resolved rows and groups open ones by reason", async () => {
-      await UnreconciledPayment.create([
-        { stellarTxHash: "a", from: "G1", to: "G2", amount: "1", reason: "x", reasonCode: "ambiguous_reference" },
-        { stellarTxHash: "b", from: "G1", to: "G2", amount: "1", reason: "x", reasonCode: "ambiguous_reference" },
-        { stellarTxHash: "c", from: "G1", to: "G2", amount: "1", reason: "x", reasonCode: "no_reference", resolvedAt: new Date() },
-      ]);
-
-      const status = await getReconciliationStatus();
-      expect(status.unreconciledCount).toBe(2);
-      expect(status.unreconciledByReason).toEqual({ ambiguous_reference: 2 });
     });
   });
 });
