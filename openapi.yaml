@@ -80,6 +80,8 @@ tags:
     description: Real-time and bulk notifications
   - name: Certificates
     description: Verifiable course completion certificates
+  - name: Course Bundles
+    description: Discounted course bundles, bundle enrolment and their validation contract
 security:
   - bearerAuth: []
 components:
@@ -111,6 +113,31 @@ components:
       in: query
       required: false
       schema: { type: integer, minimum: 1, default: 10 }
+    BundleId:
+      name: id
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/ObjectId" }
+    BundlePage:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 500, default: 1 }
+    BundleLimit:
+      name: limit
+      in: query
+      required: false
+      description: Page size. Requests above 50 are rejected rather than silently clamped.
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    BundleSort:
+      name: sort
+      in: query
+      required: false
+      description: Sort key. `_id` is always applied as a tiebreaker so pages are stable.
+      schema:
+        type: string
+        enum: ["-createdAt", createdAt, price, "-price", "-discountPercentage"]
+        default: "-createdAt"
   responses:
     Ok:
       description: Success envelope
@@ -167,6 +194,73 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    BundleValidationError:
+      description: Malformed id, out-of-bounds value, or unknown/server-owned field. The service is not called.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            success: false
+            status: fail
+            message: Request contains unknown or read-only fields
+            data: null
+            errors:
+              - { field: createdBy, message: Invalid value. }
+            error:
+              code: VALIDATION_ERROR
+              message: Request contains unknown or read-only fields
+              details:
+                - { field: createdBy, message: Invalid value. }
+            reqId: 7d3c5ff5-3426-4e9c-83d4-0727f64d8152
+    BundleForbidden:
+      description: |
+        Caller is authenticated but not allowed: not a verified educator (create), not the
+        bundle owner or an admin (update/delete), or bundling courses they did not create.
+        Ownership denials are written to the audit log.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            success: false
+            status: fail
+            message: You are not authorized to modify this bundle
+            data: null
+            error: { code: FORBIDDEN, message: You are not authorized to modify this bundle }
+    BundleNotFound:
+      description: No bundle exists with this id (purchase also returns 404 for deactivated bundles)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            success: false
+            status: fail
+            message: Course bundle not found
+            data: null
+            error: { code: NOT_FOUND, message: Course bundle not found }
+    BundleConflict:
+      description: The bundle is deactivated, or it was changed by a concurrent request. Re-read and retry.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            success: false
+            status: fail
+            message: The bundle was changed by another request. Please retry.
+            data: null
+            error: { code: CONFLICT, message: The bundle was changed by another request. Please retry. }
+    BundleDependencyFailure:
+      description: The database is unreachable. Safe to retry with backoff; no driver details are exposed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            success: false
+            status: error
+            message: Course bundles are temporarily unavailable. Please retry shortly.
+            data: null
+            error:
+              code: DATABASE_ERROR
+              message: Course bundles are temporarily unavailable. Please retry shortly.
   schemas:
     ObjectId:
       type: string
@@ -339,6 +433,97 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [title, description, category, createdBy]
+    CourseBundle:
+      type: object
+      description: |
+        Course bundle as returned by the API. `originalPrice` and `discountPercentage`
+        are computed server-side from the bundled courses and cannot be written.
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        title: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 5000 }
+        courses:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            description: Course summary (title, description, price, thumbnail, category, rating)
+        price: { type: number, minimum: 0, maximum: 1000000 }
+        currency: { type: string, enum: [USDC, EURC, XLM], default: USDC }
+        originalPrice: { type: number, readOnly: true }
+        discountPercentage: { type: number, readOnly: true }
+        createdBy:
+          type: object
+          readOnly: true
+          properties:
+            _id: { $ref: "#/components/schemas/ObjectId" }
+            name: { type: string }
+            email: { type: string, format: email }
+            avatar: { type: string }
+        isActive: { type: boolean, readOnly: true }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    CourseBundleCreate:
+      type: object
+      additionalProperties: false
+      description: |
+        Unknown or server-owned fields (createdBy, isActive, originalPrice,
+        discountPercentage, timestamps) are rejected with 400 VALIDATION_ERROR.
+        Non-admin callers may only bundle courses they created.
+      required: [title, description, courses, price]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, minLength: 1, maxLength: 5000 }
+        courses:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ObjectId" }
+        price:
+          type: number
+          minimum: 0
+          maximum: 1000000
+          description: Bundle price with at most 7 decimal places
+        currency:
+          type: string
+          description: Asset code supported on the configured Stellar network
+          enum: [USDC, EURC, XLM]
+          default: USDC
+    CourseBundleUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Same field rules as CourseBundleCreate, all optional; at least one field is required.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, minLength: 1, maxLength: 5000 }
+        courses:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ObjectId" }
+        price: { type: number, minimum: 0, maximum: 1000000 }
+        currency: { type: string, enum: [USDC, EURC, XLM] }
+    OffsetPagination:
+      type: object
+      description: Offset pagination metadata
+      properties:
+        page: { type: integer, minimum: 1 }
+        limit: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0, description: Matching documents across all pages }
+        pages: { type: integer, minimum: 0 }
+    CourseBundlePage:
+      type: object
+      properties:
+        success: { type: boolean, examples: [true] }
+        count: { type: integer, description: Number of bundles in this page }
+        data:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/CourseBundle" }
+        pagination: { $ref: "#/components/schemas/OffsetPagination" }
     Book:
       type: object
       properties:
@@ -1269,6 +1454,248 @@ paths:
         "201": { $ref: "#/components/responses/Created" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/course-bundles:
+    get:
+      tags: [Course Bundles]
+      operationId: listCourseBundles
+      summary: List active course bundles
+      description: |
+        Paginated and bounded: at most 50 bundles per page. Unknown query parameters are
+        rejected. The same router is also mounted at /api/courses/bundles and /api/v1/bundles.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/BundlePage"
+        - $ref: "#/components/parameters/BundleLimit"
+        - $ref: "#/components/parameters/BundleSort"
+        - name: courseId
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/ObjectId" }
+        - name: createdBy
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/ObjectId" }
+        - name: search
+          in: query
+          required: false
+          description: Full-text search over title and description
+          schema: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        "200":
+          description: One page of bundles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseBundlePage" }
+              example:
+                success: true
+                count: 1
+                data:
+                  - _id: 6650c2f4e1a2b3c4d5e6f701
+                    title: Seerah Essentials
+                    description: Two foundational seerah courses
+                    courses:
+                      - { _id: 6650c2f4e1a2b3c4d5e6f710, title: Seerah I, price: 70 }
+                      - { _id: 6650c2f4e1a2b3c4d5e6f711, title: Seerah II, price: 80 }
+                    price: 120
+                    currency: USDC
+                    originalPrice: 150
+                    discountPercentage: 20
+                    createdBy: { _id: 6650c2f4e1a2b3c4d5e6f799, name: Ustadh Ahmad }
+                    isActive: true
+                    createdAt: "2026-11-21T10:00:00.000Z"
+                    updatedAt: "2026-11-21T10:00:00.000Z"
+                pagination: { page: 1, limit: 20, total: 1, pages: 1 }
+        "400": { $ref: "#/components/responses/BundleValidationError" }
+        "503": { $ref: "#/components/responses/BundleDependencyFailure" }
+        "500": { $ref: "#/components/responses/ServerError" }
+    post:
+      tags: [Course Bundles]
+      operationId: createCourseBundle
+      summary: Create a course bundle
+      description: |
+        Requires a verified educator or an admin. Non-admins may only bundle courses they
+        created. Pricing metadata is computed from the bundled courses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseBundleCreate" }
+            example:
+              title: Seerah Essentials
+              description: Two foundational seerah courses
+              courses: [6650c2f4e1a2b3c4d5e6f710, 6650c2f4e1a2b3c4d5e6f711]
+              price: 120
+              currency: USDC
+      responses:
+        "201":
+          description: Bundle created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, examples: [true] }
+                  data: { $ref: "#/components/schemas/CourseBundle" }
+        "400": { $ref: "#/components/responses/BundleValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/BundleForbidden" }
+        "409": { $ref: "#/components/responses/BundleConflict" }
+        "503": { $ref: "#/components/responses/BundleDependencyFailure" }
+        "500": { $ref: "#/components/responses/ServerError" }
+  /api/course-bundles/course/{courseId}:
+    get:
+      tags: [Course Bundles]
+      operationId: listCourseBundlesByCourse
+      summary: List active bundles that contain a course
+      description: Also served at GET /api/courses/{courseId}/bundles with the same contract.
+      security: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+        - $ref: "#/components/parameters/BundlePage"
+        - $ref: "#/components/parameters/BundleLimit"
+        - $ref: "#/components/parameters/BundleSort"
+      responses:
+        "200":
+          description: One page of bundles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseBundlePage" }
+        "400": { $ref: "#/components/responses/BundleValidationError" }
+        "503": { $ref: "#/components/responses/BundleDependencyFailure" }
+        "500": { $ref: "#/components/responses/ServerError" }
+  /api/courses/{courseId}/bundles:
+    get:
+      tags: [Course Bundles]
+      operationId: listCourseBundlesForCourse
+      summary: List active bundles that contain a course
+      security: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+        - $ref: "#/components/parameters/BundlePage"
+        - $ref: "#/components/parameters/BundleLimit"
+        - $ref: "#/components/parameters/BundleSort"
+      responses:
+        "200":
+          description: One page of bundles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseBundlePage" }
+        "400": { $ref: "#/components/responses/BundleValidationError" }
+        "503": { $ref: "#/components/responses/BundleDependencyFailure" }
+        "500": { $ref: "#/components/responses/ServerError" }
+  /api/course-bundles/{id}:
+    get:
+      tags: [Course Bundles]
+      operationId: getCourseBundle
+      summary: Get a course bundle
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/BundleId"
+      responses:
+        "200":
+          description: Bundle
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, examples: [true] }
+                  data: { $ref: "#/components/schemas/CourseBundle" }
+        "400": { $ref: "#/components/responses/BundleValidationError" }
+        "404": { $ref: "#/components/responses/BundleNotFound" }
+        "503": { $ref: "#/components/responses/BundleDependencyFailure" }
+        "500": { $ref: "#/components/responses/ServerError" }
+    put:
+      tags: [Course Bundles]
+      operationId: updateCourseBundle
+      summary: Update a course bundle
+      description: |
+        Owner or admin only. Only title, description, courses, price and currency can change;
+        ownership and pricing metadata are server-owned. Deactivated bundles return 409.
+      parameters:
+        - $ref: "#/components/parameters/BundleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseBundleUpdate" }
+            example: { price: 99.5 }
+      responses:
+        "200":
+          description: Updated bundle
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, examples: [true] }
+                  data: { $ref: "#/components/schemas/CourseBundle" }
+        "400": { $ref: "#/components/responses/BundleValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/BundleForbidden" }
+        "404": { $ref: "#/components/responses/BundleNotFound" }
+        "409": { $ref: "#/components/responses/BundleConflict" }
+        "503": { $ref: "#/components/responses/BundleDependencyFailure" }
+        "500": { $ref: "#/components/responses/ServerError" }
+    delete:
+      tags: [Course Bundles]
+      operationId: deleteCourseBundle
+      summary: Deactivate a course bundle
+      description: Owner or admin only. Soft delete; repeating the call returns 200.
+      parameters:
+        - $ref: "#/components/parameters/BundleId"
+      responses:
+        "200":
+          description: Bundle deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+              example: { success: true, message: Bundle deactivated successfully }
+        "400": { $ref: "#/components/responses/BundleValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/BundleForbidden" }
+        "404": { $ref: "#/components/responses/BundleNotFound" }
+        "409": { $ref: "#/components/responses/BundleConflict" }
+        "503": { $ref: "#/components/responses/BundleDependencyFailure" }
+        "500": { $ref: "#/components/responses/ServerError" }
+  /api/course-bundles/{id}/purchase:
+    post:
+      tags: [Course Bundles]
+      operationId: purchaseCourseBundle
+      summary: Enrol the caller in every course of a bundle
+      description: |
+        Runs in a single MongoDB transaction and is idempotent: repeating the call enrols
+        nothing new and reports `newlyEnrolledCount: 0`. The request takes no body.
+      parameters:
+        - $ref: "#/components/parameters/BundleId"
+      responses:
+        "200":
+          description: Enrolment result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  bundle: { $ref: "#/components/schemas/CourseBundle" }
+                  newlyEnrolledCount: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/BundleValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/BundleNotFound" }
+        "409": { $ref: "#/components/responses/BundleConflict" }
+        "503": { $ref: "#/components/responses/BundleDependencyFailure" }
+        "500": { $ref: "#/components/responses/ServerError" }
   /api/certificates/{id}:
     get:
       tags: [Certificates]

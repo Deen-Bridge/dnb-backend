@@ -1,129 +1,66 @@
 import courseBundleService from "../services/course-bundle.service.js";
+import { bundleHandler } from "../utils/courseBundleErrors.js";
 
-export const createBundle = async (req, res) => {
-  try {
-    const { title, description, courses, price, currency } = req.body;
-    const createdBy = req.user._id;
+// Request shapes are enforced by validators/courseBundleValidators.js, so the
+// handlers only pick the fields each operation is allowed to use and never
+// forward raw req.body/req.query objects to the service.
 
-    if (!title || !description || !courses || price === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: "Title, description, courses array, and price are required",
-      });
-    }
+const actorOf = (req) => ({ id: req.user._id, role: req.user.role });
 
-    const bundle = await courseBundleService.createBundle({
-      title,
-      description,
-      courses,
-      price: Number(price),
-      currency,
-      createdBy,
-    });
+const pick = (source = {}, fields) =>
+  Object.fromEntries(fields.filter((field) => source[field] !== undefined).map((field) => [field, source[field]]));
 
-    res.status(201).json({
-      success: true,
-      data: bundle,
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+const sendPage = (res, { bundles, pagination }) =>
+  res.status(200).json({
+    success: true,
+    count: bundles.length,
+    data: bundles,
+    pagination,
+  });
 
-export const getBundles = async (req, res) => {
-  try {
-    const bundles = await courseBundleService.getBundles(req.query);
-    res.status(200).json({
-      success: true,
-      count: bundles.length,
-      data: bundles,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+export const createBundle = bundleHandler("create", async (req, res) => {
+  const bundle = await courseBundleService.createBundle(
+    pick(req.body, ["title", "description", "courses", "price", "currency"]),
+    actorOf(req)
+  );
+  res.status(201).json({ success: true, data: bundle });
+});
 
-export const getBundleById = async (req, res) => {
-  try {
-    const bundle = await courseBundleService.getBundleById(req.params.id);
-    res.status(200).json({
-      success: true,
-      data: bundle,
-    });
-  } catch (error) {
-    res.status(404).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+export const getBundles = bundleHandler("list", async (req, res) => {
+  const result = await courseBundleService.getBundles(
+    pick(req.query, ["courseId", "createdBy", "search", "page", "limit", "sort"])
+  );
+  sendPage(res, result);
+});
 
-export const getBundlesByCourse = async (req, res) => {
-  try {
-    const bundles = await courseBundleService.getBundlesByCourse(req.params.courseId);
-    res.status(200).json({
-      success: true,
-      count: bundles.length,
-      data: bundles,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+export const getBundleById = bundleHandler("get", async (req, res) => {
+  const bundle = await courseBundleService.getBundleById(req.params.id);
+  res.status(200).json({ success: true, data: bundle });
+});
 
-export const updateBundle = async (req, res) => {
-  try {
-    const bundle = await courseBundleService.updateBundle(
-      req.params.id,
-      req.body,
-      req.user._id,
-      req.user.role
-    );
-    res.status(200).json({
-      success: true,
-      data: bundle,
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+export const getBundlesByCourse = bundleHandler("list_by_course", async (req, res) => {
+  const result = await courseBundleService.getBundlesByCourse(
+    req.params.courseId,
+    pick(req.query, ["page", "limit", "sort"])
+  );
+  sendPage(res, result);
+});
 
-export const deleteBundle = async (req, res) => {
-  try {
-    const result = await courseBundleService.deleteBundle(
-      req.params.id,
-      req.user._id,
-      req.user.role
-    );
-    res.status(200).json(result);
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+export const updateBundle = bundleHandler("update", async (req, res) => {
+  const bundle = await courseBundleService.updateBundle(
+    req.params.id,
+    pick(req.body, ["title", "description", "courses", "price", "currency"]),
+    actorOf(req)
+  );
+  res.status(200).json({ success: true, data: bundle });
+});
 
-export const purchaseBundle = async (req, res) => {
-  try {
-    const result = await courseBundleService.purchaseBundle(req.params.id, req.user._id);
-    res.status(200).json(result);
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+export const deleteBundle = bundleHandler("delete", async (req, res) => {
+  const result = await courseBundleService.deleteBundle(req.params.id, actorOf(req));
+  res.status(200).json(result);
+});
+
+export const purchaseBundle = bundleHandler("purchase", async (req, res) => {
+  const result = await courseBundleService.purchaseBundle(req.params.id, req.user._id);
+  res.status(200).json(result);
+});

@@ -51,6 +51,7 @@ import {
   listReviewsValidation,
   courseProgressUpdateValidation,
 } from "../../validators/courseValidators.js";
+import { bundlesByCourseValidation } from "../../validators/courseBundleValidators.js";
 import { CACHE_TTL, CACHE_KEYS } from "../../utils/cache.js";
 import { trackAction } from "../../middlewares/analytics/journey-tracker.js";
 
@@ -92,7 +93,7 @@ router.post("/:id/progress", protect, courseProgressUpdateValidation, validate, 
 
 // Review listing route
 router.get("/:id/reviews", listReviewsValidation, validate, getCourseReviews);
-router.get("/:courseId/bundles", courseIdParamNamedValidation, validate, getBundlesByCourse);
+router.get("/:courseId/bundles", bundlesByCourseValidation, validate, getBundlesByCourse);
 
 // Dynamic routes - cached for 15 minutes
 router.get(

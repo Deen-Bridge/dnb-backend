@@ -3,12 +3,32 @@ import Course from "../models/Course.js";
 import User from "../models/User.js";
 import CourseProgress from "../models/CourseProgress.js";
 import mongoose from "mongoose";
+import { APIError } from "../middlewares/errorHandler.js";
 import { getSupportedCodes } from "../config/assets.js";
+import { buildPageMeta } from "../utils/pagination.js";
+import {
+  BUNDLE_SORTS,
+  DEFAULT_BUNDLE_PAGE_SIZE,
+  DEFAULT_BUNDLE_SORT,
+  MAX_BUNDLE_COURSES,
+  MAX_BUNDLE_PAGE_SIZE,
+} from "../validators/courseBundleValidators.js";
+
+const UPDATABLE_FIELDS = new Set(["title", "description", "courses", "price", "currency"]);
+const COURSE_SUMMARY_FIELDS = "title description price thumbnail category rating";
+const CREATOR_SUMMARY_FIELDS = "name email avatar";
+// Bounds every bundle read so a slow index scan cannot pin a connection.
+const LIST_MAX_TIME_MS = 5000;
+
+const isAdmin = (role) => role === "admin";
+
+const invalid = (field, message) =>
+  new APIError("Validation failed", 400, true, [{ field, message }]);
+
+const clampPageSize = (limit) =>
+  Math.min(Math.max(Number.parseInt(limit, 10) || DEFAULT_BUNDLE_PAGE_SIZE, 1), MAX_BUNDLE_PAGE_SIZE);
 
 export class CourseBundleService {
-  /**
-   * Calculates original total price and discount percentage.
-   */
   calculateDiscount(courses, bundlePrice) {
     const originalPrice = courses.reduce((sum, course) => sum + (course.price || 0), 0);
     let discountPercentage = 0;
@@ -18,17 +38,64 @@ export class CourseBundleService {
     return { originalPrice, discountPercentage };
   }
 
-  async createBundle({ title, description, courses: courseIds, price, currency = "USDC", createdBy }) {
-    if (!courseIds || !Array.isArray(courseIds) || courseIds.length === 0) {
-      throw new Error("A bundle must contain at least one course");
+  /**
+   * Load the courses a bundle will contain and enforce who may bundle them:
+   * admins may bundle any course, everyone else only courses they created.
+   * The route validators already guarantee a bounded list of unique ids; the
+   * checks here keep the service safe for non-HTTP callers.
+   */
+  async resolveBundleCourses(courseIds, actor, { publishedOnly = false } = {}) {
+    if (!Array.isArray(courseIds) || courseIds.length === 0 || courseIds.length > MAX_BUNDLE_COURSES) {
+      throw invalid("courses", `A bundle must contain between 1 and ${MAX_BUNDLE_COURSES} courses`);
+    }
+    const ids = courseIds.map(String);
+    if (new Set(ids).size !== ids.length || ids.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+      throw invalid("courses", "courses must contain unique valid course ids");
     }
 
-    const fetchedCourses = await Course.find({ _id: { $in: courseIds } });
-    if (fetchedCourses.length !== courseIds.length) {
-      throw new Error("One or more specified courses do not exist");
+    const filter = { _id: { $in: ids }, ...(publishedOnly && { status: "published" }) };
+    const courses = await Course.find(filter).select("price createdBy").lean();
+    if (courses.length !== ids.length) {
+      throw invalid(
+        "courses",
+        publishedOnly
+          ? "All bundle courses must exist and be published"
+          : "One or more specified courses do not exist"
+      );
     }
 
-    const { originalPrice, discountPercentage } = this.calculateDiscount(fetchedCourses, price);
+    if (!isAdmin(actor.role)) {
+      const actorId = String(actor.id);
+      if (courses.some((course) => String(course.createdBy) !== actorId)) {
+        throw new APIError("You can only bundle courses you created", 403);
+      }
+    }
+    return courses;
+  }
+
+  assertCanModify(bundle, actor) {
+    if (!isAdmin(actor.role) && String(bundle.createdBy) !== String(actor.id)) {
+      throw new APIError("You are not authorized to modify this bundle", 403);
+    }
+  }
+
+  populated(bundleId) {
+    return CourseBundle.findById(bundleId)
+      .populate("courses", COURSE_SUMMARY_FIELDS)
+      .populate("createdBy", CREATOR_SUMMARY_FIELDS);
+  }
+
+  /**
+   * @param {object} input
+   * @param {{id: string, role: string}} actor - authenticated caller
+   */
+  async createBundle({ title, description, courses: courseIds, price, currency = "USDC" }, actor) {
+    if (!getSupportedCodes().includes(currency)) {
+      throw invalid("currency", "currency is not supported");
+    }
+
+    const courses = await this.resolveBundleCourses(courseIds, actor);
+    const { originalPrice, discountPercentage } = this.calculateDiscount(courses, price);
 
     const bundle = await CourseBundle.create({
       title,
@@ -38,108 +105,107 @@ export class CourseBundleService {
       currency,
       originalPrice,
       discountPercentage,
-      createdBy,
+      createdBy: actor.id,
     });
 
-    return await CourseBundle.findById(bundle._id)
-      .populate("courses", "title description price thumbnail category rating")
-      .populate("createdBy", "name email avatar");
+    return await this.populated(bundle._id);
   }
 
-  async getBundles(query = {}) {
+  /**
+   * Paginated list of active bundles. Results are always bounded by
+   * MAX_BUNDLE_PAGE_SIZE and sorted with an `_id` tiebreaker so consecutive
+   * pages never repeat or skip documents with equal sort keys.
+   */
+  async getBundles({ courseId, createdBy, search, page = 1, limit, sort } = {}) {
     const filter = { isActive: true };
-    if (query.courseId) {
-      filter.courses = query.courseId;
-    }
-    if (query.createdBy) {
-      filter.createdBy = query.createdBy;
-    }
-    if (query.search) {
-      filter.$text = { $search: query.search };
-    }
+    if (courseId) filter.courses = courseId;
+    if (createdBy) filter.createdBy = createdBy;
+    if (search) filter.$text = { $search: String(search) };
 
-    return await CourseBundle.find(filter)
-      .populate("courses", "title description price thumbnail category rating")
-      .populate("createdBy", "name email avatar")
-      .sort({ createdAt: -1 });
+    const pageSize = clampPageSize(limit);
+    const pageNumber = Math.max(Number.parseInt(page, 10) || 1, 1);
+    const order = { ...(BUNDLE_SORTS[sort] || BUNDLE_SORTS[DEFAULT_BUNDLE_SORT]), _id: -1 };
+
+    const [bundles, total] = await Promise.all([
+      CourseBundle.find(filter)
+        .populate("courses", COURSE_SUMMARY_FIELDS)
+        .populate("createdBy", CREATOR_SUMMARY_FIELDS)
+        .sort(order)
+        .skip((pageNumber - 1) * pageSize)
+        .limit(pageSize)
+        .maxTimeMS(LIST_MAX_TIME_MS)
+        .lean(),
+      CourseBundle.countDocuments(filter).maxTimeMS(LIST_MAX_TIME_MS),
+    ]);
+
+    return { bundles, pagination: buildPageMeta(total, pageNumber, pageSize) };
   }
 
   async getBundleById(bundleId) {
     const bundle = await CourseBundle.findById(bundleId)
-      .populate("courses", "title description price thumbnail category rating createdBy")
-      .populate("createdBy", "name email avatar");
+      .populate("courses", `${COURSE_SUMMARY_FIELDS} createdBy`)
+      .populate("createdBy", CREATOR_SUMMARY_FIELDS);
 
     if (!bundle) {
-      throw new Error("Course bundle not found");
+      throw new APIError("Course bundle not found", 404);
     }
     return bundle;
   }
 
-  async getBundlesByCourse(courseId) {
-    return await CourseBundle.find({ courses: courseId, isActive: true })
-      .populate("courses", "title description price thumbnail category rating")
-      .populate("createdBy", "name email avatar");
+  async getBundlesByCourse(courseId, options = {}) {
+    return this.getBundles({ ...options, courseId });
   }
 
-  async updateBundle(bundleId, updateData, userId, userRole) {
-    const bundle = await CourseBundle.findById(bundleId);
-    if (!bundle) {
-      throw new Error("Course bundle not found");
-    }
-
-    if (userRole !== "admin" && bundle.createdBy.toString() !== userId.toString()) {
-      throw new Error("Not authorized to update this bundle");
-    }
-
-    const allowed = new Set(["title", "description", "courses", "price", "currency"]);
-    const unknown = Object.keys(updateData).filter((key) => !allowed.has(key));
-    if (unknown.length) throw new Error("Only title, description, courses, price, and currency can be updated");
-    if (updateData.title !== undefined && (typeof updateData.title !== "string" || !updateData.title.trim())) {
-      throw new Error("title must be a non-empty string");
-    }
-    if (updateData.description !== undefined && typeof updateData.description !== "string") {
-      throw new Error("description must be a string");
+  /**
+   * Only title, description, courses, price and currency can change. Pricing
+   * metadata is always recomputed server-side from the final course set.
+   */
+  async updateBundle(bundleId, updateData, actor) {
+    const unknown = Object.keys(updateData).filter((key) => !UPDATABLE_FIELDS.has(key));
+    if (unknown.length) {
+      throw invalid(unknown[0], "Only title, description, courses, price, and currency can be updated");
     }
     if (updateData.currency !== undefined && !getSupportedCodes().includes(updateData.currency)) {
-      throw new Error("Unsupported currency");
-    }
-    const courseIds = updateData.courses ?? bundle.courses;
-    if (!Array.isArray(courseIds) || courseIds.length === 0 || new Set(courseIds.map(String)).size !== courseIds.length || courseIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
-      throw new Error("courses must contain unique valid course ids");
-    }
-    const bundlePrice = updateData.price !== undefined ? Number(updateData.price) : bundle.price;
-    if (!Number.isFinite(bundlePrice) || bundlePrice < 0) throw new Error("price must be a non-negative number");
-
-    const fetchedCourses = await Course.find({ _id: { $in: courseIds }, status: "published" });
-    if (fetchedCourses.length !== courseIds.length) {
-      throw new Error("All bundle courses must exist and be published");
+      throw invalid("currency", "currency is not supported");
     }
 
-    const { originalPrice, discountPercentage } = this.calculateDiscount(fetchedCourses, bundlePrice);
-    updateData.price = bundlePrice;
-    updateData.originalPrice = originalPrice;
-    updateData.discountPercentage = discountPercentage;
-
-    Object.assign(bundle, updateData);
-    await bundle.save();
-
-    return await CourseBundle.findById(bundle._id)
-      .populate("courses", "title description price thumbnail category rating")
-      .populate("createdBy", "name email avatar");
-  }
-
-  async deleteBundle(bundleId, userId, userRole) {
     const bundle = await CourseBundle.findById(bundleId);
     if (!bundle) {
-      throw new Error("Course bundle not found");
+      throw new APIError("Course bundle not found", 404);
+    }
+    this.assertCanModify(bundle, actor);
+    if (!bundle.isActive) {
+      throw new APIError("Inactive bundles cannot be updated", 409);
     }
 
-    if (userRole !== "admin" && bundle.createdBy.toString() !== userId.toString()) {
-      throw new Error("Not authorized to delete this bundle");
+    const changes = { ...updateData };
+    if (changes.courses || changes.price !== undefined) {
+      const courseIds = changes.courses || bundle.courses.map(String);
+      const bundlePrice = changes.price !== undefined ? changes.price : bundle.price;
+      // Re-checking ownership on unchanged courses is deliberate: an owner
+      // repricing a bundle must still own everything it sells.
+      const courses = await this.resolveBundleCourses(courseIds, actor, { publishedOnly: true });
+      Object.assign(changes, this.calculateDiscount(courses, bundlePrice));
     }
 
-    bundle.isActive = false;
+    Object.assign(bundle, changes);
     await bundle.save();
+
+    return await this.populated(bundle._id);
+  }
+
+  /** Soft-deletes the bundle. Repeating the call is a no-op success. */
+  async deleteBundle(bundleId, actor) {
+    const bundle = await CourseBundle.findById(bundleId);
+    if (!bundle) {
+      throw new APIError("Course bundle not found", 404);
+    }
+    this.assertCanModify(bundle, actor);
+
+    if (bundle.isActive) {
+      bundle.isActive = false;
+      await bundle.save();
+    }
     return { success: true, message: "Bundle deactivated successfully" };
   }
 
@@ -148,31 +214,50 @@ export class CourseBundleService {
     try {
       let result;
       await session.withTransaction(async () => {
-        const bundle = await CourseBundle.findById(bundleId).populate("courses").session(session);
-        if (!bundle || !bundle.isActive) throw new Error("Course bundle not found or inactive");
+        const bundle = await CourseBundle.findById(bundleId)
+          .populate("courses")
+          .session(session);
+        if (!bundle || !bundle.isActive) {
+          throw new APIError("Course bundle not found or inactive", 404);
+        }
+
         const user = await User.findById(userId).session(session);
-        if (!user) throw new Error("User not found");
+        if (!user) {
+          throw new APIError("User not found", 404);
+        }
 
         let newlyEnrolledCount = 0;
+
         for (const course of bundle.courses) {
+          const courseIdStr = course._id.toString();
           const alreadyPurchased = user.purchasedCourses.some(
-            (pc) => pc.courseId && pc.courseId.toString() === course._id.toString()
+            (pc) => pc.courseId && pc.courseId.toString() === courseIdStr
           );
+
           if (!alreadyPurchased) {
-            user.purchasedCourses.push({ courseId: course._id, purchaseDate: new Date() });
+            user.purchasedCourses.push({
+              courseId: course._id,
+              purchaseDate: new Date(),
+            });
             user.stat.coursesEnrolled = (user.stat.coursesEnrolled || 0) + 1;
             newlyEnrolledCount++;
           }
-          if (!course.enrolledUsers.some((id) => id.toString() === userId.toString())) {
+
+          const isEnrolledInCourse = course.enrolledUsers.some(
+            (uId) => uId.toString() === userId.toString()
+          );
+          if (!isEnrolledInCourse) {
             course.enrolledUsers.push(userId);
             await course.save({ session });
           }
+
           await CourseProgress.findOneAndUpdate(
             { user: userId, course: course._id },
             { $setOnInsert: { user: userId, course: course._id, percentComplete: 0 } },
             { upsert: true, new: true, session }
           );
         }
+
         await user.save({ session });
         result = {
           success: true,

@@ -88,10 +88,6 @@ reelSchema.virtual("loveCount").get(function () {
   return this.loves?.length || 0;
 });
 
-reelSchema.virtual("commentCount").get(function () {
-  return this.commentCount ?? this.comments?.length ?? 0;
-});
-
 reelSchema.set("toJSON", { virtuals: true });
 reelSchema.set("toObject", { virtuals: true });
 

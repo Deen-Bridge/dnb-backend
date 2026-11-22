@@ -262,6 +262,32 @@ const ingestionPolls = new promClient.Counter({
   registers: [registry],
 });
 
+const COURSE_BUNDLE_OPERATIONS = new Set(["list", "list_by_course", "get", "create", "update", "delete", "purchase"]);
+const COURSE_BUNDLE_OUTCOMES = new Set([
+  "success",
+  "validation_failed",
+  "unauthenticated",
+  "forbidden",
+  "not_found",
+  "conflict",
+  "dependency_failure",
+  "error",
+]);
+
+const courseBundleRequests = new promClient.Counter({
+  name: "course_bundle_requests_total",
+  help: "Course bundle API requests by operation and outcome",
+  labelNames: ["operation", "outcome"],
+  registers: [registry],
+});
+
+function recordCourseBundleRequest(operation, outcome) {
+  courseBundleRequests.inc({
+    operation: boundedLabel(operation, COURSE_BUNDLE_OPERATIONS),
+    outcome: boundedLabel(outcome, COURSE_BUNDLE_OUTCOMES, "error"),
+  });
+}
+
 /**
  * Register the function that computes the reconciliation status snapshot.
  * Called once at API startup; until then the health gauges stay empty, which
@@ -365,6 +391,8 @@ export {
   reconciliationBacklog,
   reconciliationBacklogOldestAge,
   ingestionPolls,
+  courseBundleRequests,
+  recordCourseBundleRequest,
   setReconciliationHealthProvider,
   recordReconciliationHealth,
   refreshReconciliationHealth,

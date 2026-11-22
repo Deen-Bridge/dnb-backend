@@ -1,6 +1,6 @@
 import request from "supertest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import app from "../app.js";
 import Course from "../src/models/Course.js";
 import CourseBundle from "../src/models/course-bundle.model.js";
@@ -24,7 +24,8 @@ describe("Course Bundles API", () => {
         return;
       } catch (_err) {}
     }
-    mongoServer = await MongoMemoryServer.create();
+    // Bundle purchases run inside a transaction, which needs a replica set.
+    mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } });
     await mongoose.connect(mongoServer.getUri());
   });
 
@@ -40,7 +41,12 @@ describe("Course Bundles API", () => {
     await Course.deleteMany({});
     await User.deleteMany({});
 
-    const auth = await seedUserAndLogin(app, { email: "bundle_creator@example.com" });
+    // Creating bundles is limited to verified educators (issue #697).
+    const auth = await seedUserAndLogin(app, {
+      email: "bundle_creator@example.com",
+      role: "mentor",
+      verifiedEducator: true,
+    });
     token = auth.token;
     user = auth.user;
 
