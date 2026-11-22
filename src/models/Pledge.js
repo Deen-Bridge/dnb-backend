@@ -20,4 +20,8 @@ const pledgeSchema = new mongoose.Schema(
 );
 
 pledgeSchema.index({ status: 1, nextDueAt: 1 });
+// Donor history pages: newest first with an _id tiebreaker so keyset
+// pagination stays deterministic when two pledges share a createdAt.
+pledgeSchema.index({ user: 1, createdAt: -1, _id: -1 });
+pledgeSchema.index({ user: 1, status: 1, createdAt: -1, _id: -1 });
 export default mongoose.model("Pledge", pledgeSchema);

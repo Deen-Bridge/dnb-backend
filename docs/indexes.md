@@ -61,6 +61,27 @@ The #696 indexes are built by `npm run migrate:payment-references` as well.
 ## Notification (`Notification.js`)
 Already covered: `{ recipient, createdAt }`, `{ recipient, isRead }`, `{ recipient, isDeleted }`, `{ recipient, isDeleted, createdAt }` for per-user lists and unread counts.
 
+## Pledge (`Pledge.js`)
+| Index | Supports |
+|---|---|
+| `{ user: 1 }`, `{ status: 1 }`, `{ nextDueAt: 1 }` | owner lookups, scheduler |
+| `{ status: 1, nextDueAt: 1 }` | scheduler: next due active pledge |
+| `{ user: 1, createdAt: -1, _id: -1 }` **new** | donor pledge history pages, newest first (#698) |
+| `{ user: 1, status: 1, createdAt: -1, _id: -1 }` **new** | the same, filtered by `status` (#698) |
+
+## PledgeCycle (`PledgeCycle.js`)
+| Index | Supports |
+|---|---|
+| `{ pledge: 1, dueAt: 1 }` unique | scheduler upsert; cycle history with `includeArchived=true` (walked backwards) |
+| `{ pledge: 1, archivedAt: 1, dueAt: -1 }` **new** | default cycle history (unarchived), latest due first (#698) |
+| `{ status: 1, archivedAt: 1, dueAt: 1 }` **new** | retention sweep over settled, unarchived cycles (#698) |
+| `{ status: 1 }`, `{ windowEndsAt: 1 }`, `{ pledge: 1 }` | scheduler lapse check, owner lookups |
+
+The #698 list endpoints fetch `limit + 1` rows from these indexes, so the
+documents examined per page stay constant as history grows
+(`test/pledgeHistory.test.js` checks this with `explain("executionStats")`).
+See [pledges.md](pledges.md).
+
 ## Wallets
 There is no standalone wallet model; wallet addresses live on `User` and `Transaction` (`buyerWallet`, `creatorWallet`). `OnrampTransaction` was not audited in this pass.
 

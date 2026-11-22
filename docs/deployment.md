@@ -73,7 +73,7 @@ listed in `validateEnv.js`; the rest were found by grep in `src/`.
 | Anchor transaction poller | Started in-process by `server.js` | Interval poller (`src/jobs/anchorPoller.js`). |
 | Trending hashtags job | Started in-process from `app.js` | `setInterval`, default every 1 hour. |
 | Webhook delivery worker | In-process, opt-in via `WEBHOOK_WORKER_ENABLED=true` | |
-| Pledge scheduler | In-process, opt-in via `PLEDGE_SCHEDULER_ENABLED=true` | Loop interval defaults to 60 s. |
+| Pledge scheduler | In-process, opt-in via `PLEDGE_SCHEDULER_ENABLED=true` | Loop interval defaults to 60 s. Each pass also archives up to 500 settled cycles older than `PLEDGE_CYCLE_RETENTION_DAYS` (default 365); see [pledges.md](pledges.md). |
 
 Because the in-process jobs and pollers start in every web instance, running
 several replicas runs several pollers. The queue claims work through MongoDB,

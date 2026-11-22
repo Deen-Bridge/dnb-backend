@@ -1,7 +1,7 @@
 import Pledge from "../models/Pledge.js";
 import PledgeCycle from "../models/PledgeCycle.js";
 import { sendNotificationToUser } from "../controllers/notificationController.js";
-import { addPledgeCadence } from "../services/pledgeService.js";
+import { addPledgeCadence, archiveStalePledgeCycles } from "../services/pledgeService.js";
 import logger from "../config/logger.js";
 
 const INTERVAL_MS = Number(process.env.PLEDGE_SCHEDULER_INTERVAL_MS || 60000);
@@ -60,6 +60,14 @@ export const tickPledgeScheduler = async (now = new Date()) => {
 const loop = async () => {
   if (!running) return;
   try { await tickPledgeScheduler(); } catch (error) { logger.error(error, "Pledge scheduler failed"); }
+  // Retention runs after scheduling and in its own guard so an archival
+  // failure never delays due cycles. Each pass archives one bounded batch.
+  try {
+    const archived = await archiveStalePledgeCycles();
+    if (archived > 0) logger.info({ archived }, "Archived settled pledge cycles past retention");
+  } catch (error) {
+    logger.error({ error: error.message }, "Pledge cycle archival failed");
+  }
   timer = setTimeout(loop, INTERVAL_MS);
   timer.unref?.();
 };

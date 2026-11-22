@@ -68,6 +68,8 @@ tags:
     description: Payment quote, build, submit, history, refunds and disputes
   - name: Donations
     description: Sadaqah donations and aggregate stats
+  - name: Pledges
+    description: Recurring sadaqah pledges, paginated pledge and cycle history, and aggregate pledge stats
   - name: Scholarship Escrow
     description: Wallet-signed contributions, milestone releases, refunds, and live Soroban escrow state. Separate from direct Sadaqah payments.
   - name: Payouts
@@ -138,6 +140,20 @@ components:
         type: string
         enum: ["-createdAt", createdAt, price, "-price", "-discountPercentage"]
         default: "-createdAt"
+    PledgeLimit:
+      name: limit
+      in: query
+      required: false
+      description: Page size. Requests above 50 are rejected rather than silently clamped.
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    PledgeCursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        Opaque token from the previous page's `pageInfo.nextCursor`. Cursors are bound to the
+        endpoint that issued them; a cursor from another endpoint, or a modified one, is a 400.
+      schema: { type: string, maxLength: 256 }
   responses:
     Ok:
       description: Success envelope
@@ -801,6 +817,78 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [recipient, sender, type, title, message]
+    Pledge:
+      type: object
+      description: |
+        Owner view of a recurring pledge. Omits the owning user id and scheduler internals.
+        `publicKey` is the caller's own paying wallet.
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        publicKey: { $ref: "#/components/schemas/StellarPublicKey" }
+        amount: { type: string, description: USDC amount, string to preserve precision }
+        cadence: { type: string, enum: [daily, weekly, monthly] }
+        anchorDay: { type: [integer, "null"], minimum: 0, maximum: 6 }
+        anchorDate: { type: [integer, "null"], minimum: 1, maximum: 31 }
+        status: { type: string, enum: [active, paused, cancelled] }
+        nextDueAt: { type: string, format: date-time }
+        consecutivePaid: { type: integer }
+        longestStreak: { type: integer }
+        totalPaidStroops: { type: string, description: Lifetime paid total in stroops (1 USDC = 10^7) }
+        lastPaidAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PledgePaymentStatus:
+      type: object
+      description: |
+        Payment state of a pledge cycle. Deliberately not the Transaction document: wallets, XDR,
+        memos, payment references and fee details are never returned.
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        status: { type: string, enum: [pending, submitted, retrying, confirmed, failed, expired, refunded, disputed] }
+        stellarTxHash: { type: [string, "null"] }
+        confirmedAt: { type: [string, "null"], format: date-time }
+    PledgeCycle:
+      type: object
+      properties:
+        _id: { $ref: "#/components/schemas/ObjectId" }
+        pledge: { $ref: "#/components/schemas/ObjectId" }
+        dueAt: { type: string, format: date-time }
+        windowEndsAt: { type: string, format: date-time }
+        status: { type: string, enum: [due, notified, paid, skipped, lapsed] }
+        archived: { type: boolean, description: Settled and older than the retention window }
+        transaction:
+          description: Null until the cycle has been initialized for payment
+          oneOf:
+            - $ref: "#/components/schemas/PledgePaymentStatus"
+            - type: "null"
+    PledgePageInfo:
+      type: object
+      properties:
+        limit: { type: integer }
+        hasMore: { type: boolean }
+        nextCursor: { type: [string, "null"], description: Pass as `cursor` to fetch the next page }
+    PledgePage:
+      type: object
+      properties:
+        success: { type: boolean, examples: [true] }
+        pledges: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/Pledge" } }
+        pageInfo: { $ref: "#/components/schemas/PledgePageInfo" }
+    PledgeCyclePage:
+      type: object
+      properties:
+        success: { type: boolean, examples: [true] }
+        cycles: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/PledgeCycle" } }
+        pageInfo: { $ref: "#/components/schemas/PledgePageInfo" }
+    PledgeStats:
+      type: object
+      properties:
+        success: { type: boolean, examples: [true] }
+        totalPaidStroops: { type: string, description: Exact sum across all of the caller's pledges }
+        longestStreak: { type: integer }
+        active: { type: integer }
+        paused: { type: integer }
+        cancelled: { type: integer }
+        total: { type: integer }
 paths:
   /:
     get:
@@ -2845,6 +2933,186 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/BadRequest" }
         "429": { $ref: "#/components/responses/BadRequest" }
+  /api/stellar/pledges:
+    get:
+      tags: [Pledges]
+      operationId: listPledges
+      summary: List the caller's pledges
+      description: |
+        Keyset-paginated, newest first (`createdAt` desc, `_id` desc). At most 50 per page.
+        Follow `pageInfo.nextCursor` until `hasMore` is false. See docs/pledges.md.
+      parameters:
+        - $ref: "#/components/parameters/PledgeLimit"
+        - $ref: "#/components/parameters/PledgeCursor"
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [active, paused, cancelled] }
+      responses:
+        "200":
+          description: One page of pledges
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PledgePage" }
+              example:
+                success: true
+                pledges:
+                  - _id: 6650c2f4e1a2b3c4d5e6f701
+                    publicKey: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H
+                    amount: "5"
+                    cadence: weekly
+                    anchorDay: 5
+                    anchorDate: null
+                    status: active
+                    nextDueAt: "2026-11-27T09:00:00.000Z"
+                    consecutivePaid: 4
+                    longestStreak: 9
+                    totalPaidStroops: "650000000"
+                    lastPaidAt: "2026-11-20T09:04:11.000Z"
+                    createdAt: "2026-06-01T09:00:00.000Z"
+                    updatedAt: "2026-11-20T09:04:11.000Z"
+                pageInfo:
+                  limit: 20
+                  hasMore: true
+                  nextCursor: eyJrIjoicGxlZGdlIiwidCI6IjIwMjYtMDYtMDFUMDk6MDA6MDAuMDAwWiIsImlkIjoiNjY1MGMyZjRlMWEyYjNjNGQ1ZTZmNzAxIn0
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/ServerError" }
+    post:
+      tags: [Pledges]
+      operationId: createPledge
+      summary: Create a recurring pledge
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                publicKey: { $ref: "#/components/schemas/StellarPublicKey" }
+                amount: { type: string }
+                cadence: { type: string, enum: [daily, weekly, monthly] }
+                anchorDay: { type: integer, minimum: 0, maximum: 6 }
+                anchorDate: { type: integer, minimum: 1, maximum: 31 }
+                startAt: { type: string, format: date-time }
+              required: [publicKey, amount, cadence]
+      responses:
+        "201":
+          description: Pledge created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, examples: [true] }
+                  pledge: { $ref: "#/components/schemas/Pledge" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/stellar/pledges/stats:
+    get:
+      tags: [Pledges]
+      operationId: getPledgeStats
+      summary: Aggregate totals across the caller's pledges
+      description: |
+        Computed with a single aggregation. Returns totals only; the pledge list is not echoed
+        (use GET /api/stellar/pledges). Archived cycle history does not affect these totals.
+      responses:
+        "200":
+          description: Pledge totals
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PledgeStats" }
+              example:
+                success: true
+                totalPaidStroops: "650000000"
+                longestStreak: 9
+                active: 2
+                paused: 1
+                cancelled: 0
+                total: 3
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/ServerError" }
+  /api/stellar/pledges/{id}/status:
+    patch:
+      tags: [Pledges]
+      operationId: updatePledgeStatus
+      summary: Pause, resume or cancel a pledge
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [active, paused, cancelled] }
+              required: [status]
+      responses:
+        "200":
+          description: Updated pledge
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, examples: [true] }
+                  pledge: { $ref: "#/components/schemas/Pledge" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/stellar/pledges/{id}/cycles:
+    get:
+      tags: [Pledges]
+      operationId: listPledgeCycles
+      summary: List a pledge's cycles with payment status
+      description: |
+        Keyset-paginated, latest `dueAt` first. At most 50 per page. Each cycle carries a minimal
+        payment-status object, never the transaction document. Settled cycles older than
+        PLEDGE_CYCLE_RETENTION_DAYS are archived and hidden unless `includeArchived=true`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ObjectId" }
+        - $ref: "#/components/parameters/PledgeLimit"
+        - $ref: "#/components/parameters/PledgeCursor"
+        - name: includeArchived
+          in: query
+          required: false
+          schema: { type: string, enum: ["true", "false"], default: "false" }
+      responses:
+        "200":
+          description: One page of cycles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PledgeCyclePage" }
+              example:
+                success: true
+                cycles:
+                  - _id: 6650c2f4e1a2b3c4d5e6f7a0
+                    pledge: 6650c2f4e1a2b3c4d5e6f701
+                    dueAt: "2026-11-20T09:00:00.000Z"
+                    windowEndsAt: "2026-11-23T09:00:00.000Z"
+                    status: paid
+                    archived: false
+                    transaction:
+                      _id: 6650c2f4e1a2b3c4d5e6f7b3
+                      status: confirmed
+                      stellarTxHash: 3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889
+                      confirmedAt: "2026-11-20T09:04:11.000Z"
+                pageInfo: { limit: 20, hasMore: false, nextCursor: null }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
   /api/stellar/scholarships/applications/config:
     get:
       tags: [Scholarship Applications]

@@ -288,6 +288,48 @@ function recordCourseBundleRequest(operation, outcome) {
   });
 }
 
+// Pledge history reads (#698). Labels are bounded to the three read endpoints
+// and a small outcome set; no user, pledge or wallet identifiers are recorded.
+const PLEDGE_READ_OPERATIONS = new Set(["list", "stats", "cycles"]);
+const PLEDGE_READ_OUTCOMES = new Set(["success", "not_found", "error"]);
+
+const pledgeReadDuration = new promClient.Histogram({
+  name: "pledge_read_duration_seconds",
+  help: "Pledge read endpoint latency by operation and outcome",
+  labelNames: ["operation", "outcome"],
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  registers: [registry],
+});
+
+const pledgeReadResponseBytes = new promClient.Histogram({
+  name: "pledge_read_response_bytes",
+  help: "Serialized JSON size of successful pledge read responses",
+  labelNames: ["operation"],
+  buckets: [256, 1024, 4096, 16384, 65536, 262144, 1048576],
+  registers: [registry],
+});
+
+const pledgeReadItems = new promClient.Histogram({
+  name: "pledge_read_items",
+  help: "Items returned per pledge read page",
+  labelNames: ["operation"],
+  buckets: [0, 1, 5, 10, 20, 50],
+  registers: [registry],
+});
+
+/**
+ * @param {{ operation: string, outcome: string, durationMs: number, responseBytes?: number, items?: number }} sample
+ */
+function observePledgeRead({ operation, outcome, durationMs, responseBytes, items }) {
+  const op = boundedLabel(operation, PLEDGE_READ_OPERATIONS);
+  pledgeReadDuration.observe(
+    { operation: op, outcome: boundedLabel(outcome, PLEDGE_READ_OUTCOMES, "error") },
+    durationMs / 1000
+  );
+  if (Number.isFinite(responseBytes)) pledgeReadResponseBytes.observe({ operation: op }, responseBytes);
+  if (Number.isFinite(items)) pledgeReadItems.observe({ operation: op }, items);
+}
+
 /**
  * Register the function that computes the reconciliation status snapshot.
  * Called once at API startup; until then the health gauges stay empty, which
@@ -393,6 +435,10 @@ export {
   ingestionPolls,
   courseBundleRequests,
   recordCourseBundleRequest,
+  pledgeReadDuration,
+  pledgeReadResponseBytes,
+  pledgeReadItems,
+  observePledgeRead,
   setReconciliationHealthProvider,
   recordReconciliationHealth,
   refreshReconciliationHealth,

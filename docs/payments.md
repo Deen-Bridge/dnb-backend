@@ -264,7 +264,10 @@ registry assets are not ingested (**unverified** whether that is intentional).
 - `src/jobs/anchorPoller.js` - polls SEP-24 anchor transactions with backoff.
 - `src/workers/pledgeScheduler.js` - recurring pledge cycles
   (`PLEDGE_SCHEDULER_ENABLED`, `PLEDGE_SCHEDULER_INTERVAL_MS`,
-  `PLEDGE_PAYMENT_WINDOW_MS`).
+  `PLEDGE_PAYMENT_WINDOW_MS`). Each pass also archives one bounded batch of
+  settled cycles older than `PLEDGE_CYCLE_RETENTION_DAYS`. The paginated
+  pledge history API, its privacy projection and retention rules are in
+  [pledges.md](pledges.md).
 
 ## 6. Environment and secrets reference
 
@@ -287,7 +290,7 @@ store.
 | Refunds | `REFUND_WINDOW_DAYS` | no |
 | Webhooks | `WEBHOOK_WORKER_ENABLED`, `WEBHOOK_POLL_INTERVAL_MS`, `WEBHOOK_MAX_ATTEMPTS`, `WEBHOOK_AUTO_DISABLE_THRESHOLD`, `WEBHOOK_BACKOFF_JITTER_MS`, `WEBHOOK_HTTP_TIMEOUT_MS`, `WEBHOOK_API_VERSION`, `WEBHOOK_MAX_PER_TICK` | no |
 | | `WEBHOOK_SECRET_ENCRYPTION_KEY` | **yes** |
-| Workers | `INGESTION_WORKER_ENABLED`, `INGESTION_POLL_INTERVAL_MS`, `RECONCILIATION_QUERY_TIMEOUT_MS`, `PLEDGE_SCHEDULER_ENABLED`, `QUEUE_DRIVER`, `JOBS_ENABLED` | no |
+| Workers | `INGESTION_WORKER_ENABLED`, `INGESTION_POLL_INTERVAL_MS`, `RECONCILIATION_QUERY_TIMEOUT_MS`, `PLEDGE_SCHEDULER_ENABLED`, `PLEDGE_CYCLE_RETENTION_DAYS`, `QUEUE_DRIVER`, `JOBS_ENABLED` | no |
 
 The donation fund and platform wallet entries are public keys only. Signing keys
 for those wallets are never configured in the backend; payout and refund

@@ -38,6 +38,52 @@ export const firstDueAt = ({ cadence, anchorDay, anchorDate, startAt = new Date(
   return addPledgeCadence(start, { cadence, anchorDate: target });
 };
 
+export const DEFAULT_PLEDGE_CYCLE_RETENTION_DAYS = 365;
+export const PLEDGE_CYCLE_ARCHIVE_BATCH_SIZE = 500;
+// Only settled cycles are archived; due/notified cycles are still payable.
+export const ARCHIVABLE_CYCLE_STATUSES = Object.freeze(["paid", "skipped", "lapsed"]);
+
+/**
+ * How long settled cycles stay in the default history listing. Read per call
+ * so operators can tune it without a code change; anything that is not a
+ * positive integer falls back to the default rather than archiving eagerly.
+ */
+export const getPledgeCycleRetentionDays = (env = process.env) => {
+  const days = Number(env.PLEDGE_CYCLE_RETENTION_DAYS);
+  return Number.isInteger(days) && days > 0 ? days : DEFAULT_PLEDGE_CYCLE_RETENTION_DAYS;
+};
+
+/**
+ * Flag one bounded batch of settled cycles older than the retention window as
+ * archived. Nothing is deleted: cycles are part of the financial audit trail
+ * and pledge totals live on the Pledge document, so archiving never changes
+ * `totalPaidStroops`, streaks or stats.
+ *
+ * @returns {Promise<number>} number of cycles archived in this batch
+ */
+export const archiveStalePledgeCycles = async ({
+  now = new Date(),
+  retentionDays = getPledgeCycleRetentionDays(),
+  batchSize = PLEDGE_CYCLE_ARCHIVE_BATCH_SIZE,
+} = {}) => {
+  const cutoff = new Date(now.getTime() - retentionDays * DAY_MS);
+  const stale = await PledgeCycle.find({
+    status: { $in: ARCHIVABLE_CYCLE_STATUSES },
+    archivedAt: null,
+    dueAt: { $lt: cutoff },
+  })
+    .select("_id")
+    .limit(batchSize)
+    .lean();
+  if (stale.length === 0) return 0;
+
+  const result = await PledgeCycle.updateMany(
+    { _id: { $in: stale.map((cycle) => cycle._id) }, archivedAt: null },
+    { $set: { archivedAt: now } }
+  );
+  return result.modifiedCount;
+};
+
 export const markPledgeTransactionPaid = async (transaction, paidAt = new Date()) => {
   if (!mongoose.Types.ObjectId.isValid(transaction?._id)) return null;
   const cycle = await PledgeCycle.findOne({ transaction: transaction._id, status: { $ne: "paid" } });

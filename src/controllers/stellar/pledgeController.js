@@ -1,4 +1,6 @@
+import { performance } from "node:perf_hooks";
 import mongoose from "mongoose";
+import { matchedData } from "express-validator";
 import Pledge from "../../models/Pledge.js";
 import PledgeCycle from "../../models/PledgeCycle.js";
 import { isValidPublicKey } from "../../services/stellar/stellarService.js";
@@ -7,7 +9,37 @@ import {
   validateDonationAmount,
 } from "../../services/stellar/donationIntentService.js";
 import { firstDueAt } from "../../services/pledgeService.js";
+import {
+  getPledgeStatsForUser,
+  listPledgeCyclesForUser,
+  listPledgesForUser,
+  toPledgeDTO,
+} from "../../services/pledgeReadService.js";
+import { observePledgeRead } from "../../config/metrics.js";
+import logger from "../../config/logger.js";
 import { submitDonation } from "./donationController.js";
+
+/**
+ * Serialize once so the response size can be recorded without a second
+ * JSON.stringify, then send it as JSON.
+ */
+const sendMeasured = (res, { operation, startedAt, items }, body) => {
+  const payload = JSON.stringify(body);
+  observePledgeRead({
+    operation,
+    outcome: "success",
+    durationMs: performance.now() - startedAt,
+    responseBytes: Buffer.byteLength(payload),
+    items,
+  });
+  res.type("application/json").send(payload);
+};
+
+const failRead = (operation, startedAt, error, next) => {
+  observePledgeRead({ operation, outcome: "error", durationMs: performance.now() - startedAt });
+  logger.error({ operation, error: error.message }, "Pledge read failed");
+  next(error);
+};
 
 export const createPledge = async (req, res) => {
   const { publicKey, amount, cadence, anchorDay, anchorDate, startAt } = req.body;
@@ -39,26 +71,30 @@ export const createPledge = async (req, res) => {
     anchorDate: cadence === "monthly" ? (anchorDate ?? effectiveStart.getUTCDate()) : undefined,
     nextDueAt: firstDueAt({ cadence, anchorDay, anchorDate, startAt: effectiveStart }),
   });
-  res.status(201).json({ success: true, pledge });
+  res.status(201).json({ success: true, pledge: toPledgeDTO(pledge) });
 };
 
-export const listPledges = async (req, res) => {
-  const pledges = await Pledge.find({ user: req.user._id }).sort({ createdAt: -1 });
-  res.json({ success: true, pledges });
+/** GET /api/stellar/pledges — one keyset page of the caller's pledges. */
+export const listPledges = async (req, res, next) => {
+  const startedAt = performance.now();
+  try {
+    const { limit, cursor, status } = matchedData(req, { locations: ["query"] });
+    const page = await listPledgesForUser({ userId: req.user._id, status, limit, cursor });
+    sendMeasured(res, { operation: "list", startedAt, items: page.pledges.length }, { success: true, ...page });
+  } catch (error) {
+    failRead("list", startedAt, error, next);
+  }
 };
 
-export const getPledgeStats = async (req, res) => {
-  const pledges = await Pledge.find({ user: req.user._id }).lean();
-  const totals = pledges.reduce(
-    (stats, pledge) => {
-      stats.totalPaidStroops = (BigInt(stats.totalPaidStroops) + BigInt(pledge.totalPaidStroops || "0")).toString();
-      stats.longestStreak = Math.max(stats.longestStreak, pledge.longestStreak || 0);
-      stats.active += pledge.status === "active" ? 1 : 0;
-      return stats;
-    },
-    { totalPaidStroops: "0", longestStreak: 0, active: 0 }
-  );
-  res.json({ success: true, ...totals, pledges });
+/** GET /api/stellar/pledges/stats — aggregate totals only, no pledge payload. */
+export const getPledgeStats = async (req, res, next) => {
+  const startedAt = performance.now();
+  try {
+    const stats = await getPledgeStatsForUser({ userId: req.user._id });
+    sendMeasured(res, { operation: "stats", startedAt }, { success: true, ...stats });
+  } catch (error) {
+    failRead("stats", startedAt, error, next);
+  }
 };
 
 export const updatePledgeStatus = async (req, res) => {
@@ -73,14 +109,29 @@ export const updatePledgeStatus = async (req, res) => {
   }
   pledge.status = status;
   await pledge.save();
-  res.json({ success: true, pledge });
+  res.json({ success: true, pledge: toPledgeDTO(pledge) });
 };
 
-export const listPledgeCycles = async (req, res) => {
-  const pledge = await Pledge.findOne({ _id: req.params.id, user: req.user._id });
-  if (!pledge) return res.status(404).json({ success: false, message: "Pledge not found" });
-  const cycles = await PledgeCycle.find({ pledge: pledge._id }).sort({ dueAt: -1 }).populate("transaction");
-  res.json({ success: true, cycles });
+/** GET /api/stellar/pledges/:id/cycles — one page of cycles with payment status only. */
+export const listPledgeCycles = async (req, res, next) => {
+  const startedAt = performance.now();
+  try {
+    const { limit, cursor, includeArchived } = matchedData(req, { locations: ["query"] });
+    const page = await listPledgeCyclesForUser({
+      userId: req.user._id,
+      pledgeId: req.params.id,
+      limit,
+      cursor,
+      includeArchived: includeArchived === true,
+    });
+    if (!page) {
+      observePledgeRead({ operation: "cycles", outcome: "not_found", durationMs: performance.now() - startedAt });
+      return res.status(404).json({ success: false, message: "Pledge not found" });
+    }
+    sendMeasured(res, { operation: "cycles", startedAt, items: page.cycles.length }, { success: true, ...page });
+  } catch (error) {
+    failRead("cycles", startedAt, error, next);
+  }
 };
 
 export const initializePledgeCycle = async (req, res) => {

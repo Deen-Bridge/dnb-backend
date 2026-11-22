@@ -1,6 +1,12 @@
-import { body, param } from "express-validator";
+import { body, param, query } from "express-validator";
 import mongoose from "mongoose";
 import * as StellarSdk from "@stellar/stellar-sdk";
+import {
+  decodePledgeCursor,
+  decodePledgeCycleCursor,
+  MAX_PLEDGE_PAGE_SIZE,
+  PLEDGE_STATUSES,
+} from "../services/pledgeReadService.js";
 
 /**
  * Strict request validators for payout, payment, refund, donation, gift and
@@ -275,4 +281,45 @@ export const pledgeCycleSubmitValidation = [
     .optional({ values: "undefined" })
     .custom((v) => typeof v === "boolean")
     .withMessage("requestSponsorship must be a boolean"),
+];
+
+// Repeated query keys (`?limit=1&limit=2`) arrive as arrays, and standard
+// validators would check each element, so pin every query value to a string.
+const singleQueryValue = (name) =>
+  query(name)
+    .optional()
+    .custom((v) => typeof v === "string")
+    .withMessage(`${name} must be a single value`)
+    .bail();
+
+const pageLimitQuery = () =>
+  singleQueryValue("limit")
+    .isInt({ min: 1, max: MAX_PLEDGE_PAGE_SIZE })
+    .withMessage(`limit must be an integer between 1 and ${MAX_PLEDGE_PAGE_SIZE}`)
+    .toInt();
+
+// Decoded here so controllers read the parsed position via matchedData();
+// Express 5 re-parses req.query on every access, so sanitizers cannot mutate it.
+const cursorQuery = (decode) =>
+  singleQueryValue("cursor")
+    .custom((v) => decode(v) !== null)
+    .withMessage("cursor is invalid")
+    .bail()
+    .customSanitizer(decode);
+
+export const listPledgesValidation = [
+  pageLimitQuery(),
+  cursorQuery(decodePledgeCursor),
+  singleQueryValue("status")
+    .isIn(PLEDGE_STATUSES)
+    .withMessage(`status must be one of: ${PLEDGE_STATUSES.join(", ")}`),
+];
+export const listPledgeCyclesValidation = [
+  objectIdParam("id"),
+  pageLimitQuery(),
+  cursorQuery(decodePledgeCycleCursor),
+  singleQueryValue("includeArchived")
+    .isIn(["true", "false"])
+    .withMessage("includeArchived must be true or false")
+    .toBoolean(true),
 ];
