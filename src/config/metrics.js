@@ -16,6 +16,15 @@ const safeRoute = (route) => String(route || "unknown").split("/").map((part) =>
 
 promClient.collectDefaultMetrics({ register: registry });
 
+// Notification retention (issue #646): rows removed per category, so collection
+// growth and cleanup failures are visible on the metrics endpoint.
+const notificationRetentionDeleted = new promClient.Counter({
+  name: "notification_retention_deleted_total",
+  help: "Notifications removed by the retention job, by category",
+  labelNames: ["category"],
+  registers: [registry],
+});
+
 const httpRequestDuration = new promClient.Histogram({
   name: "http_request_duration_seconds",
   help: "HTTP request duration in seconds",
@@ -120,6 +129,7 @@ export {
   paymentsFailed,
   sponsorshipsApproved,
   sponsorshipsRejected,
+  notificationRetentionDeleted,
   observeHttpDuration,
   observeHorizonDuration,
   metricsMiddleware,
