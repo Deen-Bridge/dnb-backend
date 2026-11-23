@@ -87,6 +87,7 @@ import searchAnalyticsRoutes from "./src/routes/analytics/search.js";
 // Issue #212 — Hashtag trending
 import hashtagRoutes from "./src/routes/hashtagRoutes.js";
 import { startTrendingHashtagsJob } from "./src/jobs/trendingHashtagsJob.js";
+import { startNotificationRetentionJob } from "./src/jobs/notificationRetentionJob.js";
 
 // Issue #207 — Space recording & replay
 import spaceRecordingRoutes from "./src/routes/spaceRecordingRoutes.js";
@@ -358,6 +359,12 @@ app.use("/api/analytics/journey", generousLimiter, userJourneyRoutes);
 
 // Start the hourly trending-hashtag score job (Issue #212).
 startTrendingHashtagsJob();
+
+// Notification retention (issue #646). Skipped in tests so a cleanup pass can
+// never delete rows out from under a suite that is asserting on them.
+if (process.env.NODE_ENV !== "test") {
+  startNotificationRetentionJob();
+}
 
 // ======================
 // ERROR HANDLING

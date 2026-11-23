@@ -29,3 +29,24 @@ short-lived object store before enabling external archive downloads.
 All requests and completion outcomes emit redacted audit events. Financial,
 audit, and legally held records are intentionally not deleted; operators must
 use the documented retention and legal-hold process for those records.
+
+## Notification retention
+
+Notification rows are retired by a scheduled job
+(`src/jobs/notificationRetentionJob.js`, issue #646) rather than by a TTL index,
+because the window depends on the row's state rather than only its age. Defaults:
+
+| Category | Default window | Environment override |
+|---|---|---|
+| Soft-deleted by the user (`isDeleted`) | 30 days | `NOTIFICATION_RETENTION_DELETED_DAYS` |
+| Read (`isRead`, not deleted) | 90 days | `NOTIFICATION_RETENTION_READ_DAYS` |
+| Unread | 365 days | `NOTIFICATION_RETENTION_UNREAD_DAYS` |
+
+`system` and `pledge_due` notifications are never purged: they carry
+account/security meaning rather than feed content. The job runs once on boot and
+then daily (`NOTIFICATION_RETENTION_INTERVAL_MS`), takes a distributed lease
+when Redis is available, is safe to re-run, and emits
+`notification_retention_deleted_total{category}` plus an
+`notification.retention_purged` audit event whenever it removes anything.
+Set dry-run behaviour by calling `purgeNotifications({ dryRun: true })` from a
+shell when you want to preview a policy change before deploying it.
