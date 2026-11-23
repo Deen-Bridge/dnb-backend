@@ -88,9 +88,13 @@ reelSchema.virtual("loveCount").get(function () {
   return this.loves?.length || 0;
 });
 
-reelSchema.virtual("commentCount").get(function () {
-  return this.commentCount ?? this.comments?.length ?? 0;
-});
+// No `commentCount` virtual: the schema already declares `commentCount` as a
+// stored path (bumped alongside ReelComment writes). A virtual with the same
+// name is rejected by mongoose ("Virtual path conflicts with a real path"), and
+// the only thing it could return is its own value, so it was dead code that
+// stopped the whole model registry — and therefore every test suite — from
+// loading. Legacy embedded `comments` are still counted explicitly wherever
+// they are read.
 
 reelSchema.set("toJSON", { virtuals: true });
 reelSchema.set("toObject", { virtuals: true });
