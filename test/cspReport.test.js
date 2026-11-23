@@ -43,7 +43,10 @@ describe("CSP report endpoint (#140)", () => {
       documentOrigin: "https://app.example.com",
     });
     expect(update.$inc).toEqual({ count: 1 });
-    expect(update.$set.userAgent).toBe("TestBrowser/1.0");
+    expect(update.$set.userAgentHash).toHaveLength(16);
+    expect(update.$set.userAgentHash).not.toContain("TestBrowser");
+    expect(update.$set.ip).toBeUndefined();
+    expect(update.$set.userAgent).toBeUndefined();
     expect(update.$set.documentUri).toBe("https://app.example.com/page");
   });
 
