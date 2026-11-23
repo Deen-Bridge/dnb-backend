@@ -53,6 +53,10 @@ export const AUDIT_ACTIONS = Object.freeze({
   // Entitlements (access grants)
   ENTITLEMENT_GRANT: "entitlement.grant",
 
+  // Certificate delivery (issue #701)
+  CERTIFICATE_DOWNLOAD:        "certificate.download",
+  CERTIFICATE_DOWNLOAD_DENIED: "certificate.download.denied",
+
   // Authorization
   AUTHZ_OWNERSHIP_DENIED: "authz.ownership.denied",
   AUTHZ_PAYOUT_DENIED:    "authz.payout.denied",
