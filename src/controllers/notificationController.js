@@ -3,12 +3,59 @@ import Notification from "../models/Notification.js";
 import logger from "../config/logger.js";
 import User from "../models/User.js";
 import Course from "../models/Course.js";
+import CourseProgress from "../models/CourseProgress.js";
 import { getRedisClient, isRedisReady } from "../config/redis.js";
 import { enqueue } from "../jobs/queue.js";
 import { recordAudit } from "../services/audit/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 import { recordEvent } from "../services/notificationAnalytics.service.js";
 import { upsertDurableNotification } from "../services/notificationDeliveryService.js";
+
+/**
+ * Bulk notification limits (issue #645).
+ *
+ * A single campaign fans out one document per recipient, so the request has to
+ * be bounded before it reaches the queue. These values are deliberately explicit
+ * and exported: the API contract, the tests and the docs should all quote the
+ * same numbers.
+ */
+export const BULK_NOTIFICATION_LIMITS = Object.freeze({
+  maxTitleLength: 120,
+  maxMessageLength: 2000,
+  maxRecipients: 1000,
+});
+
+/**
+ * Notification types a campaign sender may choose. This is a subset of the
+ * Notification model enum: types such as `follow` or `course_like` are emitted
+ * by system events and must not be forged through a bulk announcement.
+ */
+export const BULK_NOTIFICATION_TYPES = Object.freeze([
+  "course_update",
+  "course_announcement",
+  "bulk",
+  "system",
+]);
+
+const normalizeBulkText = (value) => (typeof value === "string" ? value.trim() : "");
+
+/**
+ * Resolve the same recipient set the `notifications.bulk` job will fan out to
+ * (course enrolments plus recorded course progress, minus the sender), so the
+ * recipient ceiling is enforced on the real number rather than a guess.
+ */
+const resolveBulkRecipients = async (course, senderId) => {
+  const progressRows = await CourseProgress.find({ course: course._id }).select("user").lean();
+  const recipients = new Set();
+  for (const row of progressRows) {
+    if (row.user) recipients.add(row.user.toString());
+  }
+  for (const enrolled of course.enrolledUsers || []) {
+    recipients.add(enrolled.toString());
+  }
+  recipients.delete(senderId.toString());
+  return recipients;
+};
 
 /**
  * SSE Connections Map
@@ -472,25 +519,51 @@ export const getNotificationSettings = async (req, res) => {
 };
 
 // Send bulk notification to all students enrolled in a course (Issue #123)
+// Bounded content, type validation and a recipient ceiling were added for
+// issue #645: the request is validated before anything reaches the queue.
 export const sendBulkNotification = async (req, res) => {
   try {
-    const { course_id, title, message, type } = req.body;
+    const { course_id: courseId } = req.body;
+    const title = normalizeBulkText(req.body.title);
+    const message = normalizeBulkText(req.body.message);
+    const notificationType = normalizeBulkText(req.body.type) || "course_update";
 
-    if (!course_id || !title || !message) {
+    if (!courseId || !title || !message) {
       return res.status(400).json({
         success: false,
         message: "course_id, title, and message are required",
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(course_id)) {
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid course_id format",
       });
     }
 
-    const course = await Course.findById(course_id);
+    if (title.length > BULK_NOTIFICATION_LIMITS.maxTitleLength) {
+      return res.status(400).json({
+        success: false,
+        message: `title must be at most ${BULK_NOTIFICATION_LIMITS.maxTitleLength} characters`,
+      });
+    }
+
+    if (message.length > BULK_NOTIFICATION_LIMITS.maxMessageLength) {
+      return res.status(400).json({
+        success: false,
+        message: `message must be at most ${BULK_NOTIFICATION_LIMITS.maxMessageLength} characters`,
+      });
+    }
+
+    if (!BULK_NOTIFICATION_TYPES.includes(notificationType)) {
+      return res.status(400).json({
+        success: false,
+        message: `type must be one of: ${BULK_NOTIFICATION_TYPES.join(", ")}`,
+      });
+    }
+
+    const course = await Course.findById(courseId);
     if (!course) {
       return res.status(404).json({
         success: false,
@@ -506,7 +579,21 @@ export const sendBulkNotification = async (req, res) => {
       });
     }
 
-    const notificationType = type || "course_update";
+    const recipients = await resolveBulkRecipients(course, req.user._id);
+
+    if (recipients.size === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Course has no recipients for a bulk notification",
+      });
+    }
+
+    if (recipients.size > BULK_NOTIFICATION_LIMITS.maxRecipients) {
+      return res.status(413).json({
+        success: false,
+        message: `Campaign would reach ${recipients.size} recipients; the limit is ${BULK_NOTIFICATION_LIMITS.maxRecipients} per campaign`,
+      });
+    }
 
     const job = await enqueue(
       "notifications.bulk",
@@ -533,8 +620,9 @@ export const sendBulkNotification = async (req, res) => {
       metadata: {
         courseId: course._id.toString(),
         jobId: (job.id || job.idempotencyKey)?.toString(),
-        title,
+        recipientCount: recipients.size,
         type: notificationType,
+        title,
       },
     });
 
@@ -542,13 +630,13 @@ export const sendBulkNotification = async (req, res) => {
       success: true,
       message: "Bulk notification queued successfully",
       jobId: job.id || job.idempotencyKey,
+      recipientCount: recipients.size,
     });
   } catch (error) {
     logger.error("Send bulk notification error:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to send bulk notification",
-      error: error.message,
     });
   }
 };
