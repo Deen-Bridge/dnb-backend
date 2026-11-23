@@ -111,6 +111,24 @@ export class CertificateService {
       .sort({ createdAt: -1 });
   }
 
+  /**
+   * Download-path lookup: only the fields the PDF renders, and no user
+   * populate. `getCertificateById` populates email/avatar for the public
+   * verification payload; the download endpoint has no business loading
+   * personal data it never prints (#701).
+   */
+  async getCertificateForDownload(idOrCertificateId) {
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(idOrCertificateId));
+    const filter = isObjectId
+      ? { $or: [{ _id: idOrCertificateId }, { certificateId: idOrCertificateId }] }
+      : { certificateId: idOrCertificateId };
+
+    return Certificate.findOne(filter).select(
+      "certificateId user learnerName courseTitle completionDate instructorName " +
+        "instructorSignature verificationUrl certificateHash stellarTx"
+    );
+  }
+
   async generatePDFBuffer(certificate) {
     return await generateCertificatePDF({
       learnerName: certificate.learnerName,
