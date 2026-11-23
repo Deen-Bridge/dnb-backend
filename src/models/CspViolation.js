@@ -17,8 +17,11 @@ const cspViolationSchema = new mongoose.Schema(
     blockedUri: { type: String, default: "" },
     sourceFile: { type: String, default: "" },
     lineNumber: { type: Number, default: 0 },
-    userAgent: { type: String, default: "" },
-    ip: { type: String, default: "" },
+    // Raw IP and user agent are never stored (issue #647). Only a salted,
+    // day-bucketed hash is kept so one noisy client is still distinguishable
+    // within a day without retaining the identifier itself.
+    userAgentHash: { type: String, default: "" },
+    ipHash: { type: String, default: "" },
     count: { type: Number, default: 1 },
     firstSeen: { type: Date, default: Date.now },
     lastSeen: { type: Date, default: Date.now },
