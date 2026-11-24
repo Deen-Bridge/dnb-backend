@@ -102,7 +102,9 @@ describe("Course Certificates API", () => {
       certificateUrl: "/api/certificates/CERT-TEST-12345/download",
     });
 
-    const res = await request(app).get(`/api/certificates/${cert.certificateId}/download`);
+    const res = await request(app)
+      .get(`/api/certificates/${cert.certificateId}/download`)
+      .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toBe("application/pdf");
