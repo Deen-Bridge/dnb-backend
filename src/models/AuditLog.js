@@ -82,6 +82,7 @@ export const AUDIT_ACTIONS = Object.freeze({
 
   // Bulk notifications (issue #123)
   NOTIFICATION_BULK_SENT:    "notification.bulk_sent",
+  NOTIFICATION_RETENTION_PURGED: "notification.retention_purged",
 
   // Privacy workflows (issue #732)
   PRIVACY_EXPORT_REQUESTED: "privacy.export.requested",
