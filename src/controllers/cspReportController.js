@@ -1,8 +1,30 @@
+import { createHmac } from "node:crypto";
 import CspViolation from "../models/CspViolation.js";
 import logger from "../config/logger.js";
 
 const MAX_STR = 512;
 const MAX_REPORTS_PER_REQUEST = 10;
+const IDENTIFIER_HASH_LENGTH = 16;
+
+/**
+ * CSP reports are unauthenticated and attacker-controlled, so the client
+ * identifiers attached to them are not personal data the product needs in the
+ * clear (issue #647). They are replaced with a truncated HMAC before anything
+ * is persisted or logged.
+ *
+ * The salt is mixed with the UTC date, so the same client produces a different
+ * value on different days: enough to see "one noisy client today" in the stats,
+ * not enough to build a long-lived profile.
+ */
+export const hashIdentifier = (value, now = new Date()) => {
+  if (!value) return "";
+  const day = now.toISOString().slice(0, 10);
+  const salt = process.env.CSP_REPORT_HASH_SALT || "deenbridge-csp-report";
+  return createHmac("sha256", `${salt}:${day}`)
+    .update(String(value))
+    .digest("hex")
+    .slice(0, IDENTIFIER_HASH_LENGTH);
+};
 
 /** Coerce untrusted input to a bounded string without control characters. */
 export const clean = (value, max = MAX_STR) => {
@@ -76,9 +98,10 @@ export const normalizeReports = (body) => {
 export const receiveCspReport = async (req, res) => {
   try {
     const reports = normalizeReports(req.body);
-    const userAgent = clean(req.get("user-agent") || "", 256);
-    const ip = clean(req.ip || "", 64);
     const now = new Date();
+    // Never persist or log the raw client identifiers (issue #647).
+    const userAgentHash = hashIdentifier(clean(req.get("user-agent") || "", 256), now);
+    const ipHash = hashIdentifier(clean(req.ip || "", 64), now);
 
     await Promise.all(
       reports.map((r) =>
@@ -96,8 +119,8 @@ export const receiveCspReport = async (req, res) => {
               effectiveDirective: r.effectiveDirective,
               sourceFile: r.sourceFile,
               lineNumber: r.lineNumber,
-              userAgent,
-              ip,
+              userAgentHash,
+              ipHash,
             },
             $setOnInsert: { firstSeen: now },
           },
@@ -106,8 +129,9 @@ export const receiveCspReport = async (req, res) => {
       ),
     );
     if (reports.length) {
+      // Directive and blocked URI only: no raw IP, no raw user agent.
       logger.warn(
-        `CSP violation: ${reports[0].violatedDirective} blocked=${reports[0].blockedUri} ip=${ip} ua=${userAgent}`,
+        `CSP violation: ${reports[0].violatedDirective} blocked=${reports[0].blockedUri} reports=${reports.length}`,
       );
     }
   } catch (err) {
